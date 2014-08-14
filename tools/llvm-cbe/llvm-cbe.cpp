@@ -13,10 +13,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Assembly/PrintModulePass.h"
+/* 6-09-14  Greg Simpson
+cannot find PrintModulePass.h
+add another include 
+#include "llvm/Assembly/PrintModulePass.h" */
+#include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -42,6 +45,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
 using namespace llvm;
+
 
 extern "C" void LLVMInitializeCBackendTarget();
 extern "C" void LLVMInitializeCBackendTargetInfo();
@@ -257,7 +261,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
     FeaturesStr = Features.getString();
   }
 
-  CodeGenOpt::Level OLvl = CodeGenOpt::Default;
+  CodeGenOpt::Level OLvl = CodeGenOpt::Default; 
+
   switch (OptLevel) {
   default:
     errs() << argv[0] << ": invalid optimization level.\n";
@@ -298,8 +303,12 @@ static int compileModule(char **argv, LLVMContext &Context) {
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
 
+  /* Greg Simpson - 6-09-14
+    Could not find any instance of DisableDotLoc in llvm file CommandFlags.h
+    removed statement 
   if (DisableDotLoc)
     Target.setMCUseLoc(false);
+  */
 
   if (DisableCFI)
     Target.setMCUseCFI(false);
@@ -312,10 +321,14 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   // Disable .loc support for older OS X versions.
   if (TheTriple.isMacOSX() &&
-      TheTriple.isMacOSXVersionLT(10, 6))
-    Target.setMCUseLoc(false);
+      TheTriple.isMacOSXVersionLT(10, 6)){}
+    //TODO: Find a replacement to this function
+    /* Greg Simpson 6-09-13
+    no member named setMCUseLoc
+    removed statement
+    Target.setMCUseLoc(false);  */
 
-  // Figure out where we are going to send the output.
+  
   OwningPtr<tool_output_file> Out
     (GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
   if (!Out) return 1;
