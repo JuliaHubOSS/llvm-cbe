@@ -2706,7 +2706,8 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
   Out << "  switch (";
   writeOperand(Cond);
   Out << ") {\n  default:\n  ";
-  visit(SI.getDefaultDest());
+  printBasicBlock(SI.getDefaultDest());
+  addToGoToSet(SI.getDefaultDest());
   Out << "  break;\n";
   // we already visited; need to check if block is still needed
 
