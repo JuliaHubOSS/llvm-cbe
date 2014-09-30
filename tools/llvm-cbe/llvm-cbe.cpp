@@ -41,6 +41,7 @@ add another include
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
@@ -155,7 +156,7 @@ static tool_output_file *GetOutputStream(const char *TargetName,
   std::string error;
   sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
   if (Binary)
-    OpenFlags |= sys::fs::F_Binary;
+    OpenFlags |= sys::fs::F_Text;
   tool_output_file *FDOut = new tool_output_file(OutputFilename.c_str(), error,
                                                  OpenFlags);
   if (!error.empty()) {
@@ -214,7 +215,11 @@ int main(int argc, char **argv) {
 static int compileModule(char **argv, LLVMContext &Context) {
   // Load the module to be compiled...
   SMDiagnostic Err;
-  OwningPtr<Module> M;
+  
+  //Jackson Korba 9/30/14
+  //OwningPtr<Module> M;
+  std::unique_ptr<Module> M;
+  
   Module *mod = 0;
   Triple TheTriple;
 
@@ -292,10 +297,13 @@ static int compileModule(char **argv, LLVMContext &Context) {
   Options.StackAlignmentOverride = OverrideStackAlignment;
   Options.TrapFuncName = TrapFuncName;
   Options.PositionIndependentExecutable = EnablePIE;
-  Options.EnableSegmentedStacks = SegmentedStacks;
+  //Jackson Korba 9/30/14
+  //Options.EnableSegmentedStacks = SegmentedStacks;
   Options.UseInitArray = UseInitArray;
-
-  OwningPtr<TargetMachine>
+  
+  //Jackson Korba 9/30/14
+  //OwningPtr<targetMachine>
+  std::unique_ptr<TargetMachine>
     target(TheTarget->createTargetMachine(TheTriple.getTriple(),
                                           MCPU, FeaturesStr, Options,
                                           RelocModel, CMModel, OLvl));
@@ -308,13 +316,15 @@ static int compileModule(char **argv, LLVMContext &Context) {
     removed statement 
   if (DisableDotLoc)
     Target.setMCUseLoc(false);
-  */
 
+  */
+  /* Jackson Korba 9/30/14
   if (DisableCFI)
     Target.setMCUseCFI(false);
-
+  
   if (EnableDwarfDirectory)
     Target.setMCUseDwarfDirectory(true);
+  */
 
   if (GenerateSoftFloatCalls)
     FloatABIForCalls = FloatABI::Soft;
@@ -328,8 +338,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
     removed statement
     Target.setMCUseLoc(false);  */
 
-  
-  OwningPtr<tool_output_file> Out
+  //Jackson Korba 9/30/14 
+  //OwningPtr<tool_output_file> Out
+  std::unique_ptr<tool_output_file> Out
     (GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
   if (!Out) return 1;
 
@@ -347,9 +358,12 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   // Add the target data from the target machine, if it exists, or the module.
   if (const DataLayout *TD = Target.getDataLayout())
-    PM.add(new DataLayout(*TD));
+    //Jackson Korba 9/30/14
+    //PM.add(new DataLayout(*TD));
+    PM.add(new DataLayoutPass(*TD));
   else
-    PM.add(new DataLayout(mod));
+    //PM.add(new DataLayout(mod));
+    PM.add(new DataLayoutPass(mod));
 
   // Override default to generate verbose assembly.
   Target.setAsmVerbosityDefault(true);
@@ -358,8 +372,10 @@ static int compileModule(char **argv, LLVMContext &Context) {
     if (FileType != TargetMachine::CGFT_ObjectFile)
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj";
+    /*Jackson Korba 9/30/14
     else
       Target.setMCRelaxAll(true);
+    */
   }
 
   {

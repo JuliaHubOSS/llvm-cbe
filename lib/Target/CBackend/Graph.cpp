@@ -1,12 +1,16 @@
 #include "Graph.h"
 
 #include "llvm/IR/Function.h"
-#include "llvm/InstVisitor.h"
-#include "llvm/Support/CFG.h"
+#include "llvm/IR/InstVisitor.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/InstIterator.h"
+#include "llvm/IR/InstIterator.h"
 
-
+//Jackson Korba 9/30/14
+#ifndef DEBUG_TYPE
+#define DEBUG_TYPE ""
+#endif
+//End Modification
 
 Graph::Graph(Module *Mod)
 :M(Mod),
