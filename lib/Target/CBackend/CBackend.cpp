@@ -1704,7 +1704,6 @@ static SpecialGlobalClass getGlobalVariableClass(const GlobalVariable *GV) {
 
   // Otherwise, if it is other metadata, don't print it.  This catches things
   // like debug information.
- // if (GV->getSection() == "llvm.metadata")
   if(strncmp(GV->getSection(), "llvm.metadata", 13) == 0)
     return NotPrinted;
 
