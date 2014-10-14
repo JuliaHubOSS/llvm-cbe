@@ -80,6 +80,7 @@ using namespace llvm;
 
 std::tr1::unordered_map<int, std::string> VarNamesMap;
 bool PrintSigned = false;
+
 extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
@@ -110,6 +111,7 @@ namespace {
     Graph * G;
     bool InSwitch;
     BasicBlock * Next;
+    bool globUnaligned = true;
 
     std::map<const ConstantFP *, unsigned> FPConstantMap;
     std::set<Function*> IntrinsicPrototypesAlreadyGenerated;
@@ -1390,7 +1392,7 @@ void CWriter::writeOperandInternal(Value *Operand, bool Static) {
   if (Instruction *I = dyn_cast<Instruction>(Operand))
     // Should we inline this instruction to build a tree?
     if (isInlinableInst(*I) && !isDirectAlloca(I)) {
-      Out << '(';
+      Out << "(";
       writeInstComputationInline(*I);
       Out << ')';
       return;
@@ -1402,16 +1404,17 @@ void CWriter::writeOperandInternal(Value *Operand, bool Static) {
     printConstant(CPV, Static);
   else
     Out << GetValueName(Operand);
+
 }
 
 void CWriter::writeOperand(Value *Operand, bool Static) {
   bool isAddressImplicit = isAddressExposed(Operand);
-  if (isAddressImplicit)
+  if (isAddressImplicit && globUnaligned)
     Out << "(&";  // Global variables are referenced as their addresses by llvm
         
   writeOperandInternal(Operand, Static);
 
-  if (isAddressImplicit)
+  if (isAddressImplicit && globUnaligned)
     Out << ')';
 }
 
@@ -1704,7 +1707,8 @@ static SpecialGlobalClass getGlobalVariableClass(const GlobalVariable *GV) {
 
   // Otherwise, if it is other metadata, don't print it.  This catches things
   // like debug information.
-  if (GV->getSection() == "llvm.metadata")
+  //if (GV->getSection() == "llvm.metadata")
+  if(strncmp(GV->getSection(), "llvm.metadata", 13) == 0)
     return NotPrinted;
 
   return NotSpecial;
@@ -3610,9 +3614,9 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
 
   bool IsUnaligned = Alignment &&
     Alignment < TD->getABITypeAlignment(OperandType);
-
-  if (!IsUnaligned)
-    Out << '*';
+  globUnaligned = IsUnaligned;
+  if (!IsUnaligned && !isAddressExposed(Operand))
+    Out << "*";
   if (IsVolatile || IsUnaligned) {
     Out << "((";
     if (IsUnaligned)
@@ -3633,6 +3637,7 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
     if (IsUnaligned)
       Out << "->data";
   }
+  globUnaligned = true;
 }
 
 void CWriter::visitLoadInst(LoadInst &I) {
