@@ -8,13 +8,10 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute an if/else statement correctly.
-//
+// *TW
 //===----------------------------------------------------------------------===//
 
-#include <stdio.h>
-
-int main()
-{
+int main() {
     int x = 3;
     x += 3;
     if (x == 6)
