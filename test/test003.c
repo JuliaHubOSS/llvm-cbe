@@ -8,20 +8,16 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute a while loop correctly.
-//
+// *TW
 //===----------------------------------------------------------------------===//
-
-#include <stdio.h>
 
 int main()
 {
     int i = 0, x = 0;
-    while (i < 6)
-    {
+    while (i < 6) {
         ++x;
         ++i;
     }
-    
     return x;
 } 
    
