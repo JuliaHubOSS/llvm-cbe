@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Test python script. Should always fail.
+// Does not return 6, will always fail. Exception for 25 so will succeed.
 //
 //===----------------------------------------------------------------------===//
 
