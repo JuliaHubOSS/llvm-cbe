@@ -8,24 +8,22 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute a struct correctly.
-//
+// *TW
 //===----------------------------------------------------------------------===//
 
-#include <stdio.h>
-
 struct test {
- int var1;
- int var2;
- int var3;
+   int var1;
+   int var2;
+   int var3;
 };
 
-int main ()
-{
-    struct test variable;
+int main() {
+
+   struct test variable;
+
+   variable.var2 = 5;
+   variable.var3 = 6;
+   variable.var1 = 9;
     
-    variable.var2 = 5;
-    variable.var3 = 6;
-    variable.var1 = 9;
-    
-    return variable.var3;
+   return variable.var3;
 }
