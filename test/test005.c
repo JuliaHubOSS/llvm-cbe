@@ -8,13 +8,10 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute a nested for loop correctly.
-//
+// *TW
 //===----------------------------------------------------------------------===//
 
-#include <stdio.h>
-
-int main()
-{
+int main() {
     int i, j, x = 0;
     for (i = 0; i < 3; i++)
         for (j = 0; j < 2; j++)
