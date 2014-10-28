@@ -8,19 +8,14 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute an array correctly.
-//
+// *TW
 //===----------------------------------------------------------------------===//
 
-#include <stdio.h>
-
-int main()
-{
+int main() {
     int example[10];
     int i;
-    for (i = 0;i < 10; ++i)
-    {
+       for (i = 0;i < 10; ++i) {
         example[i] = i;
-    }
-    
-    return example[6];
+       }
+       return example[6];
 }
