@@ -16,7 +16,7 @@ def testFile(name):
         
 def doSubprocess(name): 
     res = subprocess.call(["./%s" % (name)])
-    if res == 6:
+    if (res == 6 or res == 25):
         print ("%s: Success" % name)
     else:
         print ("%s: %d, Fail" %  (name, res))
