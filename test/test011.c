@@ -1,19 +1,20 @@
-//===-- CBackend.cpp - Library for converting LLVM code to C --------------===//
+//===-- CBackend.cpp - Library for converting LLVM code to C ----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
-//===----------------------------------------------------------------------===//
+//===------------------------------------------------------------------------===//
 //
-// Test python script. Should always fail.
-//
-//===----------------------------------------------------------------------===//
-
-#include <stdio.h>
+// This code tests to see that the CBE can handle addition between two variables.
+// *TW
+//===------------------------------------------------------------------------===//
 
 int main()
 {
-    return 1;
+    int i = 2, t = 4, x = 0;
+    x = i+t;
+
+    return x;
 }
