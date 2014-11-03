@@ -19,5 +19,5 @@ int subtract(int x, int y) {
 
 int main() {
   int (*sabPtr)(int, int) = subtract;
-  (*sabPtr)(10, 4);
+  return (*sabPtr)(10, 4);
 }
