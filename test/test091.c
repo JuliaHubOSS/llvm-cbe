@@ -12,16 +12,14 @@
 //===------------------------------------------------------------------------------===//
 
 union Data{
-   int i;
-   float f;
+   char unit1[6];
+   char unit2;
+   char unit3;
 };
 
 int main(){
    union Data data;
-
-   data.i = 6; //Invalid due to data.f
-   data.f = 6;
-
-   return data.f;
+   return sizeof(data);
 }
+
 
