@@ -11,18 +11,16 @@
 // *TW
 //===------------------------------------------------------------------------------===//
 
-struct packed_test {
- unsigned int var1:4;
- unsigned int var2:4;
- unsigned int var3:4;
+#pragma pack(push)
+#pragma pack(1)
+
+struct DataSize{
+    char Data2;
+    char Data3;
+    int Data1;
 };
 
 int main(){
-    struct packed_test variable;
-    variable.var2 = 5;
-    variable.var3 = 6;
-    variable.var1 = 9;
-
-    return variable.var3;
+    struct DataSize example;
+    return sizeof(example);
 }
-
