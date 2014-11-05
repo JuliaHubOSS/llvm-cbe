@@ -7,11 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Does not return 6, will always fail. Exception for 25 so will succeed.
+// Does not return 6, will always fail. Exception for 25 so it will succeed.
 //
 //===----------------------------------------------------------------------===//
-
-#include <stdio.h>
 
 int main()
 {
