@@ -15,6 +15,8 @@
 int main() {
    int x = 0;
    do {
-      return 6;
-   } while (x == 0);
+      x++;
+   } while (x < 6);
+
+   return x;
 }
