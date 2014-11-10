@@ -15,11 +15,11 @@
 int main() {
    int x;
    for (x=0; x<=25; x++) {
-      if (x == 10)
+      if (x == 6)
          break;
       if (x < 15)
          continue;
    }
-   return 6;
+   return x;
 }
 
