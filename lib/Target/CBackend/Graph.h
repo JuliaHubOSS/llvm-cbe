@@ -41,7 +41,7 @@ class Graph {
   void printGraphFromMod();
   bool branchCheck(BasicBlock *BB);
   void createMap();
-  void updateMap(BasicBlock * BB);
+  void updateMap(BasicBlock *BB);
   void printGraph();
   void makeGraph();
   void print();
@@ -49,7 +49,7 @@ class Graph {
   bool shouldReturn(BasicBlock *Pred, BasicBlock *Succ, bool Start);
   bool shouldReturn(BasicBlock *Succ, BasicBlock *Pred);
   bool checkIf(BasicBlock *Succ, BasicBlock *Pred);
-  bool shouldPrint(BasicBlock* BB);
+  bool shouldPrint(BasicBlock *BB);
   int returnType(BasicBlock *BB);
   int returnType(BranchInst &I);
   void printInstrTotal();

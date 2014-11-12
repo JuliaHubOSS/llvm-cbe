@@ -250,10 +250,12 @@ void Graph::DFS2_visit(DFSNode * DFS) {
    BranchMap[BI->getCondition()] = DFS->Bb;
    if (TypeStack.empty())
     DFS->T = IF;
+   else if (TypeStack.top() == ENDIF /*&& (Time == DFS->DTime -1)*/)
+    DFS->T = ELSEIF;
+   else if (TypeStack.top() == ELSEIF)
+    DFS->T = ELSEIF;
    else if (TypeStack.top() != ENDIF)
     DFS->T = IF;
-   else if (TypeStack.top() == ENDIF && (Time == DFS->DTime -1))
-    DFS->T = ELSEIF;
    else if(TypeStack.top() == ENDIF && (Time != DFS->DTime -1))
     DFS->T = IF;
    else
@@ -343,7 +345,6 @@ bool Graph::shouldReturn(BasicBlock *Succ, BasicBlock *Pred)
  // if discovery time of Pred is less than that of Succ we want to print
  return PredDfs->DTime < SuccDfs->DTime;
 }
-
 
 // want to check if the succ node is seen by the pred in DFS
 bool Graph::SearchDFS(DFSNode *DFS, BasicBlock *Succ) {

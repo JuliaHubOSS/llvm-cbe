@@ -108,11 +108,14 @@ namespace {
     const MCObjectFileInfo *MOFI;
     MCContext *TCtx;
     const DataLayout* TD;
-    Graph * G;
+    Graph *G;
     bool InSwitch;
-    BasicBlock * Next;
+    BasicBlock *Next;
     bool globUnaligned = true;
-
+    bool alreadyPrinted = false;
+    BasicBlock *tempBlock, *elseIfBlock;
+    std::vector<BasicBlock *> InitBBVec;
+    std::vector<BasicBlock *> ElseIfVec;
     std::map<const ConstantFP *, unsigned> FPConstantMap;
     std::set<Function*> IntrinsicPrototypesAlreadyGenerated;
     std::set<const Argument*> ByValParams;
@@ -121,6 +124,11 @@ namespace {
     DenseMap<const Value*, unsigned> AnonValueNumbers;
     unsigned NextAnonValueNumber;
     std::map<std::string, std::string> NameToType;
+    struct BBWithPreds {
+      BasicBlock *BB;
+      int numPrints = 0;
+    };
+    std::vector<BBWithPreds> BBVector;
 
     /// UnnamedStructIDs - This contains a unique ID for each struct that is
     /// either anonymous or has no name.
@@ -160,7 +168,6 @@ namespace {
       printFloatingPointConstants(F);
 
       printFunction(F);
-
 #ifdef DEBUG      
       G->printGraphFromMod();
 #endif
@@ -218,6 +225,8 @@ namespace {
     void writeOperandWithCast(Value* Operand, unsigned Opcode);
     void writeOperandWithCast(Value* Operand, const ICmpInst &I);
     bool writeInstructionCast(const Instruction &I);
+    bool isCriticalEdge(BasicBlock *BB);
+    void loadElseIfVec(BasicBlock *BB);
 
     void writeMemoryAccess(Value *Operand, Type *OperandType,
                            bool IsVolatile, unsigned Alignment);
@@ -229,13 +238,13 @@ namespace {
     /// Prints the definition of the intrinsic function F. Supports the
     /// intrinsics which need to be explicitly defined in the CBackend.
     void printIntrinsicDefinition(const Function &F, raw_ostream &Out);
-
+    void loadBBVec(Module &M);
     void printModuleTypes();
     void printContainedStructs(Type *Ty, SmallPtrSet<Type *, 16> &);
     void printFloatingPointConstants(Function &F);
     void printFloatingPointConstants(const Constant *C);
     void printFunctionSignature(const Function *F, bool Prototype);
-
+    bool okayToPrint(BasicBlock *BB);
     void printFunction(Function &);
     void printBasicBlock(BasicBlock *BB);
     void printLoop(Loop *L);
@@ -1449,6 +1458,35 @@ bool CWriter::writeInstructionCast(const Instruction &I) {
   return false;
 }
 
+// getNumSuccessors returns the number of successors that the passed basicblock has.
+int getNumSuccessors(BasicBlock *BB) {
+  int succCount = 0;
+  for(succ_iterator SI = succ_begin(BB); SI != succ_end(BB); ++SI)
+    succCount++;
+  return succCount;
+}
+
+// isCriticalEdge() iterates through an initially loaded module that does not contain critical edge blocks
+// and checks the blocks against the passed basic block. It marks the predecessor of the passed basic block
+// and then checks if the block exists in the initial module, such case returning false. Then, the function
+// checks to see if any of the predecessors of the markedPredecessor match the successors of the critical
+// edge. This is a special case, and the critical edge should not be bypassed. 
+bool CWriter::isCriticalEdge(BasicBlock *BB) {
+  BasicBlock *markedPredecessor;
+  for(std::vector<BasicBlock *>::iterator I = InitBBVec.begin(); I != InitBBVec.end(); ++I) {
+    if(BB->getSinglePredecessor() == *I) {
+      markedPredecessor = *I;
+    }    
+    if(*I == BB)
+      return false;
+  }
+  for(pred_iterator PI = pred_begin(markedPredecessor); PI != pred_end(markedPredecessor); ++PI)
+    for(succ_iterator SI = succ_begin(BB); SI != succ_end(BB); ++SI)
+      if(*SI == *PI)
+        return false;
+  return true;
+}
+
 // Write the operand with a cast to another type based on the Opcode being used.
 // This will be used in cases where an instruction has specific type
 // requirements (usually signedness) for its operands.
@@ -1738,6 +1776,13 @@ static void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
   PrintEscapedString(Str.c_str(), Str.size(), Out);
 }
 
+void CWriter::loadBBVec(Module &M) {
+  for (iplist<Function>::iterator It = M.getFunctionList().begin(); It != M.getFunctionList().end(); ++It) {
+    Function * Fn = It;
+    for (iplist<BasicBlock>::iterator I = Fn->getBasicBlockList().begin(); I != Fn->getBasicBlockList().end(); ++I)
+      InitBBVec.push_back(I);
+  }
+}
 bool CWriter::doInitialization(Module &M) {
   FunctionPass::doInitialization(M);
 
@@ -1747,10 +1792,9 @@ bool CWriter::doInitialization(Module &M) {
   TD = new DataLayout(&M);
   IL = new IntrinsicLowering(*TD);
   IL->AddPrototypes(M);
-
+  loadBBVec(M);
   G = new Graph(&M);
   G->makeGraph();
-
 #ifdef DEBUG
   G->printGraphFromMod();
   G->printGraph();
@@ -2435,9 +2479,6 @@ void CWriter::printFunction(Function &F) {
   Out << "}\n\n";
 }
 
-
-
-
 void CWriter::printLoop(Loop *L) {
 
   for (unsigned i = 0, e = L->getBlocks().size(); i != e; ++i) {
@@ -2455,15 +2496,14 @@ void CWriter::printLoop(Loop *L) {
         }
         break;
       case ENDLOOP :
-        printBasicBlock(BB); 
+        printBasicBlock(BB);
         break;
-      case IF :          
-        {
-          Instruction *I = dynamic_cast<Instruction *>(BB->getTerminator());
-          BranchInst *BI = static_cast<BranchInst *>(I);
-          visitBranchInst(*BI);
-        }
+      case IF : {         
+        Instruction *I = dynamic_cast<Instruction *>(BB->getTerminator());
+        BranchInst *BI = static_cast<BranchInst *>(I);
+        visitBranchInst(*BI);
         break;
+      }
       default :
         printBasicBlock(BB); 
         break;
@@ -2487,7 +2527,6 @@ void CWriter::printLoopInst(BasicBlock *BB){
     }
 }
 
-
 void CWriter::printBasicBlockLoop(BasicBlock *BB){
   int x = 0;
   int BBSize = BB->size();
@@ -2500,7 +2539,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
     if(BBSize < 2) {
       Out << " while(";
       writeOperand(BI->getCondition());
-      Out << "){ \n";
+      Out << ") { \n";
     }
     else {
       InLoop = true;
@@ -2516,7 +2555,8 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   BasicBlock::iterator II = BB->begin(), E = --BB->end();
   while (II != E) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
-      if ( InLoop && x == 1 && BBSize > 3 )  Out << ", ";
+      if ( InLoop && x == 1 && BBSize > 3 )
+        Out << ", ";
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
          !isInlineAsm(*II))
         outputLValue(II);
@@ -2525,49 +2565,47 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
       writeInstComputationInline(*II);
       if(!InLoop)
         Out << ";\n";
-      else if(x == 0 && BBSize <= 3) Out << "; ";
+      else if(x == 0 && BBSize <= 3) 
+        Out << "; ";
     }
-      if ( InLoop ) {
-        if(x == 0 && BBSize <= 3) {
-          writeOperand(BI->getCondition());
-          Out << " ; ";
-          II = BB->begin();
-        }
-        else if(x == 1 && BBSize <= 3){
-          // end of for loop
-          Out << " ) { \n";
-          InLoop = false;
+    if ( InLoop ) {
+      if(x == 0 && BBSize <= 3) {
+        writeOperand(BI->getCondition());
+        Out << " ; ";
+        II = BB->begin();
+      }
+      else if(x == 1 && BBSize <= 3) {
+        // end of for loop
+        Out << " ) { \n";
+        InLoop = false;
           ++II;
-        }
-        else if(x == 0 && BBSize > 3){
-          //Out << ", ";
-          ++II;
-        }
-        else if(x == 1 && BBSize > 3){
-          Out << "; ";
-          writeOperand(BI->getCondition());
-          Out << "; ";
-          II = BB->begin();
-        }
-        else if(x == 2 && BBSize > 3){
-          // end of for loop
-          Out << " ) { \n";
-          InLoop = false;
-          ++II;
-        }
-        else {
-          ++II;
-        }
+      }
+      else if(x == 0 && BBSize > 3) {
+        //Out << ", ";
+        ++II;
+      }
+      else if(x == 1 && BBSize > 3) {
+        Out << "; ";
+        writeOperand(BI->getCondition());
+        Out << "; ";
+        II = BB->begin();
+      }
+      else if(x == 2 && BBSize > 3) {
+        // end of for loop
+        Out << " ) { \n";
+        InLoop = false;
+        ++II;
       }
       else {
         ++II;
       }
-      x++;
-    }  // end of for loop
+    }
+    else {
+      ++II;
+    }
+    x++;
+  }  // end of for loop
 }
-
-
-
 
 void CWriter::visitBasicBlockByType(BasicBlock *BB){
     int Ty = G->returnType(BB);
@@ -2594,19 +2632,44 @@ void CWriter::visitBasicBlockByType(BasicBlock *BB){
 
 }
 
+// okayToPrint() iterates through the BBVector, checking to see if the basic block already exists in the vector.
+// If it doesn't, it adds it to the vector, and sets numPrints to the number of predecessors the basic block has,
+// so that a limit can be set on how many times the basic block is able to be printed. If the basic block does
+// not have available prints, the function returns false, and the basic block will not be printed.
+bool CWriter::okayToPrint(BasicBlock *BB) {
+  bool alreadyInVector = false;
+  for(auto &It : BBVector) {
+    if(It.BB == BB) {
+      alreadyInVector = true;
+      break;
+    }
+  }
+  if(!alreadyInVector) {
+    BBWithPreds vecBlock;
+    vecBlock.BB = BB;
+    for(pred_iterator PI = pred_begin(BB); PI != pred_end(BB); ++PI)
+      vecBlock.numPrints++;
+    if(vecBlock.numPrints == 0) // If BB is entry block, allow one print
+      vecBlock.numPrints = 1;
+    BBVector.push_back(vecBlock);
+  }
+  for(auto &It : BBVector) {
+    if(It.BB == BB) {
+      if(It.numPrints == 0)
+        return false;
+      It.numPrints--;
+      break;
+    }
+  }
+  return true;
+}
 
-
-
-
-
-
-// TODO: Stop printing out the BasicBlocks which contain the bodies that we
-//     have already visited in conditional statements
 void CWriter::printBasicBlockNoVisit(BasicBlock *BB) {
 
-  if(GotoSet.find(BB) == GotoSet.end()){}
-  else   return;
-  
+  //if(GotoSet.find(BB) == GotoSet.end()){}
+  //else   return;
+  //if(!okayToPrint(BB))
+  //  return;
 
   // Don't print the label for the basic block if there are no uses, or if
   // the only terminator use is the predecessor basic block's terminator.
@@ -2615,10 +2678,10 @@ void CWriter::printBasicBlockNoVisit(BasicBlock *BB) {
   //
   bool NeedsLabel = false;
   for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI)
-  if (isGotoCodeNecessary(*PI, BB)) {
-    NeedsLabel = true;
-    break;
-  }
+    if (isGotoCodeNecessary(*PI, BB)) {
+      NeedsLabel = true;
+      break;
+    }
   //if (NeedsLabel) Out << GetValueName(BB) << ":\n";
 
   // Output all of the instructions in the basic block...
@@ -2637,17 +2700,20 @@ void CWriter::printBasicBlockNoVisit(BasicBlock *BB) {
 
 }
 
-
-
-// TODO: Stop printing out the BasicBlocks which contain the bodies that we
-//   have already visited in conditional statements
 void CWriter::printBasicBlock(BasicBlock *BB) {
   //std::set<BasicBlock *>::iterator it = GotoSet.find(BB);
-
-  if(GotoSet.find(BB) == GotoSet.end()){}
-  else   return;
+  //if(GotoSet.find(BB) == GotoSet.end()){}
+  //else   return;
+  bool isElseIfBlock = false;
+  if(!okayToPrint(BB))
+    return;
+  for(std::vector<BasicBlock *>::iterator It = ElseIfVec.begin(); It != ElseIfVec.end(); ++It)
+    if(BB == *It) {
+      isElseIfBlock = true;
+      break;
+    }
+  if(!isElseIfBlock) {
   DEBUG (errs() << "PrintBasicBlock for BasicBlock " << BB << "\n");
-
   // Don't print the label for the basic block if there are no uses, or if
   // the only terminator use is the predecessor basic block's terminator.
   // We have to scan the use list because PHI nodes use basic blocks too but
@@ -2655,11 +2721,10 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   //
   bool NeedsLabel = false;
   for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI)
-  if (isGotoCodeNecessary(*PI, BB)) {
-    NeedsLabel = true;
-    break;
-  }
-
+    if (isGotoCodeNecessary(*PI, BB)) {
+      NeedsLabel = true;
+      break;
+    }
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
@@ -2673,7 +2738,8 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
       Out << ";\n";
     }
   }
-
+  tempBlock = BB;
+  }
   // Don't emit prefix or suffix for the terminator.
   visit(*BB->getTerminator());
 }
@@ -2796,37 +2862,85 @@ void CWriter::printBranchToBlock(BasicBlock *CurBB, BasicBlock *Succ,
 void CWriter::addToGoToSet(BasicBlock *To){
   GotoSet.insert(To);
 }
-
+// loadElseIfVec iterates through conditional branches 
+void CWriter::loadElseIfVec(BasicBlock *BB) {
+  int testType;
+  succ_iterator SI = succ_begin(BB);
+  ++SI;
+  BasicBlock *succBlock = *SI;
+  Instruction *II = dynamic_cast<Instruction *>(succBlock->getTerminator());
+  BranchInst *BI = static_cast<BranchInst *>(II);
+  if(!BI->isConditional())
+    return;
+  testType = G->returnType(*BI);
+  if(testType != ELSEIF)
+    return;
+  printBasicBlockNoVisit(succBlock);
+  ElseIfVec.push_back(succBlock);
+  loadElseIfVec(succBlock);
+}
 
 void CWriter::visitBranchInst(BranchInst &I){
 
   if(I.isConditional())
   {
-      printBasicBlockNoVisit(I.getParent());
+    bool isElseIfBlock = false;
+    for(std::vector<BasicBlock *>::iterator It = ElseIfVec.begin(); It != ElseIfVec.end(); ++It)
+      if(I.getParent() == *It) {
+        isElseIfBlock = true;
+        break;
+      }
+      if(tempBlock != I.getParent() && !isElseIfBlock)
+        printBasicBlockNoVisit(I.getParent());
       int type = G->returnType(I);
-
-      // TODO: before we use ELSEIF must put declare all
-      // variables used inside conditional
-      // in a BasicBlock before the first if statement
-      //if(type == ELSEIF)
-      //  Out << "else if ( ";
-
-      if(type == IF || type == UNKNOWN || type == ELSEIF)
+      BasicBlock *succ;
+      if(getNumSuccessors(I.getParent()) > 1 && type == IF)
+        loadElseIfVec(I.getParent());
+      if(type == ELSEIF)
+        Out << "  else if ( ";
+      if(type == IF || type == UNKNOWN)
         Out << "  if ( ";
 
       writeOperand(I.getCondition());
-      Out << " ){ \n";
-      // Out << "   ){ " << type << " " << I << "\n"; .getSuccessor(0) << "\n";
-      //printBasicBlockNoLabel(I.getSuccessor(0));
-      printBasicBlock(I.getSuccessor(0));
-      addToGoToSet(I.getSuccessor(0));
+      Out << " ) { \n";
+      // If there is a critical edge, bypass it and print the succeeding block.
+      if(isCriticalEdge(I.getSuccessor(0))) {
+        succ = *succ_begin(I.getSuccessor(0));
+        printBasicBlock(succ);
+        addToGoToSet(succ);
+      }
+      // If the succeeding block size is 1, usually it is a branch to a return and
+      // we want to print it.
+      else if(I.getSuccessor(0)->size() == 1 && getNumSuccessors(I.getSuccessor(0)) > 0) {
+        succ = *succ_begin(I.getSuccessor(0));
+        printBasicBlock(succ);
+        addToGoToSet(succ);
+      }
+      else {
+        printBasicBlock(I.getSuccessor(0));
+        addToGoToSet(I.getSuccessor(0));
+      }
       Out << "  }\n";
       type = G->returnType(I.getSuccessor(1));
       if(type != UNKNOWN) return;
-      Out << "  else { \n"; // << I.getSuccessor(1) << " \n";
-      //printBasicBlockNoLabel(I.getSuccessor(1));
-      printBasicBlock(I.getSuccessor(1));
-      addToGoToSet(I.getSuccessor(1));
+      Out << "  else { \n";
+      // If there is a critical edge, bypass it and print the succeeding block.
+      if(isCriticalEdge(I.getSuccessor(1))) {
+        succ = *succ_begin(I.getSuccessor(1));
+        printBasicBlock(succ);
+        addToGoToSet(succ);
+      }
+      // If the succeeding block size is 1, usually it is a branch to a return and
+      // we want to print it.
+      else if(I.getSuccessor(1)->size() == 1 && getNumSuccessors(I.getSuccessor(1)) > 0) {
+        succ = *succ_begin(I.getSuccessor(1));
+        printBasicBlock(succ);
+        addToGoToSet(succ);
+      }
+      else {
+        printBasicBlock(I.getSuccessor(1));
+        addToGoToSet(I.getSuccessor(1));
+      }
       Out << "  }\n";
   }
 }
@@ -3552,7 +3666,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     Out << ")(";
   }
 
-  Out << '&';
+  Out << "&";
 
   // If the first index is 0 (very typical) we can do a number of
   // simplifications to clean up the code.
