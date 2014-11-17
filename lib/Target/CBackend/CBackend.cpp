@@ -130,6 +130,9 @@ namespace {
     };
     std::vector<BBWithPreds> BBVector;
 
+    unsigned int indent = 0;
+    std::string indentString = "";
+
     /// UnnamedStructIDs - This contains a unique ID for each struct that is
     /// either anonymous or has no name.
     DenseMap<StructType*, unsigned> UnnamedStructIDs;
@@ -261,7 +264,7 @@ namespace {
     void printConstantArray(ConstantArray *CPA, bool Static);
     void printConstantVector(ConstantVector *CV, bool Static);
     void printConstantDataSequential(ConstantDataSequential *CDS, bool Static);
-
+    void updateIndent(int n);
 
 
     /// isAddressExposed - Return true if the specified value's name needs to
@@ -372,9 +375,8 @@ namespace {
       llvm_unreachable(0);
     }
 
-    void outputLValue(Instruction *I) {
-      // Out << " /* outputLValue */ ";
-      Out << "  " << GetValueName(I) << " = ";
+    void outputLValue(Instruction *I){
+      Out << GetValueName(I) << " = ";
     }
 
     bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
@@ -422,10 +424,20 @@ std::string CWriter::getStructName(StructType *ST) {
   return "l_unnamed_" + utostr(UnnamedStructIDs[ST]);
 }
 
+// Indents the output cbe.c code two spaces multiplied 
+// by the updateIndent value. 
+void CWriter::updateIndent(int n) {
+  if((int)indent + (int)n < 0)  // Denies updateIndent value from < 0 due to a 
+    return;                     // updateIndent decrement located in a loop.
+  indent += n;
+  indentString = "";
+  for(unsigned count = 0; count < indent; count++)
+    indentString.append("  ");
+}
 
-/// printStructReturnPointerFunctionType - This is like printType for a struct
-/// return type, except, instead of printing the type as void (*)(Struct*, ...)
-/// print it as "Struct (*)(...)", for struct return functions.
+// printStructReturnPointerFunctionType - This is like printType for a struct
+// return type, except, instead of printing the type as void (*)(Struct*, ...)
+// print it as "Struct (*)(...)", for struct return functions.
 void CWriter::printStructReturnPointerFunctionType(raw_ostream &Out,
                                                    const AttributeSet &PAL,
                                                    PointerType *TheTy) {
@@ -572,7 +584,7 @@ raw_ostream &CWriter::printType(raw_ostream &Out, Type *Ty,
     unsigned Idx = 0;
     for (StructType::element_iterator I = STy->element_begin(),
            E = STy->element_end(); I != E; ++I) {
-      Out << "  ";
+      Out << indentString;
       printType(Out, *I, false, "field" + utostr(Idx++));
       Out << ";\n";
     }
@@ -2407,6 +2419,7 @@ static inline bool isFPIntBitCast(const Instruction &I) {
 void CWriter::printFunction(Function &F) {
   /// isStructReturn - Should this function actually return a struct by-value?
   bool isStructReturn = F.hasStructRetAttr();
+  updateIndent(1);
 
   printFunctionSignature(&F, false);
   Out << " {\n";
@@ -2415,11 +2428,11 @@ void CWriter::printFunction(Function &F) {
   if (isStructReturn) {
     Type *StructTy =
       cast<PointerType>(F.arg_begin()->getType())->getElementType();
-    Out << "  ";
+    Out << indentString;
     printType(Out, StructTy, false, "StructReturn");
     Out << ";  /* Struct return temporary */\n";
 
-    Out << "  ";
+    Out << indentString;
     printType(Out, F.arg_begin()->getType(), false,
               GetValueName(F.arg_begin()));
     Out << " = &StructReturn;\n";
@@ -2430,18 +2443,18 @@ void CWriter::printFunction(Function &F) {
   // print local variable information for the function
   for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I) {
     if (const AllocaInst *AI = isDirectAlloca(&*I)) {
-      Out << "  ";
+      Out << indentString;
       printType(Out, AI->getAllocatedType(), false, GetValueName(AI));
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
     } else if (I->getType() != Type::getVoidTy(F.getContext()) &&
                !isInlinableInst(*I)) {
-      Out << "  ";
+      Out << indentString;
       printType(Out, I->getType(), false, GetValueName(&*I));
       Out << ";\n";
 
       if (isa<PHINode>(*I)) {  // Print out PHI node temporaries as well...
-        Out << "  ";
+        Out << indentString;
         printType(Out, I->getType(), false,
                   GetValueName(&*I)+"__PHI_TEMPORARY");
         Out << ";\n";
@@ -2477,6 +2490,7 @@ void CWriter::printFunction(Function &F) {
   }
 
   Out << "}\n\n";
+  updateIndent(-1);
 }
 
 void CWriter::printLoop(Loop *L) {
@@ -2490,6 +2504,7 @@ void CWriter::printLoop(Loop *L) {
       case STARTLOOP : 
         if(BBLoop == L){
           printBasicBlockLoop(BB);
+          updateIndent(1);
         }
         else {
           printLoop(BBLoop);
@@ -2510,7 +2525,8 @@ void CWriter::printLoop(Loop *L) {
     }
     
   }
-  Out << " }  /* end of printLoop */ \n";
+  updateIndent(-1);
+  Out << indentString << "}  /* end of printLoop */ \n";
 }
 
 void CWriter::printLoopInst(BasicBlock *BB){
@@ -2518,10 +2534,12 @@ void CWriter::printLoopInst(BasicBlock *BB){
   visit(II);
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
-          !isInlineAsm(*II))
+          !isInlineAsm(*II)){
+        Out << indentString;
         outputLValue(II);
+      }
       else
-        Out << "  ";
+        Out << indentString;
       writeInstComputationInline(*II);
       Out << ";\n";
     }
@@ -2530,39 +2548,56 @@ void CWriter::printLoopInst(BasicBlock *BB){
 void CWriter::printBasicBlockLoop(BasicBlock *BB){
   int x = 0;
   int BBSize = BB->size();
-  Out << "/* BasicBlock Size: " << BBSize << "*/ \n";
+  Out << indentString << "/* BasicBlock Size: " << BBSize << "*/ \n";
   Instruction *I = dynamic_cast<Instruction *>(BB->getTerminator());
   BranchInst* BI = static_cast<BranchInst *>(I);
   bool IsConditional = BI->isConditional();
   bool InLoop = false;
+
   if(IsConditional){
     if(BBSize < 2) {
-      Out << " while(";
+      Out << indentString << "while(";
       writeOperand(BI->getCondition());
       Out << ") { \n";
     }
     else {
       InLoop = true;
-      Out << " for(";
+      Out << indentString << "for(";
     }
   }
   else {
     int tc = G->returnType(BB);
     if (tc == STARTLOOP){
-      Out << " while(1) {\n";
+      Out << indentString << "while(1) {\n";
     }
   }
   BasicBlock::iterator II = BB->begin(), E = --BB->end();
   while (II != E) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
-      if ( InLoop && x == 1 && BBSize > 3 )
+      if ( InLoop && x == 1 && BBSize > 3 ) 
         Out << ", ";
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
          !isInlineAsm(*II))
+        if(!InLoop){
+          updateIndent(1);
+          Out << indentString;
+          outputLValue(II);
+          updateIndent(-1);
+        }
+      //} 
+      else{
+        //updateIndent(1);
+        //Out << indentString;
         outputLValue(II);
-      else
-        Out << " ";
+        //updateIndent(-1);
+      }
+      else{
+        updateIndent(1);
+        Out << indentString;
+        updateIndent(-1);
+      }
       writeInstComputationInline(*II);
+      
       if(!InLoop)
         Out << ";\n";
       else if(x == 0 && BBSize <= 3) 
@@ -2623,7 +2658,7 @@ void CWriter::visitBasicBlockByType(BasicBlock *BB){
         break;
       case ENDLOOP :
         printBasicBlock(BB);
-        Out << "  } \n";
+        Out << indentString << "} \n";
         break;
       default :
         printBasicBlock(BB);
@@ -2689,15 +2724,16 @@ void CWriter::printBasicBlockNoVisit(BasicBlock *BB) {
        ++II) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
-          !isInlineAsm(*II))
+          !isInlineAsm(*II)){
+        Out << indentString;
         outputLValue(II);
+      }
       else
-        Out << "  ";
-      writeInstComputationInline(*II);
-      Out << ";\n";
+        Out << indentString;
+        writeInstComputationInline(*II);
+        Out << ";\n";
     }
   }
-
 }
 
 void CWriter::printBasicBlock(BasicBlock *BB) {
@@ -2730,10 +2766,12 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
        ++II) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
-          !isInlineAsm(*II))
-        outputLValue(II);
+          !isInlineAsm(*II)){
+          Out << indentString;
+          outputLValue(II);
+      }
       else
-        Out << "  ";
+        Out << indentString;
       writeInstComputationInline(*II);
       Out << ";\n";
     }
@@ -2753,7 +2791,7 @@ void CWriter::visitReturnInst(ReturnInst &I) {
   bool isStructReturn = I.getParent()->getParent()->hasStructRetAttr();
 
   if (isStructReturn) {
-    Out << "  return StructReturn;\n";
+    Out << indentString << "return StructReturn;\n";
     return;
   }
 
@@ -2764,7 +2802,7 @@ void CWriter::visitReturnInst(ReturnInst &I) {
     return;
   }
 
-  Out << "  return";
+  Out << indentString << "return";
   if (I.getNumOperands()) {
     Out << ' ';
     writeOperand(I.getOperand(0));
@@ -2777,40 +2815,44 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
 
   Value* Cond = SI.getCondition();
 
-  Out << "  switch (";
+  Out << indentString << "switch (";
   writeOperand(Cond);
-  Out << ") {\n  default:\n  ";
+  updateIndent(1);
+  Out << ") {\n" << indentString << "default:\n";
   printBasicBlock(SI.getDefaultDest());
   addToGoToSet(SI.getDefaultDest());
-  Out << "  break;\n";
+  Out << indentString << "break;\n";
+  updateIndent(-1);
   // we already visited; need to check if block is still needed
 
   // Skip the first item since that's the default case.
   for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
     ConstantInt* CaseVal = i.getCaseValue();
     BasicBlock* Succ = i.getCaseSuccessor();
-    Out << "  case ";
+    Out << indentString << "case ";
     writeOperand(CaseVal);
-    Out << ":\n  ";
+    Out << ":\n";
+    updateIndent(1);
     printBasicBlock(Succ);
     addToGoToSet(Succ);
-    Out << "  break;\n";
+    Out << indentString << "break;\n";
+    updateIndent(-1);
     // we already visited; need to check if block is still needed
 
   }
 
-  Out << "  }\n";
+  Out << indentString << "}\n";
   InSwitch = false;
 }
 
 void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
-  Out << "  goto *(void*)(";
+  Out << indentString << "goto *(void*)(";
   writeOperand(IBI.getOperand(0));
   Out << ");\n";
 }
 
 void CWriter::visitUnreachableInst(UnreachableInst &I) {
-  Out << "  /*UNREACHABLE*/;\n";
+  Out << indentString << "/*UNREACHABLE*/;\n";
 }
 
 
@@ -2843,7 +2885,7 @@ void CWriter::printPHICopiesForSuccessor (BasicBlock *CurBlock,
     Value *IV = PN->getIncomingValueForBlock(CurBlock);
     if (!isa<UndefValue>(IV)) {
       Out << std::string(Indent, ' ');
-      Out << "  " << GetValueName(I) << "__PHI_TEMPORARY = ";
+      Out << indentString << GetValueName(I) << "__PHI_TEMPORARY = ";
       writeOperand(IV);
       Out << ";   /* for PHI node */\n";
     }
@@ -2897,10 +2939,11 @@ void CWriter::visitBranchInst(BranchInst &I){
       if(getNumSuccessors(I.getParent()) > 1 && type == IF)
         loadElseIfVec(I.getParent());
       if(type == ELSEIF)
-        Out << "  else if ( ";
+        Out << indentString << "else if ( ";
       if(type == IF || type == UNKNOWN)
-        Out << "  if ( ";
+        Out << indentString << "if ( ";
 
+      updateIndent(1);
       writeOperand(I.getCondition());
       Out << " ) { \n";
       // If there is a critical edge, bypass it and print the succeeding block.
@@ -2920,10 +2963,12 @@ void CWriter::visitBranchInst(BranchInst &I){
         printBasicBlock(I.getSuccessor(0));
         addToGoToSet(I.getSuccessor(0));
       }
-      Out << "  }\n";
+      updateIndent(-1);
+      Out << indentString << "}\n";
       type = G->returnType(I.getSuccessor(1));
       if(type != UNKNOWN) return;
-      Out << "  else { \n";
+      Out << indentString << "else { \n";
+      updateIndent(1);
       // If there is a critical edge, bypass it and print the succeeding block.
       if(isCriticalEdge(I.getSuccessor(1))) {
         succ = *succ_begin(I.getSuccessor(1));
@@ -2941,7 +2986,8 @@ void CWriter::visitBranchInst(BranchInst &I){
         printBasicBlock(I.getSuccessor(1));
         addToGoToSet(I.getSuccessor(1));
       }
-      Out << "  }\n";
+      updateIndent(-1);
+      Out << indentString << "}\n";
   }
 }
 
