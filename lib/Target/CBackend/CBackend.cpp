@@ -242,6 +242,7 @@ namespace {
     /// intrinsics which need to be explicitly defined in the CBackend.
     void printIntrinsicDefinition(const Function &F, raw_ostream &Out);
     void loadBBVec(Module &M);
+    bool needsBreak(BasicBlock *BB);
     void printModuleTypes();
     void printContainedStructs(Type *Ty, SmallPtrSet<Type *, 16> &);
     void printFloatingPointConstants(Function &F);
@@ -1476,6 +1477,14 @@ int getNumSuccessors(BasicBlock *BB) {
   for(succ_iterator SI = succ_begin(BB); SI != succ_end(BB); ++SI)
     succCount++;
   return succCount;
+}
+
+bool CWriter::needsBreak(BasicBlock *BB) {
+  for(BasicBlock::iterator I = BB->begin(), E = --BB->end(); I != E; ++I)
+      if (I->getType() == Type::getInt1Ty(I->getContext()) &&
+      !isa<ICmpInst>(I) && !isa<FCmpInst>(I))
+        return true;
+  return false;
 }
 
 // isCriticalEdge() iterates through an initially loaded module that does not contain critical edge blocks
@@ -2954,10 +2963,14 @@ void CWriter::visitBranchInst(BranchInst &I){
       }
       // If the succeeding block size is 1, usually it is a branch to a return and
       // we want to print it.
-      else if(I.getSuccessor(0)->size() == 1 && getNumSuccessors(I.getSuccessor(0)) > 0) {
+      else if(I.getSuccessor(0)->size() <= 2 && getNumSuccessors(I.getSuccessor(0)) > 0
+              && getNumSuccessors(*succ_begin(I.getSuccessor(0))) == 0) {
         succ = *succ_begin(I.getSuccessor(0));
-        printBasicBlock(succ);
-        addToGoToSet(succ);
+        if(getNumSuccessors(succ) == 0) {
+          printBasicBlock(I.getSuccessor(0));
+          printBasicBlock(succ);
+          addToGoToSet(succ);
+        }
       }
       else {
         printBasicBlock(I.getSuccessor(0));
@@ -2977,15 +2990,22 @@ void CWriter::visitBranchInst(BranchInst &I){
       }
       // If the succeeding block size is 1, usually it is a branch to a return and
       // we want to print it.
-      else if(I.getSuccessor(1)->size() == 1 && getNumSuccessors(I.getSuccessor(1)) > 0) {
+      else if(I.getSuccessor(1)->size() <= 2 && getNumSuccessors(I.getSuccessor(1)) > 0
+              && getNumSuccessors(*succ_begin(I.getSuccessor(1))) == 0) {
         succ = *succ_begin(I.getSuccessor(1));
-        printBasicBlock(succ);
-        addToGoToSet(succ);
+        if(getNumSuccessors(succ) == 0) {
+          printBasicBlock(I.getSuccessor(1));
+          printBasicBlock(succ);
+          addToGoToSet(succ);
+        }
       }
       else {
         printBasicBlock(I.getSuccessor(1));
         addToGoToSet(I.getSuccessor(1));
+        
       }
+      if(needsBreak(I.getParent()))
+        Out << indentString << "break;\n";
       updateIndent(-1);
       Out << indentString << "}\n";
   }

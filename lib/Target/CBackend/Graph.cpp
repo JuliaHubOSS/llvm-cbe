@@ -250,23 +250,26 @@ void Graph::DFS2_visit(DFSNode * DFS) {
    BranchMap[BI->getCondition()] = DFS->Bb;
    if (TypeStack.empty())
     DFS->T = IF;
-   else if (TypeStack.top() == ENDIF /*&& (Time == DFS->DTime -1)*/)
-    DFS->T = ELSEIF;
-   else if (TypeStack.top() == ELSEIF)
-    DFS->T = ELSEIF;
    else if (TypeStack.top() != ENDIF)
     DFS->T = IF;
-   else if(TypeStack.top() == ENDIF && (Time != DFS->DTime -1))
+   //else if (TypeStack.top() == ENDIF && Time == DFS->DTime - 2)
+   // DFS->T = ELSEIF;
+   else if (DFS->Bb->getName().substr(0,7) == "if.else")
+     DFS->T = ELSEIF;
+   //else if (TypeStack.top() == ELSEIF)
+   // DFS->T = ELSEIF;
+
+   else if(TypeStack.top() == ENDIF && (Time != DFS->DTime - 1))
     DFS->T = IF;
    else
     DEBUG (errs() << "\n\n\n\n\n\n\nError at: " << " Top = " << TypeStack.top() << " Time = " << Time << " DTime = " << DFS->DTime << "\n\n\n\n\n\n\n\n\n");
    }
    else {
-    DEBUG (errs() << "Bb: " <<DFS->Bb << " is not conditiona\n");
+    DEBUG (errs() << "Bb: " <<DFS->Bb << " is not conditional\n");
    }
  }
  if (DFS->T != UNKNOWN){
-  Time = DFS->T;
+  Time = DFS->DTime;
   TypeStack.push(DFS->T);
   DEBUG (errs() << "Stack: " << TypeStack.top() <<'\n');
  }
