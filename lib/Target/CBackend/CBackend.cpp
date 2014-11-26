@@ -113,9 +113,11 @@ namespace {
     BasicBlock *Next;
     bool globUnaligned = true;
     bool alreadyPrinted = false;
+    bool hasPHI = false;
     BasicBlock *tempBlock, *elseIfBlock;
     std::vector<BasicBlock *> InitBBVec;
     std::vector<BasicBlock *> ElseIfVec;
+    std::vector<BasicBlock *> PHIVec;
     std::map<const ConstantFP *, unsigned> FPConstantMap;
     std::set<Function*> IntrinsicPrototypesAlreadyGenerated;
     std::set<const Argument*> ByValParams;
@@ -229,6 +231,7 @@ namespace {
     void writeOperandWithCast(Value* Operand, const ICmpInst &I);
     bool writeInstructionCast(const Instruction &I);
     bool isCriticalEdge(BasicBlock *BB);
+    bool containsPHI(BasicBlock *BB);
     void loadElseIfVec(BasicBlock *BB);
 
     void writeMemoryAccess(Value *Operand, Type *OperandType,
@@ -242,6 +245,7 @@ namespace {
     /// intrinsics which need to be explicitly defined in the CBackend.
     void printIntrinsicDefinition(const Function &F, raw_ostream &Out);
     void loadBBVec(Module &M);
+    void loadPHIVec(Module &M);
     bool needsBreak(BasicBlock *BB);
     void printModuleTypes();
     void printContainedStructs(Type *Ty, SmallPtrSet<Type *, 16> &);
@@ -1487,11 +1491,12 @@ bool CWriter::needsBreak(BasicBlock *BB) {
   return false;
 }
 
-// isCriticalEdge() iterates through an initially loaded module that does not contain critical edge blocks
-// and checks the blocks against the passed basic block. It marks the predecessor of the passed basic block
-// and then checks if the block exists in the initial module, such case returning false. Then, the function
-// checks to see if any of the predecessors of the markedPredecessor match the successors of the critical
-// edge. This is a special case, and the critical edge should not be bypassed. 
+// isCriticalEdge() iterates through all basic blocks in the module before the optimization passes happen,
+// thus not containing any critical edge blocks so that we can compare the passed basic block against the
+// vector. It marks the predecessor of the passed basic block and then checks if the block exists in the
+// initial module, such case returning false. Then, the function checks to see if any of the predecessors
+// of the markedPredecessor match the successors of the critical edge. This is a special case, and the
+// critical edge should not be bypassed. 
 bool CWriter::isCriticalEdge(BasicBlock *BB) {
   BasicBlock *markedPredecessor;
   for(std::vector<BasicBlock *>::iterator I = InitBBVec.begin(); I != InitBBVec.end(); ++I) {
@@ -1506,6 +1511,16 @@ bool CWriter::isCriticalEdge(BasicBlock *BB) {
       if(*SI == *PI)
         return false;
   return true;
+}
+
+// containsPHI() iterates through the PHIVec which contains basic blocks that initially had
+// PHI nodes before the optimization passes happen. If a block had a PHI node, we want
+// to change the loop structure to resemble the IR block structure.
+bool CWriter::containsPHI(BasicBlock *BB) {
+  for(std::vector<BasicBlock *>::iterator I = PHIVec.begin(); I != PHIVec.end(); ++I)
+    if(*I == BB)
+      return true;
+  return false;
 }
 
 // Write the operand with a cast to another type based on the Opcode being used.
@@ -1804,6 +1819,15 @@ void CWriter::loadBBVec(Module &M) {
       InitBBVec.push_back(I);
   }
 }
+
+void CWriter::loadPHIVec(Module &M) {
+  for (iplist<Function>::iterator Func = M.getFunctionList().begin(); Func != M.getFunctionList().end(); ++Func)
+    for (iplist<BasicBlock>::iterator BB = Func->getBasicBlockList().begin(); BB != Func->getBasicBlockList().end(); ++BB)
+      for(BasicBlock::iterator I = BB->begin(); I != BB->end(); ++I)
+        if(isa<PHINode>(*I))
+          PHIVec.push_back(BB);
+}
+  
 bool CWriter::doInitialization(Module &M) {
   FunctionPass::doInitialization(M);
 
@@ -1814,6 +1838,7 @@ bool CWriter::doInitialization(Module &M) {
   IL = new IntrinsicLowering(*TD);
   IL->AddPrototypes(M);
   loadBBVec(M);
+  loadPHIVec(M);
   G = new Graph(&M);
   G->makeGraph();
 #ifdef DEBUG
@@ -2522,7 +2547,7 @@ void CWriter::printLoop(Loop *L) {
       case ENDLOOP :
         printBasicBlock(BB);
         break;
-      case IF : {         
+      case IF : {
         Instruction *I = dynamic_cast<Instruction *>(BB->getTerminator());
         BranchInst *BI = static_cast<BranchInst *>(I);
         visitBranchInst(*BI);
@@ -2558,11 +2583,13 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   int x = 0;
   int BBSize = BB->size();
   Out << indentString << "/* BasicBlock Size: " << BBSize << "*/ \n";
+  DEBUG(Out << *BB);
   Instruction *I = dynamic_cast<Instruction *>(BB->getTerminator());
   BranchInst* BI = static_cast<BranchInst *>(I);
   bool IsConditional = BI->isConditional();
   bool InLoop = false;
-
+  hasPHI = BBSize > 3 && IsConditional;
+  
   if(IsConditional){
     if(BBSize < 2) {
       Out << indentString << "while(";
@@ -2583,28 +2610,25 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   BasicBlock::iterator II = BB->begin(), E = --BB->end();
   while (II != E) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
-      if ( InLoop && x == 1 && BBSize > 3 ) 
-        Out << ", ";
+      //if ( InLoop && x != 1 && BBSize > 3 ) 
+       // Out << ", ";
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
-         !isInlineAsm(*II))
+         !isInlineAsm(*II)) {
         if(!InLoop){
           updateIndent(1);
           Out << indentString;
           outputLValue(II);
           updateIndent(-1);
         }
-      //} 
-      else{
-        //updateIndent(1);
-        //Out << indentString;
-        outputLValue(II);
-        //updateIndent(-1);
+        else if(x != 1)
+            outputLValue(II);
       }
       else{
         updateIndent(1);
         Out << indentString;
         updateIndent(-1);
       }
+      if(x != 1 || !IsConditional)
       writeInstComputationInline(*II);
       
       if(!InLoop)
@@ -2630,7 +2654,10 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
       }
       else if(x == 1 && BBSize > 3) {
         Out << "; ";
-        writeOperand(BI->getCondition());
+        if(containsPHI(BB))
+          Out << "1";
+        else 
+          writeOperand(BI->getCondition());
         Out << "; ";
         II = BB->begin();
       }
@@ -2649,6 +2676,16 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
     }
     x++;
   }  // end of for loop
+  if(containsPHI(BB)) {
+    updateIndent(1);
+    Out << indentString << "if(";
+    writeOperand(BI->getCondition());
+    Out << ")\n";
+    updateIndent(1);
+    Out << indentString << "break;\n";
+    updateIndent(-2);
+    
+  }
 }
 
 void CWriter::visitBasicBlockByType(BasicBlock *BB){
@@ -2727,7 +2764,7 @@ void CWriter::printBasicBlockNoVisit(BasicBlock *BB) {
       break;
     }
   //if (NeedsLabel) Out << GetValueName(BB) << ":\n";
-
+  DEBUG (Out << "\n\n" << *BB << "\n\n");
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
@@ -2749,6 +2786,7 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   //std::set<BasicBlock *>::iterator it = GotoSet.find(BB);
   //if(GotoSet.find(BB) == GotoSet.end()){}
   //else   return;
+  DEBUG (Out << "\n\n" << *BB << "\n\n");
   bool isElseIfBlock = false;
   if(!okayToPrint(BB))
     return;
@@ -2770,6 +2808,7 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
       NeedsLabel = true;
       break;
     }
+
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
@@ -2956,7 +2995,7 @@ void CWriter::visitBranchInst(BranchInst &I){
       writeOperand(I.getCondition());
       Out << " ) { \n";
       // If there is a critical edge, bypass it and print the succeeding block.
-      if(isCriticalEdge(I.getSuccessor(0))) {
+      if(isCriticalEdge(I.getSuccessor(0)) && I.getSuccessor(0)->size() == 1) {
         succ = *succ_begin(I.getSuccessor(0));
         printBasicBlock(succ);
         addToGoToSet(succ);
@@ -2983,7 +3022,7 @@ void CWriter::visitBranchInst(BranchInst &I){
       Out << indentString << "else { \n";
       updateIndent(1);
       // If there is a critical edge, bypass it and print the succeeding block.
-      if(isCriticalEdge(I.getSuccessor(1))) {
+      if(isCriticalEdge(I.getSuccessor(1)) && I.getSuccessor(1)->size() == 1) {
         succ = *succ_begin(I.getSuccessor(1));
         printBasicBlock(succ);
         addToGoToSet(succ);
@@ -3118,8 +3157,8 @@ void CWriter::visitICmpInst(ICmpInst &I) {
   writeOperandWithCast(I.getOperand(0), I);
 
   switch (I.getPredicate()) {
-  case ICmpInst::ICMP_EQ:  Out << " == "; break;
-  case ICmpInst::ICMP_NE:  Out << " != "; break;
+  case ICmpInst::ICMP_EQ: Out << " == "; break;
+  case ICmpInst::ICMP_NE: Out << " != "; break;
   case ICmpInst::ICMP_ULE:
   case ICmpInst::ICMP_SLE: Out << " <= "; break;
   case ICmpInst::ICMP_UGE:
