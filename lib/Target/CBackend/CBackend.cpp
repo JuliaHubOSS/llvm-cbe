@@ -113,7 +113,6 @@ namespace {
     BasicBlock *Next;
     bool globUnaligned = true;
     bool alreadyPrinted = false;
-    bool hasPHI = false;
     BasicBlock *tempBlock, *elseIfBlock;
     std::vector<BasicBlock *> InitBBVec;
     std::vector<BasicBlock *> ElseIfVec;
@@ -254,6 +253,7 @@ namespace {
     void printFunctionSignature(const Function *F, bool Prototype);
     bool okayToPrint(BasicBlock *BB);
     void printFunction(Function &);
+    void chooseBlockToPrint(BasicBlock *BB);
     void printBasicBlock(BasicBlock *BB);
     void printLoop(Loop *L);
     void printBasicBlockNoVisit(BasicBlock *BB);
@@ -2588,7 +2588,6 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   BranchInst* BI = static_cast<BranchInst *>(I);
   bool IsConditional = BI->isConditional();
   bool InLoop = false;
-  hasPHI = BBSize > 3 && IsConditional;
   
   if(IsConditional){
     if(BBSize < 2) {
@@ -2970,6 +2969,28 @@ void CWriter::loadElseIfVec(BasicBlock *BB) {
   loadElseIfVec(succBlock);
 }
 
+void CWriter::chooseBlockToPrint(BasicBlock *BB) {
+  BasicBlock *succ;
+  if(isCriticalEdge(BB) && BB->size() == 1) {
+        succ = *succ_begin(BB);
+        printBasicBlock(succ);
+        addToGoToSet(succ);
+  }
+  else if(BB->size() <= 2 && getNumSuccessors(BB) > 0
+          && getNumSuccessors(*succ_begin(BB)) == 0) {
+    succ = *succ_begin(BB);
+    if(getNumSuccessors(succ) == 0) {
+      printBasicBlock(BB);
+      printBasicBlock(succ);
+      addToGoToSet(succ);
+    }
+  }
+  else {
+    printBasicBlock(BB);
+    addToGoToSet(BB);
+  }
+}
+
 void CWriter::visitBranchInst(BranchInst &I){
 
   if(I.isConditional())
@@ -2983,7 +3004,6 @@ void CWriter::visitBranchInst(BranchInst &I){
       if(tempBlock != I.getParent() && !isElseIfBlock)
         printBasicBlockNoVisit(I.getParent());
       int type = G->returnType(I);
-      BasicBlock *succ;
       if(getNumSuccessors(I.getParent()) > 1 && type == IF)
         loadElseIfVec(I.getParent());
       if(type == ELSEIF)
@@ -2994,55 +3014,14 @@ void CWriter::visitBranchInst(BranchInst &I){
       updateIndent(1);
       writeOperand(I.getCondition());
       Out << " ) { \n";
-      // If there is a critical edge, bypass it and print the succeeding block.
-      if(isCriticalEdge(I.getSuccessor(0)) && I.getSuccessor(0)->size() == 1) {
-        succ = *succ_begin(I.getSuccessor(0));
-        printBasicBlock(succ);
-        addToGoToSet(succ);
-      }
-      // If the succeeding block size is 1, usually it is a branch to a return and
-      // we want to print it.
-      else if(I.getSuccessor(0)->size() <= 2 && getNumSuccessors(I.getSuccessor(0)) > 0
-              && getNumSuccessors(*succ_begin(I.getSuccessor(0))) == 0) {
-        succ = *succ_begin(I.getSuccessor(0));
-        if(getNumSuccessors(succ) == 0) {
-          printBasicBlock(I.getSuccessor(0));
-          printBasicBlock(succ);
-          addToGoToSet(succ);
-        }
-      }
-      else {
-        printBasicBlock(I.getSuccessor(0));
-        addToGoToSet(I.getSuccessor(0));
-      }
+      chooseBlockToPrint(I.getSuccessor(0));
       updateIndent(-1);
       Out << indentString << "}\n";
       type = G->returnType(I.getSuccessor(1));
       if(type != UNKNOWN) return;
       Out << indentString << "else { \n";
       updateIndent(1);
-      // If there is a critical edge, bypass it and print the succeeding block.
-      if(isCriticalEdge(I.getSuccessor(1)) && I.getSuccessor(1)->size() == 1) {
-        succ = *succ_begin(I.getSuccessor(1));
-        printBasicBlock(succ);
-        addToGoToSet(succ);
-      }
-      // If the succeeding block size is 1, usually it is a branch to a return and
-      // we want to print it.
-      else if(I.getSuccessor(1)->size() <= 2 && getNumSuccessors(I.getSuccessor(1)) > 0
-              && getNumSuccessors(*succ_begin(I.getSuccessor(1))) == 0) {
-        succ = *succ_begin(I.getSuccessor(1));
-        if(getNumSuccessors(succ) == 0) {
-          printBasicBlock(I.getSuccessor(1));
-          printBasicBlock(succ);
-          addToGoToSet(succ);
-        }
-      }
-      else {
-        printBasicBlock(I.getSuccessor(1));
-        addToGoToSet(I.getSuccessor(1));
-        
-      }
+      chooseBlockToPrint(I.getSuccessor(1));
       if(needsBreak(I.getParent()))
         Out << indentString << "break;\n";
       updateIndent(-1);
