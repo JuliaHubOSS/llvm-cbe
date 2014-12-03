@@ -1,38 +1,40 @@
 #!/usr/bin/python
 import os
+import re
 import subprocess
 
-def getFile(name):
-    (name, end) = name.split(".c", 1)
-    name = name + ".cbe"
-    return name
+def getList(fileExt):
+  fl = []
+  for name in os.listdir("."):
+    if re.search(fileExt, name):
+      fl.append(name)
+      fl.sort()
+  return fl
 
-def testFile(name):
-    if os.path.isfile(name):
-        return True
-    else:
-        print "%s does not exist" % (name)
-        return False     
-        
-def doSubprocess(name): 
-    res = subprocess.call(["./%s" % (name)])
-    if (res == 6 or res == 25):
-        print ("%s: Success" % name)
-    else:
-        print ("%s: %d, Fail" %  (name, res))
-        
-        
-def main():
-    file_names = []
-    for name in os.listdir("."):
-        if name.find(".cbe.c") != -1:
-            name = getFile(name)
-            file_names.append(name)
-    file_names.sort()
-    for names in file_names:
-        if testFile(names) == True:
-            doSubprocess(getFile(names))
-        
-if __name__ == "__main__":
-    main()
+def printResults(fileExt, fl):
+  for names in fl:
+    if os.path.isfile(names):
+      if (fileExt == ".ll"):
+        res = subprocess.call(["lli", names])
+      elif (fileExt == ".cbe"):
+        res = subprocess.call(["./%s" % (names)])
     
+      if (res == 6 or res == 25):
+        print ("%s:\tSuccess [%d]" % (names, res))
+      else:
+        print ("%s:\tFailure [%d]<<<<----" % (names, res))
+
+def main():
+  file_list = []
+  llIR = ".ll"
+  cbe = ".cbe"
+  irRegex = ".ll$"
+  cbeRegex = ".cbe$"  
+
+  file_list = getList(irRegex)
+  printResults(llIR, file_list)
+  file_list = getList(cbeRegex)
+  printResults(cbe, file_list)
+
+if __name__ == "__main__":
+  main()
