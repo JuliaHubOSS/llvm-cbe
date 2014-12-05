@@ -2588,6 +2588,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   BranchInst* BI = static_cast<BranchInst *>(I);
   bool IsConditional = BI->isConditional();
   bool InLoop = false;
+  bool condPrinted = false;
   
   if(IsConditional){
     if(BBSize < 2) {
@@ -2619,7 +2620,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
           outputLValue(II);
           updateIndent(-1);
         }
-        else if(x != 1)
+        else if(x == 0 || condPrinted)
             outputLValue(II);
       }
       else{
@@ -2627,7 +2628,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
         Out << indentString;
         updateIndent(-1);
       }
-      if(x != 1 || !IsConditional)
+      if(x == 0 || !IsConditional || condPrinted)
       writeInstComputationInline(*II);
       
       if(!InLoop)
@@ -2640,6 +2641,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
         writeOperand(BI->getCondition());
         Out << " ; ";
         II = BB->begin();
+        condPrinted = true;
       }
       else if(x == 1 && BBSize <= 3) {
         // end of for loop
@@ -2655,8 +2657,10 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
         Out << "; ";
         if(containsPHI(BB))
           Out << "1";
-        else 
+        else {
           writeOperand(BI->getCondition());
+          condPrinted = true;
+        }
         Out << "; ";
         II = BB->begin();
       }
