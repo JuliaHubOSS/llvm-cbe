@@ -2620,7 +2620,7 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
           outputLValue(II);
           updateIndent(-1);
         }
-        else if(x == 0 || condPrinted)
+        else if(x == 0 || condPrinted )
             outputLValue(II);
       }
       else{
@@ -2657,10 +2657,9 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
         Out << "; ";
         if(containsPHI(BB))
           Out << "1";
-        else {
+        else
           writeOperand(BI->getCondition());
-          condPrinted = true;
-        }
+        condPrinted = true;
         Out << "; ";
         II = BB->begin();
       }
