@@ -18,8 +18,9 @@ FILES = testbad test001 test002 test003 test004 test005 test006 test007 test008 
 
 LLFILES = $(shell find . -name "*.ll")
 
-all: clean tollvm tocbe buildcbe
+all: clean cexec tollvm tocbe buildcbe
 
+run-c: clean cexec 
 optO0: clean tollvmO0 tocbe buildcbeO0
 optO1: clean tollvmO1 tocbe buildcbeO1
 optO2: clean tollvmO2 tocbe buildcbeO2
@@ -48,6 +49,12 @@ buildcbe:
                $(CC) $$name"_O2.cbe.c" -o $$name"_O2.cbe";\
                $(CC) $$name"_O3.cbe.c" -o $$name"_O3.cbe";\
 	done 
+
+#Make C-Based Executables
+cexec: 
+	for name in $(FILES); do\
+		gcc -o $$name".cexe" $$name".c";\
+	done
 
 #Make only non-optimized LLVM IR
 tollvmO0: 
@@ -97,6 +104,7 @@ buildcbeO3:
 clean:
 	rm -rf *.ll 
 	rm -rf *.cbe
+	rm -rf *.cexe
 	rm -rf *.cbe.c
 
 #Attempt to Automatically find '.c' input files, works every other run
