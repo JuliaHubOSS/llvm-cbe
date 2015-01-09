@@ -2610,8 +2610,8 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
   BasicBlock::iterator II = BB->begin(), E = --BB->end();
   while (II != E) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
-      //if ( InLoop && x != 1 && BBSize > 3 ) 
-       // Out << ", ";
+      if ( InLoop && /*x != 1 &&*/ x == 1 && BBSize > 3 && !containsPHI(BB)) 
+        Out << ", ";
       if (II->getType() != Type::getVoidTy(BB->getContext()) &&
          !isInlineAsm(*II)) {
         if(!InLoop){
@@ -2620,15 +2620,17 @@ void CWriter::printBasicBlockLoop(BasicBlock *BB){
           outputLValue(II);
           updateIndent(-1);
         }
-        else if(x == 0 || condPrinted )
+        else if(x == 0 || condPrinted || !containsPHI(BB)) {
             outputLValue(II);
+            
+        }
       }
       else{
         updateIndent(1);
         Out << indentString;
         updateIndent(-1);
       }
-      if(x == 0 || !IsConditional || condPrinted)
+      if(x == 0 || !IsConditional || condPrinted || !containsPHI(BB))
       writeInstComputationInline(*II);
       
       if(!InLoop)
