@@ -14,7 +14,7 @@
 int addby2 ( int x );
 
 int main( ){
-    int m, n ;
+    int n ;
     n = addby2 ( 4 ) ;
     return n;
 }

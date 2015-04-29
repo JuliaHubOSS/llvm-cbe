@@ -16,7 +16,7 @@ static int eight = 8;
 static int two = 2;
 
 int main( ){
-    int m, n ;
+    int n ;
     n = subtrby2 ( eight ) ;
     return n;
 }

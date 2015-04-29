@@ -22,7 +22,7 @@ int fibonaci(int i){
 }
 
 int  main(){
-    int i, returnval;
+    int returnval;
     returnval = fibonaci(6) - 2;
 
     return returnval;

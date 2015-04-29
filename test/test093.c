@@ -23,7 +23,7 @@ struct layer2{
 }layer2_data;
 
 int main(){
-   struct layer2 layer2_data = {1, "test", 6, "test2"};
+   struct layer2 layer2_data = {1, "test", {6, "test2"}};
 
    return layer2_data.layer_data.depth1;
 }

@@ -15,7 +15,6 @@
 unsigned int fastfib(unsigned int n);
 
 int main(){
-    unsigned int n = 0;
     return fastfib(6) - 2;
 }
 

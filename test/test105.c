@@ -16,7 +16,7 @@ int head(int n){
   if(n == 6)
     return n;
   else
-    head(n+1);
+    return head(n+1);
 }
 
 int main(){
