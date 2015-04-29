@@ -3,11 +3,12 @@
 #
 # Relative path to the top of the source tree.
 #
-LEVEL=..
+LEVEL := ../../..
+include $(LEVEL)/Makefile.config
 
 #
 # List all of the subdirectories that we will compile.
 #
-DIRS=llvm-cbe
+DIRS := llvm-cbe
 
-include $(LEVEL)/Makefile.common
+include $(PROJ_SRC_ROOT)/Makefile.rules

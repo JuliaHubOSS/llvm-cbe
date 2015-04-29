@@ -6,10 +6,9 @@
 # License. See LICENSE.TXT for details.
 #
 ##===----------------------------------------------------------------------===##
-LEVEL = ../../../..
-LIBRARYNAME = LLVMCBackendInfo
+LEVEL := ../../../../../../
+include $(LEVEL)/Makefile.config
 
-# Hack: we need to include 'main' target directory to grab private headers
-CPPFLAGS = -I$(PROJ_OBJ_DIR)/.. -I$(PROJ_SRC_DIR)/..
+LIBRARYNAME := LLVMCBackendInfo
 
-include $(LEVEL)/Makefile.common
+include $(PROJ_SRC_ROOT)/Makefile.rules

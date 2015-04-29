@@ -3,23 +3,19 @@
 #
 # Indicate where we are relative to the top of the source tree.
 #
-LEVEL=../..
+LEVEL := ../../../..
+include $(LEVEL)/Makefile.config
 
 #
 # Give the name of the tool.
 #
-TOOLNAME=llvm-cbe
+TOOLNAME := llvm-cbe
 
 #
 # List libraries that we'll need
 # We use LIBS because sample is a dynamic library.
 #
-USEDLIBS = LLVMCBackendCodeGen.a LLVMCBackendInfo.a
-LINK_COMPONENTS = all-targets bitreader asmparser irreader
+USEDLIBS := LLVMCBackendCodeGen.a LLVMCBackendInfo.a
+LINK_COMPONENTS := all-targets bitreader asmparser irreader
 
-
-#
-# Include Makefile.common so we know what to do.
-#
-include $(LEVEL)/Makefile.common
-
+include $(PROJ_SRC_ROOT)/Makefile.rules

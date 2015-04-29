@@ -3,15 +3,12 @@
 #
 # Indicate where we are relative to the top of the source tree.
 #
-LEVEL=../..
+LEVEL = ../../../..
+include $(LEVEL)/Makefile.config
 
 #
-# Give the name of a library.  This will build a dynamic version.
+# List all of the subdirectories that we will compile.
 #
-LIBRARYNAME = LLVMExtTarget
 PARALLEL_DIRS = CBackend
 
-#
-# Include Makefile.common so we know what to do.
-#
-include $(LEVEL)/Makefile.common
+include $(PROJ_SRC_ROOT)/Makefile.rules

@@ -7,10 +7,11 @@
 #
 ##===----------------------------------------------------------------------===##
 
-LEVEL = ../../..
-LIBRARYNAME = LLVMCBackendCodeGen
-DIRS = TargetInfo
+LEVEL := ../../../../..
+include $(LEVEL)/Makefile.config
 
-include $(LEVEL)/Makefile.common
-
+LIBRARYNAME := LLVMCBackendCodeGen
+DIRS := TargetInfo
 CompileCommonOpts += -Wno-format
+
+include $(PROJ_SRC_ROOT)/Makefile.rules

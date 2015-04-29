@@ -1,18 +1,14 @@
-##===- projects/sample/Makefile ----------------------------*- Makefile -*-===##
-#
-# This is a sample Makefile for a project that uses LLVM.
-#
-##===----------------------------------------------------------------------===##
+##===- projects/sample/lib/Makefile ------------------------*- Makefile -*-===##
 
 #
-# Indicates our relative path to the top of the project's root directory.
+# Relative path to the top of the source tree.
 #
-LEVEL = .
-DIRS = lib tools
-EXTRA_DIST = include
+LEVEL := ../..
+include $(LEVEL)/Makefile.config
 
 #
-# Include the Master Makefile that knows how to build all.
+# List all of the subdirectories that we will compile.
 #
-include $(LEVEL)/Makefile.common
+DIRS := lib tools
 
+include $(PROJ_SRC_ROOT)/Makefile.rules
