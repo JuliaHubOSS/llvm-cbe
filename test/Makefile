@@ -15,12 +15,13 @@ LLVMToolDir ?= .
 
 PYTHON = python
 CC = gcc
-CPPFLAGS = -Wall -Werror
+CPPFLAGS = -Wall -Wno-unused-function -Wno-parentheses-equality -Wno-unused-variable -Wno-incompatible-library-redeclaration -Werror
 FILES := $(patsubst %.c,%,$(filter-out %.cbe.c,$(wildcard *.c)))
 
 all: cexec buildcbe
 
-.PHONY: clean cexec buildcbe buildcbe* tollvm tollvm* opt* run-c all
+.PHONY: clean cexec buildcbe buildcbe* tollvm tollvm* all
+.SECONDARY:
 
 #Make each level of Optimization in one call
 tollvm: tollvmO0 tollvmO1 tollvmO2 tollvmO3
@@ -67,7 +68,7 @@ cexec: $(addsuffix .cexe,$(FILES))
 	$(CC) $(CPPFLAGS) -o $@ $<
 
 test: all
-	LLVMToolDir=$(LLVMToolDir) $(PYTHON) runFile.py
+	LLVMToolDir=$(LLVMToolDir) $(PYTHON) testFile.py
 
 #Remove all .ll, .cbe.c, and .cbe files
 clean:
