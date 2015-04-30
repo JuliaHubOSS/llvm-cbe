@@ -97,7 +97,6 @@ namespace {
   class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     formatted_raw_ostream &Out;
     IntrinsicLowering *IL;
-    Mangler *Mang;
     LoopInfo *LI;
     const Module *TheModule;
     const MCAsmInfo* TAsm;
@@ -138,7 +137,7 @@ namespace {
   public:
     static char ID;
     explicit CWriter(formatted_raw_ostream &o)
-      : FunctionPass(ID), Out(o), IL(0), Mang(0), LI(0),
+      : FunctionPass(ID), Out(o), IL(0), LI(0),
         TheModule(0), TAsm(0), MRI(0), MOFI(0), TCtx(0), TD(0),
         OpaqueCounter(0), NextAnonValueNumber(0) {
       initializeLoopInfoPass(*PassRegistry::getPassRegistry());
@@ -179,7 +178,6 @@ namespace {
       // Free memory...
       delete IL;
       delete TD;
-      delete Mang;
       delete TCtx;
       delete TAsm;
       delete MRI;
@@ -1316,9 +1314,7 @@ std::string CWriter::GetValueName(const Value *Operand) {
 
   // Mangle globals with the standard mangler interface for LLC compatibility.
   if (const GlobalValue *GV = dyn_cast<GlobalValue>(Operand)) {
-    SmallString<128> Str;
-    Mang->getNameWithPrefix(Str, GV, false);
-    return CBEMangle(Str.str().str());
+    return CBEMangle(GV->getName());
   }
 
   std::string Name = Operand->getName();
@@ -1830,9 +1826,6 @@ bool CWriter::doInitialization(Module &M) {
   TAsm = new CBEMCAsmInfo();
   MRI  = new MCRegisterInfo();
   TCtx = new MCContext(TAsm, MRI, NULL);
-  // NOTE: TargetMachine is not used in the Prefix function, which is the only
-  // one the CBackend uses.
-  Mang = new Mangler(TD);
 
   // Keep track of which functions are static ctors/dtors so they can have
   // an attribute added to their prototypes.
