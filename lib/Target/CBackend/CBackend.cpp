@@ -64,8 +64,6 @@
 #include "Graph.h"
 //#include "PHINodePass.h"
 
-#include <tr1/unordered_map>
-
 //Jackson Korba 9/29/14
 #ifndef DEBUG_TYPE
 #define DEBUG_TYPE ""
@@ -78,7 +76,6 @@
 #endif
 using namespace llvm;
 
-std::tr1::unordered_map<int, std::string> VarNamesMap;
 bool PrintSigned = false;
 
 extern "C" void LLVMInitializeCBackendTarget() {
@@ -1325,40 +1322,11 @@ std::string CWriter::GetValueName(const Value *Operand) {
   }
 
   std::string Name = Operand->getName();
-  std::string Word;
-  size_t GlobalPos = 0;
-  std::string Expression;
   if (Name.empty()) { // Assign unique names to local temporaries.
-    raw_string_ostream S (Expression);
-    S << *Operand;
-
-    //Expression = Expression.erase (0, 3);
-
-    GlobalPos = Expression.find('@');
-
-    if (GlobalPos > Expression.length())
-      GlobalPos = Expression.find('%', 3);
-
-    ++GlobalPos;
-    for(; GlobalPos < Expression.length(); ++GlobalPos)
-    {
-      if(Expression.at(GlobalPos) == ',')
-        break;
-      else
-        Word += Expression.at(GlobalPos);
-    }
-    if (Word[0] >= '0' && Word[0] <= '9'){
-      int Num = (int) Word[0] - '0';
-      Num++;
-      Word = VarNamesMap[Num];
-    }
-
     unsigned &No = AnonValueNumbers[Operand];
-
     if (No == 0)
       No = ++NextAnonValueNumber;
-    VarNamesMap[No] = Word;
-    Name = Word + "_"+utostr(No);
+    Name = "r_"+utostr(No);
   }
   std::string VarName;
   VarName.reserve(Name.capacity());
