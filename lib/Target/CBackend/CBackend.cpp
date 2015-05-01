@@ -1272,13 +1272,7 @@ std::string CWriter::GetValueName(const Value *Operand) {
     Operand = GA->getAliasee();
   }
 
-  // Mangle globals with the standard mangler interface for LLC compatibility.
-  if (const GlobalValue *GV = dyn_cast<GlobalValue>(Operand)) {
-    return CBEMangle(GV->getName());
-  }
-
   std::string Name = Operand->getName();
-
   if (Name.empty()) { // Assign unique names to local temporaries.
     unsigned &No = AnonValueNumbers[Operand];
     if (No == 0)
@@ -1286,12 +1280,17 @@ std::string CWriter::GetValueName(const Value *Operand) {
     Name = "tmp__" + utostr(No);
   }
 
+  // Mangle globals with the standard mangler interface for LLC compatibility.
+  if (isa<GlobalValue>(Operand)) {
+    return CBEMangle(Name);
+  }
+
   std::string VarName;
   VarName.reserve(Name.capacity());
 
   for (std::string::iterator I = Name.begin(), E = Name.end();
        I != E; ++I) {
-    char ch = *I;
+    unsigned char ch = *I;
 
     if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
           (ch >= '0' && ch <= '9') || ch == '_')) {
@@ -1776,6 +1775,9 @@ bool CWriter::doInitialization(Module &M) {
     Out << "\n/* External Global Variable Declarations */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
+      if (!I->isDeclaration())
+        continue;
+
       if (I->hasDLLImportStorageClass())
         Out << "__declspec(dllimport) ";
       else if (I->hasDLLExportStorageClass())
@@ -1851,51 +1853,6 @@ bool CWriter::doInitialization(Module &M) {
       Out << " LLVM_ASM(\"" << I->getName().substr(1) << "\")";
 
     Out << ";\n";
-  }
-
-  // Output the global variable declarations
-  if (!M.global_empty()) {
-    Out << "\n\n/* Global Variable Declarations */\n";
-    for (Module::global_iterator I = M.global_begin(), E = M.global_end();
-         I != E; ++I)
-      if (!I->isDeclaration() && !I->hasLocalLinkage()) {
-        //FIXME: since we skip local linkage variables,
-        // there's a chance this variable will try to reference an later one
-        // in its static initializer
-
-        // Ignore special globals, such as debug info.
-        if (getGlobalVariableClass(I))
-          continue;
-
-        if (I->hasDLLImportStorageClass())
-          Out << "__declspec(dllimport) ";
-        else if (I->hasDLLExportStorageClass())
-          Out << "__declspec(dllexport) ";
-
-        if (I->hasLocalLinkage())
-          Out << "static ";
-        else
-          Out << "extern ";
-
-        // Thread Local Storage
-        if (I->isThreadLocal())
-          Out << "__thread ";
-
-        printType(Out, I->getType()->getElementType(), false,
-                  GetValueName(I));
-
-        if (I->hasLinkOnceLinkage())
-          Out << " __attribute__((common))";
-        else if (I->hasCommonLinkage())     // FIXME is this right?
-          Out << " __ATTRIBUTE_WEAK__";
-        else if (I->hasWeakLinkage())
-          Out << " __ATTRIBUTE_WEAK__";
-        else if (I->hasExternalWeakLinkage())
-          Out << " __EXTERNAL_WEAK__";
-        if (I->hasHiddenVisibility())
-          Out << " __HIDDEN__";
-        Out << ";\n";
-      }
   }
 
   // Output the global variable definitions and contents...
