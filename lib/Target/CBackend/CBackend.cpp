@@ -1819,6 +1819,23 @@ bool CWriter::doInitialization(Module &M) {
           break;
         case Intrinsic::uadd_with_overflow:
         case Intrinsic::sadd_with_overflow:
+//        case Intrinsic::usub_with_overflow:
+//        case Intrinsic::ssub_with_overflow:
+//        case Intrinsic::umul_with_overflow:
+//        case Intrinsic::smul_with_overflow:
+//        case Intrinsic::bswap:
+//        case Intrinsic::ceil:
+//        case Intrinsic::ctlz:
+//        case Intrinsic::ctpop:
+//        case Intrinsic::cttz:
+//        case Intrinsic::fabs:
+//        case Intrinsic::floor:
+//        case Intrinsic::fma:
+//        case Intrinsic::fmuladd:
+//        case Intrinsic::pow:
+//        case Intrinsic::rint:
+//        case Intrinsic::sqrt:
+//        case Intrinsic::trunc:
           intrinsicsToDefine.push_back(I);
           break;
       }
@@ -2854,7 +2871,6 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::setjmp:
           case Intrinsic::longjmp:
           case Intrinsic::prefetch:
-          case Intrinsic::powi:
           case Intrinsic::x86_sse_cmp_ss:
           case Intrinsic::x86_sse_cmp_ps:
           case Intrinsic::x86_sse2_cmp_sd:
@@ -2862,18 +2878,28 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::ppc_altivec_lvsl:
           case Intrinsic::uadd_with_overflow:
           case Intrinsic::sadd_with_overflow:
+          case Intrinsic::usub_with_overflow:
+          case Intrinsic::ssub_with_overflow:
+          case Intrinsic::umul_with_overflow:
+          case Intrinsic::smul_with_overflow:
+          case Intrinsic::bswap:
+          case Intrinsic::ceil:
+          case Intrinsic::ctlz:
+          case Intrinsic::ctpop:
+          case Intrinsic::cttz:
+          case Intrinsic::fabs:
+          case Intrinsic::floor:
+          case Intrinsic::fma:
+          case Intrinsic::fmuladd:
+          case Intrinsic::pow:
+          case Intrinsic::powi:
+          case Intrinsic::rint:
+          case Intrinsic::sqrt:
+          case Intrinsic::trap:
+          case Intrinsic::trunc:
               // We directly implement these intrinsics
             break;
           default:
-            // If this is an intrinsic that directly corresponds to a GCC
-            // builtin, we handle it.
-            const char *BuiltinName = "";
-#define GET_GCC_BUILTIN_NAME
-#include "llvm/IR/Intrinsics.gen"
-#undef GET_GCC_BUILTIN_NAME
-            // If we handle it, don't lower it.
-            if (BuiltinName[0]) break;
-
             // All other intrinsic calls we must lower.
             Instruction *Before = 0;
             if (CI != &BB->front())
@@ -3023,16 +3049,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID,
                                bool &WroteCallee) {
   switch (ID) {
   default: {
-    // If this is an intrinsic that directly corresponds to a GCC
-    // builtin, we emit it here.
-    const char *BuiltinName = "";
-#define GET_GCC_BUILTIN_NAME
-#include "llvm/IR/Intrinsics.gen"
-#undef GET_GCC_BUILTIN_NAME
-    assert(BuiltinName[0] && "Unknown LLVM intrinsic!");
-
-    Out << BuiltinName;
-    WroteCallee = true;
+    assert(0 && "Unknown LLVM intrinsic!");
     return false;
   }
   case Intrinsic::vastart:
@@ -3153,11 +3170,31 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID,
     return true;
   case Intrinsic::uadd_with_overflow:
   case Intrinsic::sadd_with_overflow:
+  case Intrinsic::usub_with_overflow:
+  case Intrinsic::ssub_with_overflow:
+  case Intrinsic::umul_with_overflow:
+  case Intrinsic::smul_with_overflow:
     Out << GetValueName(I.getCalledFunction()) << "(";
     writeOperand(I.getArgOperand(0));
     Out << ", ";
     writeOperand(I.getArgOperand(1));
     Out << ")";
+    return true;
+  case Intrinsic::bswap:
+  case Intrinsic::ceil:
+  case Intrinsic::ctlz:
+  case Intrinsic::ctpop:
+  case Intrinsic::cttz:
+  case Intrinsic::fabs:
+  case Intrinsic::floor:
+  case Intrinsic::fma:
+  case Intrinsic::fmuladd:
+  case Intrinsic::pow:
+  case Intrinsic::rint:
+  case Intrinsic::sqrt:
+  case Intrinsic::trap:
+  case Intrinsic::trunc: // TODO
+    Out << "(***NEED: " << GetValueName(I.getCalledFunction()) << "!***)";
     return true;
   }
 }
