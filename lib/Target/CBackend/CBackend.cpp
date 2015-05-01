@@ -947,19 +947,30 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
 
   if (ConstantInt *CI = dyn_cast<ConstantInt>(CPV)) {
     Type* Ty = CI->getType();
-    if (Ty == Type::getInt1Ty(CPV->getContext()))
+    if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
-    else if (Ty == Type::getInt32Ty(CPV->getContext()))
-      Out << CI->getZExtValue() << 'u';
-    else if (Ty->getPrimitiveSizeInBits() > 32)
-      Out << CI->getZExtValue() << "ull";
-    else {
+    } else if (Ty->getPrimitiveSizeInBits() < 32) {
       Out << "((";
       printSimpleType(Out, Ty, false) << ')';
       if (CI->isMinValue(true))
         Out << CI->getZExtValue() << 'u';
       else
         Out << CI->getSExtValue();
+      Out << ')';
+    }
+    else if (Ty == Type::getInt32Ty(CPV->getContext()))
+      Out << CI->getZExtValue() << 'u';
+    else if (Ty->getPrimitiveSizeInBits() <= 64)
+      Out << CI->getZExtValue() << "ull";
+    else if (Ty->getPrimitiveSizeInBits() <= 128) {
+      const APInt &V = CI->getValue();
+      const APInt &Vlo = V.getLoBits(64);
+      const APInt &Vhi = V.getHiBits(64);
+      Out << '(';
+      if (Vhi != 0) {
+          Out << "(((uint128_t)" << Vhi.getZExtValue() << "ull) << 64) | ";
+      }
+      Out << "(uint128_t)" << Vlo.getZExtValue() << "ull";
       Out << ')';
     }
     return;
@@ -1299,32 +1310,25 @@ std::string CWriter::GetValueName(const Value *Operand) {
 void CWriter::writeInstComputationInline(Instruction &I) {
   // We can't currently support integer types other than 1, 8, 16, 32, 64.
   // Validate this.
+  unsigned mask = 0;
   Type *Ty = I.getType();
-  if (Ty->isIntegerTy() && (Ty!=Type::getInt1Ty(I.getContext()) &&
-        Ty!=Type::getInt8Ty(I.getContext()) &&
-        Ty!=Type::getInt16Ty(I.getContext()) &&
-        Ty!=Type::getInt32Ty(I.getContext()) &&
-        Ty!=Type::getInt64Ty(I.getContext()))) {
-      report_fatal_error("The C backend does not currently support integer "
-                        "types of widths other than 1, 8, 16, 32, 64.\n"
-                        "This is being tracked as PR 4158.");
+  if (Ty->isIntegerTy()) {
+     IntegerType *ITy = static_cast<IntegerType*>(Ty);
+     if (!ITy->isPowerOf2ByteWidth())
+       mask = ITy->getBitMask();
   }
 
   // If this is a non-trivial bool computation, make sure to truncate down to
   // a 1 bit value.  This is important because we want "add i1 x, y" to return
   // "0" when x and y are true, not "2" for example.
-  bool NeedBoolTrunc = false;
-  if (I.getType() == Type::getInt1Ty(I.getContext()) &&
-      !isa<ICmpInst>(I) && !isa<FCmpInst>(I))
-    NeedBoolTrunc = true;
-
-  if (NeedBoolTrunc)
+  // Also truncate odd bit sizes
+  if (mask)
     Out << "((";
 
   visit(I);
 
-  if (NeedBoolTrunc)
-    Out << ")&1)";
+  if (mask)
+    Out << ")&" << mask << ")";
 }
 
 
