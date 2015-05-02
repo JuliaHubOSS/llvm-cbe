@@ -3638,7 +3638,7 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
          i != e; ++i) {
       Type *IndexedTy =
         ExtractValueInst::getIndexedType(EVI.getOperand(0)->getType(),
-                                         makeArrayRef(b, i+1));
+                                         makeArrayRef(b, i));
       if (IndexedTy->isArrayTy())
         Out << ".array[" << *i << "]";
       else
