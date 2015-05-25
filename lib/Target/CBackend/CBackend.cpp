@@ -3336,27 +3336,35 @@ void CWriter::visitExtractElementInst(ExtractElementInst &I) {
   Out << "]";
 }
 
+// <result> = shufflevector <n x <ty>> <v1>, <n x <ty>> <v2>, <m x i32> <mask>
+// ; yields <m x <ty>>
 void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   Out << "(";
   printTypeName(Out, SVI.getType());
   Out << "){ ";
   VectorType *VT = SVI.getType();
   unsigned NumElts = VT->getNumElements();
+  VectorType *InputVT = cast<VectorType>(SVI.getOperand(0)->getType());
+  unsigned NumInputElts = InputVT->getNumElements(); // n
   Type *EltTy = VT->getElementType();
 
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i) Out << ", ";
     int SrcVal = SVI.getMaskValue(i);
-    if ((unsigned)SrcVal >= NumElts*2) {
+    if ((unsigned)SrcVal >= NumInputElts * 2) {
       Out << " 0/*undef*/ ";
     } else {
-      Value *Op = SVI.getOperand((unsigned)SrcVal >= NumElts);
+      // If SrcVal belongs [0, n - 1], it extracts value from <v1>
+      // If SrcVal belongs [n, 2 * n - 1], it extracts value from <v2>
+      // In C++, the value false is converted to zero and the value true is
+      // converted to one
+      Value *Op = SVI.getOperand((unsigned)SrcVal >= NumInputElts);
       if (isa<Instruction>(Op)) {
         // Do an extractelement of this value from the appropriate input.
         Out << "((";
         printTypeName(Out, PointerType::getUnqual(EltTy));
         Out << ")(&" << GetValueName(Op)
-            << "))[" << (SrcVal & (NumElts-1)) << "]";
+            << "))[" << ((unsigned)SrcVal >= NumInputElts ? SrcVal - NumInputElts : SrcVal) << "]";
       } else if (isa<ConstantAggregateZero>(Op) || isa<UndefValue>(Op)) {
         Out << "0";
       } else {
