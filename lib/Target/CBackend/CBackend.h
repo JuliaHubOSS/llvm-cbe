@@ -96,19 +96,18 @@ namespace {
 
     void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<LoopInfo>();
-      AU.setPreservesAll();
+      AU.setPreservesCFG();
     }
 
     virtual bool doInitialization(Module &M);
     virtual bool doFinalization(Module &M);
+    virtual bool runOnFunction(Function &F);
 
-    bool runOnFunction(Function &F);
-
-    void generateHeader();
+    void generateHeader(Module &M);
 
     raw_ostream &printFunctionProto(raw_ostream &Out, FunctionType *Ty,
                            AttributeSet PAL, const std::string &Name);
-    raw_ostream &printFunctionProto(raw_ostream &Out, const Function *F) {
+    raw_ostream &printFunctionProto(raw_ostream &Out, Function *F) {
       return printFunctionProto(Out, F->getFunctionType(), F->getAttributes(), GetValueName(F));
     }
 
@@ -125,14 +124,14 @@ namespace {
     std::string getArrayName(ArrayType *AT);
 
 
-    void writeOperandDeref(const Value *Operand);
-    void writeOperand(const Value *Operand, bool Static = false);
-    void writeInstComputationInline(const Instruction &I);
-    void writeOperandInternal(const Value *Operand, bool Static = false);
-    void writeOperandWithCast(const Value* Operand, unsigned Opcode);
-    void writeOperandWithCast(const Value* Operand, const ICmpInst &I);
-    bool writeInstructionCast(const Instruction &I);
-    void writeMemoryAccess(const Value *Operand, Type *OperandType,
+    void writeOperandDeref(Value *Operand);
+    void writeOperand(Value *Operand, bool Static = false);
+    void writeInstComputationInline(Instruction &I);
+    void writeOperandInternal(Value *Operand, bool Static = false);
+    void writeOperandWithCast(Value* Operand, unsigned Opcode);
+    void writeOperandWithCast(Value* Operand, ICmpInst &I);
+    bool writeInstructionCast(Instruction &I);
+    void writeMemoryAccess(Value *Operand, Type *OperandType,
                            bool IsVolatile, unsigned Alignment);
 
   private :
@@ -141,11 +140,11 @@ namespace {
     void lowerIntrinsics(Function &F);
     /// Prints the definition of the intrinsic function F. Supports the
     /// intrinsics which need to be explicitly defined in the CBackend.
-    void printIntrinsicDefinition(const Function &F, raw_ostream &Out);
+    void printIntrinsicDefinition(Function &F, raw_ostream &Out);
 
     void printModuleTypes(raw_ostream &Out);
     void printContainedStructs(raw_ostream &Out, Type *Ty, SmallPtrSet<Type *, 16> &);
-    void printFunctionSignature(raw_ostream &Out, const Function *F);
+    void printFunctionSignature(raw_ostream &Out, Function *F);
 
     void printFloatingPointConstants(Function &F);
     void printFloatingPointConstants(const Constant *C);
@@ -155,17 +154,17 @@ namespace {
     void printLoop(Loop *L);
 
     void printCast(unsigned opcode, Type *SrcTy, Type *DstTy);
-    void printConstant(const Constant *CPV, bool Static);
-    void printConstantWithCast(const Constant *CPV, unsigned Opcode);
-    bool printConstExprCast(const ConstantExpr *CE, bool Static);
-    void printConstantArray(const ConstantArray *CPA, bool Static);
-    void printConstantVector(const ConstantVector *CV, bool Static);
-    void printConstantDataSequential(const ConstantDataSequential *CDS, bool Static);
+    void printConstant(Constant *CPV, bool Static);
+    void printConstantWithCast(Constant *CPV, unsigned Opcode);
+    bool printConstExprCast(ConstantExpr *CE, bool Static);
+    void printConstantArray(ConstantArray *CPA, bool Static);
+    void printConstantVector(ConstantVector *CV, bool Static);
+    void printConstantDataSequential(ConstantDataSequential *CDS, bool Static);
 
-    bool isAddressExposed(const Value *V) const;
-    bool isInlinableInst(const Instruction &I);
-    const AllocaInst *isDirectAlloca(const Value *V) const;
-    bool isInlineAsm(const Instruction& I);
+    bool isAddressExposed(Value *V) const;
+    bool isInlinableInst(Instruction &I);
+    AllocaInst *isDirectAlloca(Value *V) const;
+    bool isInlineAsm(Instruction& I);
 
     // Instruction visitation functions
     friend class InstVisitor<CWriter>;
@@ -225,6 +224,6 @@ namespace {
     void printGEPExpression(Value *Ptr, gep_type_iterator I,
                             gep_type_iterator E, bool Static);
 
-    std::string GetValueName(const Value *Operand);
+    std::string GetValueName(Value *Operand);
   };
 }
