@@ -73,6 +73,7 @@ namespace {
     std::set<StructType*> StructTypes;
     std::set<ArrayType*> ArrayTypes;
     std::set<Type*> SelectDeclTypes;
+    std::set<std::pair<CmpInst::Predicate, VectorType*>> ICmpDeclTypes;
 
     DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;

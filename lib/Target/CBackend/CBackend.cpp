@@ -234,6 +234,43 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
 
+static std::string getCmpPredicateName(CmpInst::Predicate P) {
+  switch (P) {
+  case FCmpInst::FCMP_FALSE: return "ffalse";
+  case FCmpInst::FCMP_OEQ: return "oeq";
+  case FCmpInst::FCMP_OGT: return "ogt";
+  case FCmpInst::FCMP_OGE: return "oge";
+  case FCmpInst::FCMP_OLT: return "olt";
+  case FCmpInst::FCMP_OLE: return "ole";
+  case FCmpInst::FCMP_ONE: return "one";
+  case FCmpInst::FCMP_ORD: return "ord";
+  case FCmpInst::FCMP_UNO: return "uno";
+  case FCmpInst::FCMP_UEQ: return "ueq";
+  case FCmpInst::FCMP_UGT: return "ugt";
+  case FCmpInst::FCMP_UGE: return "uge";
+  case FCmpInst::FCMP_ULT: return "ult";
+  case FCmpInst::FCMP_ULE: return "ule";
+  case FCmpInst::FCMP_UNE: return "une";
+  case FCmpInst::FCMP_TRUE: return "ftrue";
+  case ICmpInst::ICMP_EQ:  return "eq";
+  case ICmpInst::ICMP_NE:  return "ne";
+  case ICmpInst::ICMP_ULE: return "ule";
+  case ICmpInst::ICMP_SLE: return "sle";
+  case ICmpInst::ICMP_UGE: return "uge";
+  case ICmpInst::ICMP_SGE: return "sge";
+  case ICmpInst::ICMP_ULT: return "ult";
+  case ICmpInst::ICMP_SLT: return "slt";
+  case ICmpInst::ICMP_UGT: return "ugt";
+  case ICmpInst::ICMP_SGT: return "sgt";
+  default:
+#ifndef NDEBUG
+    errs() << "Invalid icmp predicate!" << P;
+#endif
+    llvm_unreachable(0);
+  }
+}
+
+
 raw_ostream &
 CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
   assert((Ty->isSingleValueType() || Ty->isVoidTy()) &&
@@ -1570,6 +1607,7 @@ bool CWriter::doFinalization(Module &M) {
   StructTypes.clear();
   ArrayTypes.clear();
   SelectDeclTypes.clear();
+  ICmpDeclTypes.clear();
   prototypesToGen.clear();
 
   // reset all state
@@ -2023,6 +2061,64 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     Out << "  return r;\n}\n";
   }
 
+  // Loop over all compare operations
+  for (std::set< std::pair<CmpInst::Predicate, VectorType*> >::iterator it = ICmpDeclTypes.begin(), end = ICmpDeclTypes.end();
+       it != end; ++it) {
+    // static inline <bool x 4> llvm_icmp_ge_u8x4(<u8 x 4> l, <u8 x 4> r) {
+    //     Rty r = {
+    //          l[0] >= r[0],
+    //          l[1] >= r[1],
+    //          l[2] >= r[2],
+    //          l[3] >= r[3],
+    //          };
+    //     return r;
+    // }
+    unsigned n, l = (*it).second->getVectorNumElements();
+    VectorType *RTy = VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
+    bool isSigned = CmpInst::isSigned((*it).first);
+    switch ((*it).first) {
+    case ICmpInst::ICMP_SLE:
+    case ICmpInst::ICMP_SGE:
+    case ICmpInst::ICMP_SLT:
+    case ICmpInst::ICMP_SGT:
+        isSigned = true;
+    default:
+        ;
+    }
+    Out << "static inline ";
+    printTypeName(Out, RTy);
+    Out << " llvm_icmp_" << getCmpPredicateName((*it).first) << "_";
+    printTypeString(Out, (*it).second, isSigned);
+    Out << "(";
+    printTypeName(Out, (*it).second, isSigned);
+    Out << " l, ";
+    printTypeName(Out, (*it).second, isSigned);
+    Out << " r) {\n  ";
+    printTypeName(Out, RTy);
+    Out << " c = {\n";
+    for (n = 0; n < l; n++) {
+      switch ((*it).first) {
+      case ICmpInst::ICMP_EQ:  Out << "    l[" << n << "] == r[" << n << "]"; break;
+      case ICmpInst::ICMP_NE:  Out << "    l[" << n << "] != r[" << n << "]"; break;
+      case ICmpInst::ICMP_ULE:
+      case ICmpInst::ICMP_SLE: Out << "    l[" << n << "] <= r[" << n << "]"; break;
+      case ICmpInst::ICMP_UGE:
+      case ICmpInst::ICMP_SGE: Out << "    l[" << n << "] >= r[" << n << "]"; break;
+      case ICmpInst::ICMP_ULT:
+      case ICmpInst::ICMP_SLT: Out << "    l[" << n << "] < r[" << n << "]"; break;
+      case ICmpInst::ICMP_UGT:
+      case ICmpInst::ICMP_SGT: Out << "    l[" << n << "] > r[" << n << "]"; break;
+      default:
+#ifndef NDEBUG
+        errs() << "Invalid icmp predicate!" << (*it).first;
+#endif
+        llvm_unreachable(0);
+      }
+      if (n != l - 1) Out << ",\n";
+    }
+    Out << "\n    };\n";
+    Out << "  return c;\n}\n";
+  }
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
@@ -2513,6 +2609,19 @@ void CWriter::visitBinaryOperator(Instruction &I) {
 }
 
 void CWriter::visitICmpInst(ICmpInst &I) {
+  if (I.getType()->isVectorTy()) {
+    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
+    Out << "(llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
+    printTypeString(Out, VTy, I.isSigned());
+    Out << "(";
+    writeOperandWithCast(I.getOperand(0), I);
+    Out << ", ";
+    writeOperandWithCast(I.getOperand(1), I);
+    Out << "))";
+    ICmpDeclTypes.insert(std::pair<ICmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+    return;
+  }
+
   // We must cast the results of icmp which might be promoted.
   bool needsCast = false;
 
