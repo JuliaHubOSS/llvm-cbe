@@ -2693,6 +2693,7 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::sqrt:
           case Intrinsic::trap:
           case Intrinsic::trunc:
+          case Intrinsic::stackprotector:
               // We directly implement these intrinsics
             break;
           default:
@@ -2944,6 +2945,8 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << "__builtin_altivec_lvsl(0, (void*)";
     writeOperand(I.getArgOperand(0));
     Out << ")";
+    return true;
+  case Intrinsic::stackprotector:
     return true;
   case Intrinsic::uadd_with_overflow:
   case Intrinsic::sadd_with_overflow:
