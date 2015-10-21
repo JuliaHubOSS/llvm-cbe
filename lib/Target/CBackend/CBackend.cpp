@@ -149,6 +149,65 @@ static std::string CBEMangle(const std::string &S) {
   return Result;
 }
 
+raw_ostream &
+CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
+  if (Ty->isStructTy()) {
+    return Out << "l_struct_" << CBEMangle(Ty->getStructName());
+  }
+
+  if (Ty->isPointerTy()) {
+    Out << "p";
+    return printTypeString(Out, Ty->getPointerElementType(), isSigned);
+  }
+
+  switch (Ty->getTypeID()) {
+  case Type::VoidTyID:   return Out << "void";
+  case Type::IntegerTyID: {
+    unsigned NumBits = cast<IntegerType>(Ty)->getBitWidth();
+    if (NumBits == 1)
+      return Out << "bool";
+    else if (NumBits <= 8)
+      return Out << (isSigned?"i8":"u8");
+    else if (NumBits <= 16)
+      return Out << (isSigned?"i16":"u16");
+    else if (NumBits <= 32)
+      return Out << (isSigned?"i32":"u32");
+    else if (NumBits <= 64)
+      return Out << (isSigned?"i64":"u64");
+    else {
+      assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
+      return Out << (isSigned?"i128":"u128");
+    }
+  }
+  case Type::FloatTyID:    return Out << "f32";
+  case Type::DoubleTyID:   return Out << "f64";
+  case Type::X86_FP80TyID: return Out << "f80";
+  case Type::PPC_FP128TyID:
+  case Type::FP128TyID:    return Out << "f128";
+
+  case Type::X86_MMXTyID:
+    return Out << (isSigned ? "i32y2" : "u32y2");
+
+  case Type::VectorTyID: {
+    VectorType *VTy = cast<VectorType>(Ty);
+    printTypeString(Out, VTy->getElementType(), isSigned);
+    return Out << "x" << VTy->getNumElements();
+  }
+
+  case Type::ArrayTyID: {
+    ArrayType *ATy = cast<ArrayType>(Ty);
+    printTypeString(Out, ATy->getElementType(), isSigned);
+    return Out << "a" << ATy->getNumElements();
+  }
+
+  default:
+#ifndef NDEBUG
+    errs() << "Unknown primitive type: " << *Ty << "\n";
+#endif
+    llvm_unreachable(0);
+  }
+}
+
 std::string CWriter::getStructName(StructType *ST) {
   if (!ST->isLiteral() && !ST->getName().empty())
     return "struct l_struct_" + CBEMangle(ST->getName().str());
@@ -184,7 +243,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::IntegerTyID: {
     unsigned NumBits = cast<IntegerType>(Ty)->getBitWidth();
     if (NumBits == 1)
-      return Out << "bool";
+      return Out << " bool";
     else if (NumBits <= 8)
       return Out << (isSigned?"signed":"unsigned") << " char";
     else if (NumBits <= 16)
@@ -1510,6 +1569,7 @@ bool CWriter::doFinalization(Module &M) {
   UnnamedFunctionIDs.clear();
   StructTypes.clear();
   ArrayTypes.clear();
+  SelectDeclTypes.clear();
   prototypesToGen.clear();
 
   // reset all state
@@ -1919,6 +1979,50 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
        it != end; ++it) {
     printContainedStructs(Out, *it, StructPrinted);
   }
+
+  // Loop over all select operations
+  for (std::set<Type*>::iterator it = SelectDeclTypes.begin(), end = SelectDeclTypes.end();
+       it != end; ++it) {
+    // static inline Rty llvm_select_u8x4(<bool x 4> condition, <u8 x 4> iftrue, <u8 x 4> ifnot) {
+    //     Rty r = {
+    //          condition[0] ? iftrue[0] : ifnot[0],
+    //          condition[1] ? iftrue[1] : ifnot[1],
+    //          condition[2] ? iftrue[2] : ifnot[2],
+    //          condition[3] ? iftrue[3] : ifnot[3]
+    //          };
+    //     return r;
+    // }
+    Out << "static inline ";
+    printTypeName(Out, *it);
+    Out << " llvm_select_";
+    printTypeString(Out, *it, false);
+    Out << "(";
+    if (isa<VectorType>(*it))
+      printSimpleType(Out, VectorType::get(Type::getInt1Ty((*it)->getContext()), (*it)->getVectorNumElements()), false);
+    else
+      Out << "bool";
+    Out << " condition, ";
+    printTypeName(Out, *it, false);
+    Out << " iftrue, ";
+    printTypeName(Out, *it, false);
+    Out << " ifnot) {\n  ";
+    printTypeName(Out, *it);
+    Out << " r = ";
+    if (isa<VectorType>(*it)) {
+      unsigned n, l = (*it)->getVectorNumElements();
+      Out << "{\n";
+      for (n = 0; n < l; n++) {
+        Out << "    condition[" << n << "] ? iftrue[" << n << "] : ifnot[" << n << "]";
+        if (n != l - 1) Out << ",\n";
+      }
+      Out << "\n    };\n";
+    }
+    else {
+      Out << "condition ? iftrue : ifnot;\n";
+    }
+    Out << "  return r;\n}\n";
+  }
+
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
@@ -2538,13 +2642,16 @@ void CWriter::visitCastInst(CastInst &I) {
 }
 
 void CWriter::visitSelectInst(SelectInst &I) {
-  Out << "((";
+  Out << "(llvm_select_";
+  printTypeString(Out, I.getType(), false);
+  Out << "(";
   writeOperand(I.getCondition());
-  Out << ") ? (";
+  Out << ", ";
   writeOperand(I.getTrueValue());
-  Out << ") : (";
+  Out << ", ";
   writeOperand(I.getFalseValue());
   Out << "))";
+  SelectDeclTypes.insert(I.getType());
 }
 
 // Returns the macro name or value of the max or min of an integer type
@@ -2822,6 +2929,7 @@ void CWriter::visitCallInst(CallInst &I) {
 bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   switch (ID) {
   default: {
+    I.dump();
     assert(0 && "Unknown LLVM intrinsic!");
     return false;
   }

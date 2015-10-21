@@ -72,6 +72,7 @@ namespace {
 
     std::set<StructType*> StructTypes;
     std::set<ArrayType*> ArrayTypes;
+    std::set<Type*> SelectDeclTypes;
 
     DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;
@@ -118,6 +119,7 @@ namespace {
 
     raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, AttributeSet PAL = AttributeSet());
     raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
+    raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
     std::string getStructName(StructType *ST);
     std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
