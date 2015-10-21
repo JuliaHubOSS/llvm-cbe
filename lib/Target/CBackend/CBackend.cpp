@@ -2186,8 +2186,10 @@ void CWriter::visitReturnInst(ReturnInst &I) {
   }
 
   // Don't output a void return if this is the last basic block in the function
+  // unless that would make the basic block empty
   if (I.getNumOperands() == 0 &&
-      &*--I.getParent()->getParent()->end() == I.getParent()) {
+      &*--I.getParent()->getParent()->end() == I.getParent() &&
+      I.getParent()->begin() != I) {
     return;
   }
 
