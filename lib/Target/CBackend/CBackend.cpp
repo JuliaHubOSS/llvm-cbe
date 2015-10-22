@@ -3730,7 +3730,7 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
     printTypeName(Out, EVI.getType());
     Out << ") 0/*UNDEF*/";
   } else {
-    Out << GetValueName(EVI.getOperand(0));
+    writeOperand(EVI.getOperand(0));
     for (const unsigned *b = EVI.idx_begin(), *i = b, *e = EVI.idx_end();
          i != e; ++i) {
       Type *IndexedTy =
