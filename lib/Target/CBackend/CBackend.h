@@ -74,6 +74,8 @@ namespace {
     std::set<ArrayType*> ArrayTypes;
     std::set<Type*> SelectDeclTypes;
     std::set<std::pair<CmpInst::Predicate, VectorType*>> CmpDeclTypes;
+    std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>> CastOpDeclTypes;
+    std::set<std::pair<unsigned, VectorType*>> VectorOpDeclTypes;
 
     DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;

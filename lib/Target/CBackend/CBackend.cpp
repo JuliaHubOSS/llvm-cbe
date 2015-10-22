@@ -1590,6 +1590,8 @@ bool CWriter::doFinalization(Module &M) {
   ArrayTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
+  VectorOpDeclTypes.clear();
+  CastOpDeclTypes.clear();
   prototypesToGen.clear();
 
   // reset all state
@@ -1901,7 +1903,7 @@ void CWriter::generateHeader(Module &M) {
     //     return r;
     // }
     Out << "static inline ";
-    printTypeName(Out, *it);
+    printTypeName(Out, *it, false);
     Out << " llvm_select_";
     printTypeString(Out, *it, false);
     Out << "(";
@@ -1914,7 +1916,7 @@ void CWriter::generateHeader(Module &M) {
     Out << " iftrue, ";
     printTypeName(Out, *it, false);
     Out << " ifnot) {\n  ";
-    printTypeName(Out, *it);
+    printTypeName(Out, *it, false);
     Out << " r = ";
     if (isa<VectorType>(*it)) {
       unsigned n, l = (*it)->getVectorNumElements();
@@ -1947,7 +1949,7 @@ void CWriter::generateHeader(Module &M) {
     VectorType *RTy = VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static inline ";
-    printTypeName(Out, RTy);
+    printTypeName(Out, RTy, isSigned);
     if (CmpInst::isFPPredicate((*it).first))
       Out << " llvm_fcmp_";
     else
@@ -1959,7 +1961,7 @@ void CWriter::generateHeader(Module &M) {
     Out << " l, ";
     printTypeName(Out, (*it).second, isSigned);
     Out << " r) {\n  ";
-    printTypeName(Out, RTy);
+    printTypeName(Out, RTy, isSigned);
     Out << " c = {\n";
     for (n = 0; n < l; n++) {
       if (CmpInst::isFPPredicate((*it).first)) {
@@ -1987,6 +1989,110 @@ void CWriter::generateHeader(Module &M) {
     }
     Out << "\n    };\n";
     Out << "  return c;\n}\n";
+  }
+
+  // Loop over all (vector) cast operations
+  for (std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>>::iterator it = CastOpDeclTypes.begin(), end = CastOpDeclTypes.end();
+       it != end; ++it) {
+    // static inline <u32 x 4> llvm_ZExt_u8x4_u32x4(<u8 x 4> in) { // Src->isVector == Dst->isVector
+    //     Rty out = {
+    //          in[0],
+    //          in[1],
+    //          in[2],
+    //          in[3]
+    //          };
+    //     return out;
+    // }
+    // static inline u32 llvm_BitCast_u8x4_u32(<u8 x 4> in) { // Src->bitsSize == Dst->bitsSize
+    //     union {
+    //       <u8 x 4> in;
+    //       u32 out;
+    //     } cast;
+    //     cast.in = in;
+    //     return cast.out;
+    // }
+    CastInst::CastOps opcode = (*it).first;
+    Type *SrcTy = (*it).second.first;
+    Type *DstTy = (*it).second.second;
+    bool SrcSigned, DstSigned;
+    switch (opcode) {
+    default:
+      SrcSigned = false;
+      DstSigned = false;
+    case Instruction::SIToFP:
+      SrcSigned = true;
+      DstSigned = false;
+    case Instruction::FPToSI:
+      SrcSigned = false;
+      DstSigned = true;
+    case Instruction::SExt:
+      SrcSigned = true;
+      DstSigned = true;
+    }
+
+    Out << "static inline ";
+    printTypeName(Out, DstTy, DstSigned);
+    Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
+    printTypeString(Out, SrcTy, false);
+    Out << "_";
+    printTypeString(Out, DstTy, false);
+    Out << "(";
+    printTypeName(Out, SrcTy, SrcSigned);
+    Out << " in) {\n  ";
+    if (opcode == Instruction::BitCast) {
+      Out << "union {\n    ";
+      printTypeName(Out, SrcTy, SrcSigned);
+      Out << " in;\n    ";
+      printTypeName(Out, DstTy, DstSigned);
+      Out << " out;\n  } cast;\n";
+      Out << "  cast.in = in;\n  return cast.out;\n}\n";
+    }
+    else {
+      printTypeName(Out, DstTy, DstSigned);
+      Out << " out = {\n";
+      unsigned n, l = DstTy->getVectorNumElements();
+      assert(SrcTy->getVectorNumElements() == l);
+      for (n = 0; n < l; n++) {
+        Out << "    in[" << n << "]";
+        if (n != l - 1) Out << ",\n";
+      }
+      Out << "\n};\n  return out;\n}\n";
+    }
+  }
+
+  // Loop over all simple vector operations
+  for (std::set<std::pair<unsigned, VectorType*>>::iterator it = VectorOpDeclTypes.begin(), end = VectorOpDeclTypes.end();
+       it != end; ++it) {
+    // static inline <u32 x 4> llvm_BinOp_u32x4(<u32 x 4> a, <u32 x 4> b) {
+    //     Rty r = {
+    //          a[0] OP b[0],
+    //          a[1] OP b[1],
+    //          a[2] OP b[2],
+    //          a[3] OP b[3],
+    //          };
+    //     return r;
+    // }
+    unsigned opcode = (*it).first;
+    Type *OpTy = (*it).second;
+    Out << "static inline ";
+    printTypeName(Out, OpTy);
+    Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
+    printTypeString(Out, OpTy, false);
+    Out << "(";
+    printTypeName(Out, OpTy);
+    Out << " a, ";
+    printTypeName(Out, OpTy);
+    Out << " b) {\n  ";
+    printTypeName(Out, OpTy);
+    Out << " r = {\n";
+    unsigned n, l = OpTy->getVectorNumElements();
+    for (n = 0; n < l; n++) {
+      Out << "    a[" << n << "]";
+      Out << " /* TODO: OP */ + ";
+      Out << "    b[" << n << "]";
+      if (n != l - 1) Out << ",\n";
+    }
+    Out << "\n};\n  return r;\n}\n";
   }
 
   // Emit definitions of the intrinsics.
@@ -2510,6 +2616,19 @@ void CWriter::visitPHINode(PHINode &I) {
 
 
 void CWriter::visitBinaryOperator(Instruction &I) {
+  if (I.getType()->isVectorTy()) {
+    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
+    Out << "llvm_" << I.getOpcodeName() << "_";
+    printTypeString(Out, VTy, false);
+    Out << "(";
+    writeOperand(I.getOperand(0));
+    Out << ", ";
+    writeOperand(I.getOperand(1));
+    Out << ")";
+    VectorOpDeclTypes.insert(std::pair<unsigned, VectorType*>(I.getOpcode(), VTy));
+    return;
+  }
+
   // binary instructions, shift instructions, setCond instructions.
   assert(!I.getType()->isPointerTy());
 
@@ -2687,6 +2806,19 @@ static const char * getFloatBitCastField(Type *Ty) {
 void CWriter::visitCastInst(CastInst &I) {
   Type *DstTy = I.getType();
   Type *SrcTy = I.getOperand(0)->getType();
+
+  if (DstTy->isVectorTy() || SrcTy->isVectorTy()) {
+    Out << "llvm_" << I.getOpcodeName() << "_";
+    printTypeString(Out, SrcTy, false);
+    Out << "_";
+    printTypeString(Out, DstTy, false);
+    Out << "(";
+    writeOperand(I.getOperand(0));
+    Out << ")";
+    CastOpDeclTypes.insert(std::pair<Instruction::CastOps, std::pair<Type*, Type*> >(I.getOpcode(), std::pair<Type*, Type*>(SrcTy, DstTy)));
+    return;
+  }
+
   if (isFPIntBitCast(I)) {
     Out << '(';
     // These int<->float and long<->double casts need to be handled specially
@@ -2721,7 +2853,7 @@ void CWriter::visitCastInst(CastInst &I) {
 }
 
 void CWriter::visitSelectInst(SelectInst &I) {
-  Out << "(llvm_select_";
+  Out << "llvm_select_";
   printTypeString(Out, I.getType(), false);
   Out << "(";
   writeOperand(I.getCondition());
@@ -2729,7 +2861,7 @@ void CWriter::visitSelectInst(SelectInst &I) {
   writeOperand(I.getTrueValue());
   Out << ", ";
   writeOperand(I.getFalseValue());
-  Out << "))";
+  Out << ")";
   SelectDeclTypes.insert(I.getType());
 }
 
