@@ -234,7 +234,7 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
 
-static std::string getCmpPredicateName(CmpInst::Predicate P) {
+static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   switch (P) {
   case FCmpInst::FCMP_FALSE: return "0";
   case FCmpInst::FCMP_OEQ: return "oeq";
@@ -1589,7 +1589,7 @@ bool CWriter::doFinalization(Module &M) {
   StructTypes.clear();
   ArrayTypes.clear();
   SelectDeclTypes.clear();
-  ICmpDeclTypes.clear();
+  CmpDeclTypes.clear();
   prototypesToGen.clear();
 
   // reset all state
@@ -1932,7 +1932,7 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all compare operations
-  for (std::set< std::pair<CmpInst::Predicate, VectorType*> >::iterator it = ICmpDeclTypes.begin(), end = ICmpDeclTypes.end();
+  for (std::set< std::pair<CmpInst::Predicate, VectorType*> >::iterator it = CmpDeclTypes.begin(), end = CmpDeclTypes.end();
        it != end; ++it) {
     // static inline <bool x 4> llvm_icmp_ge_u8x4(<u8 x 4> l, <u8 x 4> r) {
     //     Rty r = {
@@ -1948,7 +1948,11 @@ void CWriter::generateHeader(Module &M) {
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static inline ";
     printTypeName(Out, RTy);
-    Out << " llvm_icmp_" << getCmpPredicateName((*it).first) << "_";
+    if (CmpInst::isFPPredicate((*it).first))
+      Out << " llvm_fcmp_";
+    else
+      Out << " llvm_icmp_";
+    Out << getCmpPredicateName((*it).first) << "_";
     printTypeString(Out, (*it).second, isSigned);
     Out << "(";
     printTypeName(Out, (*it).second, isSigned);
@@ -1958,22 +1962,26 @@ void CWriter::generateHeader(Module &M) {
     printTypeName(Out, RTy);
     Out << " c = {\n";
     for (n = 0; n < l; n++) {
-      switch ((*it).first) {
-      case ICmpInst::ICMP_EQ:  Out << "    l[" << n << "] == r[" << n << "]"; break;
-      case ICmpInst::ICMP_NE:  Out << "    l[" << n << "] != r[" << n << "]"; break;
-      case ICmpInst::ICMP_ULE:
-      case ICmpInst::ICMP_SLE: Out << "    l[" << n << "] <= r[" << n << "]"; break;
-      case ICmpInst::ICMP_UGE:
-      case ICmpInst::ICMP_SGE: Out << "    l[" << n << "] >= r[" << n << "]"; break;
-      case ICmpInst::ICMP_ULT:
-      case ICmpInst::ICMP_SLT: Out << "    l[" << n << "] < r[" << n << "]"; break;
-      case ICmpInst::ICMP_UGT:
-      case ICmpInst::ICMP_SGT: Out << "    l[" << n << "] > r[" << n << "]"; break;
-      default:
-#ifndef NDEBUG
-        errs() << "Invalid icmp predicate!" << (*it).first;
-#endif
-        llvm_unreachable(0);
+      if (CmpInst::isFPPredicate((*it).first)) {
+        Out << "    llvm_fcmp_" << getCmpPredicateName((*it).first) << "(l[" << n << "], r[" << n << "])"; break;
+      } else {
+        switch ((*it).first) {
+        case CmpInst::ICMP_EQ:  Out << "    l[" << n << "] == r[" << n << "]"; break;
+        case CmpInst::ICMP_NE:  Out << "    l[" << n << "] != r[" << n << "]"; break;
+        case CmpInst::ICMP_ULE:
+        case CmpInst::ICMP_SLE: Out << "    l[" << n << "] <= r[" << n << "]"; break;
+        case CmpInst::ICMP_UGE:
+        case CmpInst::ICMP_SGE: Out << "    l[" << n << "] >= r[" << n << "]"; break;
+        case CmpInst::ICMP_ULT:
+        case CmpInst::ICMP_SLT: Out << "    l[" << n << "] < r[" << n << "]"; break;
+        case CmpInst::ICMP_UGT:
+        case CmpInst::ICMP_SGT: Out << "    l[" << n << "] > r[" << n << "]"; break;
+        default:
+  #ifndef NDEBUG
+          errs() << "Invalid icmp predicate!" << (*it).first;
+  #endif
+          llvm_unreachable(0);
+        }
       }
       if (n != l - 1) Out << ",\n";
     }
@@ -2588,14 +2596,14 @@ void CWriter::visitBinaryOperator(Instruction &I) {
 void CWriter::visitICmpInst(ICmpInst &I) {
   if (I.getType()->isVectorTy()) {
     VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
-    Out << "(llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
+    Out << "llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
     printTypeString(Out, VTy, I.isSigned());
     Out << "(";
     writeOperand(I.getOperand(0));
     Out << ", ";
     writeOperand(I.getOperand(1));
-    Out << "))";
-    ICmpDeclTypes.insert(std::pair<ICmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+    Out << ")";
+    CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
     return;
   }
 
@@ -2639,6 +2647,19 @@ void CWriter::visitICmpInst(ICmpInst &I) {
 }
 
 void CWriter::visitFCmpInst(FCmpInst &I) {
+  if (I.getType()->isVectorTy()) {
+    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
+    Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "_";
+    printTypeString(Out, VTy, I.isSigned());
+    Out << "(";
+    writeOperand(I.getOperand(0));
+    Out << ", ";
+    writeOperand(I.getOperand(1));
+    Out << ")";
+    CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+    return;
+  }
+
   Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "(";
   // Write the first operand
   writeOperand(I.getOperand(0));
