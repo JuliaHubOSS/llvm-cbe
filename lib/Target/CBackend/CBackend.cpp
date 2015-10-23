@@ -3190,8 +3190,8 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((";
-      printTypeName(Out, I.getCalledValue()->getType());
-    Out << ")(void*)";
+      printTypeName(Out, I.getCalledValue()->getType()->getPointerElementType(), false, PAL);
+    Out << "*)(void*)";
   }
   writeOperand(Callee);
   if (NeedsCast) Out << ')';
