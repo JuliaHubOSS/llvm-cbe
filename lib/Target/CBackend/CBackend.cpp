@@ -1632,6 +1632,7 @@ void CWriter::generateHeader(Module &M) {
   Out << "#include <setjmp.h>\n";      // Unwind support
   Out << "#include <limits.h>\n";      // With overflow intrinsics support.
   Out << "#include <stdint.h>\n";      // Sized integer support
+  Out << "#include <APInt-C.h>\n";     // Implementations of many llvm intrinsics
   generateCompilerSpecificCode(Out, TD);
 
   // Provide a definition for `bool' if not compiling with a C++ compiler.
@@ -1737,12 +1738,12 @@ void CWriter::generateHeader(Module &M) {
           continue;
         case Intrinsic::uadd_with_overflow:
         case Intrinsic::sadd_with_overflow:
-          intrinsicsToDefine.push_back(I);
-          continue;
         case Intrinsic::usub_with_overflow:
         case Intrinsic::ssub_with_overflow:
         case Intrinsic::umul_with_overflow:
         case Intrinsic::smul_with_overflow:
+          intrinsicsToDefine.push_back(I);
+          continue;
         case Intrinsic::bswap:
         case Intrinsic::ceil:
         case Intrinsic::ctlz:
@@ -2999,12 +3000,44 @@ static bool isSupportedIntegerSize(IntegerType &T) {
 void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   FunctionType *funT = F.getFunctionType();
   Type *retT = F.getReturnType();
-  IntegerType *elemT = cast<IntegerType>(funT->getParamType(1));
+  Type *elemT = funT->getParamType(0);
+  IntegerType *elemIntT = dyn_cast<IntegerType>(funT->getParamType(0));
+  char i, numParams = funT->getNumParams();
 
-  assert(isSupportedIntegerSize(*elemT) &&
+  bool isSigned;
+  switch (F.getIntrinsicID()) {
+  default:
+    isSigned = false;
+    break;
+  case Intrinsic::sadd_with_overflow:
+  case Intrinsic::ssub_with_overflow:
+  case Intrinsic::smul_with_overflow:
+    isSigned = true;
+    break;
+  }
+
+  assert(isSupportedIntegerSize(*elemIntT) &&
          "CBackend does not support arbitrary size integers.");
-  assert(cast<StructType>(retT)->getElementType(0) == elemT &&
-         elemT == funT->getParamType(0) && funT->getNumParams() == 2);
+  assert(numParams > 0);
+  // static inline Rty _llvm_op_ixx(unsigned ixx a, unsigned ixx b) {
+  //   Rty r;
+  //   <opcode here>
+  //   return r;
+  // }
+  Out << "static inline ";
+  printTypeName(Out, retT);
+  Out << " ";
+  Out << GetValueName(&F);
+  Out << "(";
+  for (i = 0; i < numParams; i++) {
+    assert(elemT == funT->getParamType(i));
+    printSimpleType(Out, elemT, isSigned);
+    Out << " " << (char)('a' + i);
+    if (i != numParams - 1) Out << ", ";
+  }
+  Out << ") {\n  ";
+  printTypeName(Out, retT);
+  Out << " r;\n";
 
   switch (F.getIntrinsicID()) {
   default:
@@ -3012,57 +3045,52 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
     errs() << "Unsupported Intrinsic!" << F;
 #endif
     llvm_unreachable(0);
+
   case Intrinsic::uadd_with_overflow:
-    // static inline Rty uadd_ixx(unsigned ixx a, unsigned ixx b) {
-    //   Rty r;
     //   r.field0 = a + b;
     //   r.field1 = (r.field0 < a);
-    //   return r;
-    // }
-    Out << "static inline ";
-    printTypeName(Out, retT);
-    Out << " ";
-    Out << GetValueName(&F);
-    Out << "(";
-    printSimpleType(Out, elemT, false);
-    Out << " a,";
-    printSimpleType(Out, elemT, false);
-    Out << " b) {\n  ";
-    printTypeName(Out, retT);
-    Out << " r;\n";
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
     Out << "  r.field0 = a + b;\n";
-    Out << "  r.field1 = (r.field0 < a);\n";
-    Out << "  return r;\n}\n";
+    Out << "  r.field1 = (a >= -b);\n";
     break;
 
   case Intrinsic::sadd_with_overflow:
-    // static inline Rty sadd_ixx(ixx a, ixx b) {
-    //   Rty r;
     //   r.field1 = (b > 0 && a > XX_MAX - b) ||
     //              (b < 0 && a < XX_MIN - b);
     //   r.field0 = r.field1 ? 0 : a + b;
-    //   return r;
-    // }
-    Out << "static ";
-    printTypeName(Out, retT);
-    Out << " ";
-    Out << GetValueName(&F);
-    Out << "(";
-    printSimpleType(Out, elemT, true);
-    Out << " a,";
-    printSimpleType(Out, elemT, true);
-    Out << " b) {\n  ";
-    printTypeName(Out, retT);
-    Out << " r;\n";
-    Out << "  r.field1 = (b > 0 && a > ";
-    printLimitValue(*elemT, true, true, Out);
-    Out << " - b) || (b < 0 && a < ";
-    printLimitValue(*elemT, true, false, Out);
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
+    Out << "  r.field0 = a + b;\n";
+    Out << "  r.field1 = (b >= 0 ? a > ";
+    printLimitValue(*elemIntT, true, true, Out);
+    Out << " - b : a < ";
+    printLimitValue(*elemIntT, true, false, Out);
     Out << " - b);\n";
-    Out << "  r.field0 = r.field1 ? 0 : a + b;\n";
-    Out << "  return r;\n}\n";
     break;
+
+  case Intrinsic::usub_with_overflow:
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
+    Out << "  r.field0 = a - b;\n";
+    Out << "  r.field1 = (a < b);\n";
+    break;
+
+  case Intrinsic::ssub_with_overflow:
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
+    Out << "  r.field0 = a - b;\n";
+    Out << "  r.field1 = (a >= b);\n";
+    break;
+
+  case Intrinsic::umul_with_overflow:
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
+    Out << "  r.field1 = LLVMMul_sov(sizeof(a), &a, &b, &r.field0);\n";
+    break;
+
+  case Intrinsic::smul_with_overflow:
+    assert(cast<StructType>(retT)->getElementType(0) == elemT);
+    Out << "  r.field1 = LLVMMul_uov(sizeof(a), &a, &b, &r.field0);\n";
+    break;
+
   }
+  Out << "  return r;\n}\n";
 }
 
 void CWriter::lowerIntrinsics(Function &F) {
