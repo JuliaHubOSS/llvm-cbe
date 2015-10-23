@@ -51,6 +51,12 @@ extern "C" void LLVMInitializeCBackendTarget() {
 
 char CWriter::ID = 0;
 
+// extra (invalid) Ops tags for tracking unary ops as a special case of the available binary ops
+enum UnaryOps {
+  BinaryNeg = Instruction::OtherOpsEnd + 1,
+  BinaryNot,
+};
+
 /// isAddressExposed - Return true if the specified value's name needs to
 /// have its address taken in order to get a C value of the correct type.
 /// This happens for global variables, byval parameters, and direct allocas.
@@ -2073,23 +2079,89 @@ void CWriter::generateHeader(Module &M) {
     //     return r;
     // }
     unsigned opcode = (*it).first;
-    Type *OpTy = (*it).second;
+    VectorType *OpTy = (*it).second;
+    Type *ElemTy = OpTy->getVectorElementType();
+    bool isSigned;
+    switch (opcode) {
+    default:
+      isSigned = false;
+      break;
+    case Instruction::AShr:
+    case Instruction::SDiv:
+    case Instruction::SRem:
+      isSigned = true;
+      break;
+    }
+
+
     Out << "static inline ";
     printTypeName(Out, OpTy);
-    Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
-    printTypeString(Out, OpTy, false);
-    Out << "(";
-    printTypeName(Out, OpTy);
-    Out << " a, ";
-    printTypeName(Out, OpTy);
-    Out << " b) {\n  ";
+    if (opcode == BinaryNeg) {
+      Out << " llvm_neg_";
+      printTypeString(Out, OpTy, false);
+      Out << "(";
+      printTypeName(Out, OpTy, isSigned);
+      Out << " a) {\n  ";
+    } else if (opcode == BinaryNot) {
+      Out << " llvm_not_";
+      printTypeString(Out, OpTy, false);
+      Out << "(";
+      printTypeName(Out, OpTy, isSigned);
+      Out << " a) {\n  ";
+    } else {
+      Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
+      printTypeString(Out, OpTy, false);
+      Out << "(";
+      printTypeName(Out, OpTy, isSigned);
+      Out << " a, ";
+      printTypeName(Out, OpTy, isSigned);
+      Out << " b) {\n  ";
+    }
     printTypeName(Out, OpTy);
     Out << " r = {\n";
     unsigned n, l = OpTy->getVectorNumElements();
     for (n = 0; n < l; n++) {
-      Out << "    a[" << n << "]";
-      Out << " /* TODO: OP */ + ";
-      Out << "    b[" << n << "]";
+      if (opcode == BinaryNeg) {
+        Out << "    -a[" << n << "]";
+      } else if (opcode == BinaryNot) {
+        Out << "    ~a[" << n << "]";
+      } else if (opcode == Instruction::FRem) {
+        // Output a call to fmod/fmodf instead of emitting a%b
+        if (ElemTy->isFloatTy())
+          Out << "fmodf(a[" << n << "], b[" << n << "])";
+        else if (ElemTy->isDoubleTy())
+          Out << "fmod(a[" << n << "], b[" << n << "])";
+        else  // all 3 flavors of long double
+          Out << "fmodl(a[" << n << "], b[" << n << "])";
+      } else {
+        Out << "    a[" << n << "]";
+        switch (opcode) {
+        case Instruction::Add:
+        case Instruction::FAdd: Out << " + "; break;
+        case Instruction::Sub:
+        case Instruction::FSub: Out << " - "; break;
+        case Instruction::Mul:
+        case Instruction::FMul: Out << " * "; break;
+        case Instruction::URem:
+        case Instruction::SRem:
+        case Instruction::FRem: Out << " % "; break;
+        case Instruction::UDiv:
+        case Instruction::SDiv:
+        case Instruction::FDiv: Out << " / "; break;
+        case Instruction::And:  Out << " & "; break;
+        case Instruction::Or:   Out << " | "; break;
+        case Instruction::Xor:  Out << " ^ "; break;
+        case Instruction::Shl : Out << " << "; break;
+        case Instruction::LShr:
+        case Instruction::AShr: Out << " >> "; break;
+        default:
+#ifndef NDEBUG
+           errs() << "Invalid operator type!" << opcode;
+#endif
+           llvm_unreachable(0);
+        }
+        Out << "b[" << n << "]";
+      }
       if (n != l - 1) Out << ",\n";
     }
     Out << "\n};\n  return r;\n}\n";
@@ -2614,18 +2686,39 @@ void CWriter::visitPHINode(PHINode &I) {
   Out << "__PHI_TEMPORARY";
 }
 
-
-void CWriter::visitBinaryOperator(Instruction &I) {
+void CWriter::visitBinaryOperator(BinaryOperator &I) {
   if (I.getType()->isVectorTy()) {
     VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
-    Out << "llvm_" << I.getOpcodeName() << "_";
-    printTypeString(Out, VTy, false);
-    Out << "(";
-    writeOperand(I.getOperand(0));
-    Out << ", ";
-    writeOperand(I.getOperand(1));
+    unsigned opcode;
+    if (BinaryOperator::isNeg(&I)) {
+      opcode = BinaryNeg;
+      Out << "llvm_neg_";
+      printTypeString(Out, VTy, false);
+      Out << "(";
+      writeOperand(BinaryOperator::getNegArgument(&I));
+    } else if (BinaryOperator::isFNeg(&I)) {
+      opcode = BinaryNeg;
+      Out << "llvm_neg_";
+      printTypeString(Out, VTy, false);
+      Out << "(";
+      writeOperand(BinaryOperator::getFNegArgument(&I));
+    } else if (BinaryOperator::isNot(&I)) {
+      opcode = BinaryNot;
+      Out << "llvm_not_";
+      printTypeString(Out, VTy, false);
+      Out << "(";
+      writeOperand(BinaryOperator::getNotArgument(&I));
+    } else {
+      opcode = I.getOpcode();
+      Out << "llvm_" << Instruction::getOpcodeName(opcode) << "_";
+      printTypeString(Out, VTy, false);
+      Out << "(";
+      writeOperand(I.getOperand(0));
+      Out << ", ";
+      writeOperand(I.getOperand(1));
+    }
     Out << ")";
-    VectorOpDeclTypes.insert(std::pair<unsigned, VectorType*>(I.getOpcode(), VTy));
+    VectorOpDeclTypes.insert(std::pair<unsigned, VectorType*>(opcode, VTy));
     return;
   }
 
@@ -2647,11 +2740,15 @@ void CWriter::visitBinaryOperator(Instruction &I) {
   // want to print "-0.0 - X".
   if (BinaryOperator::isNeg(&I)) {
     Out << "-(";
-    writeOperand(BinaryOperator::getNegArgument(cast<BinaryOperator>(&I)));
+    writeOperand(BinaryOperator::getNegArgument(&I));
     Out << ")";
   } else if (BinaryOperator::isFNeg(&I)) {
     Out << "-(";
-    writeOperand(BinaryOperator::getFNegArgument(cast<BinaryOperator>(&I)));
+    writeOperand(BinaryOperator::getFNegArgument(&I));
+    Out << ")";
+  } else if (BinaryOperator::isNot(&I)) {
+    Out << "~(";
+    writeOperand(BinaryOperator::getNotArgument(&I));
     Out << ")";
   } else if (I.getOpcode() == Instruction::FRem) {
     // Output a call to fmod/fmodf instead of emitting a%b

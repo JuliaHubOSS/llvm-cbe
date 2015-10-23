@@ -187,7 +187,7 @@ namespace {
     void visitUnreachableInst(UnreachableInst &I);
 
     void visitPHINode(PHINode &I);
-    void visitBinaryOperator(Instruction &I);
+    void visitBinaryOperator(BinaryOperator &I);
     void visitICmpInst(ICmpInst &I);
     void visitFCmpInst(FCmpInst &I);
 
