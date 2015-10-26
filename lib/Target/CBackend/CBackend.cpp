@@ -2992,7 +2992,8 @@ static void printLimitValue(IntegerType &Ty, bool isSigned, bool isMax,
 #ifndef NDEBUG
 static bool isSupportedIntegerSize(IntegerType &T) {
   return T.getBitWidth() == 8 || T.getBitWidth() == 16 ||
-         T.getBitWidth() == 32 || T.getBitWidth() == 64;
+         T.getBitWidth() == 32 || T.getBitWidth() == 64 ||
+         T.getBitWidth() == 128;
 }
 #endif
 
