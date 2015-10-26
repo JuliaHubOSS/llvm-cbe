@@ -1742,8 +1742,6 @@ void CWriter::generateHeader(Module &M) {
         case Intrinsic::ssub_with_overflow:
         case Intrinsic::umul_with_overflow:
         case Intrinsic::smul_with_overflow:
-          intrinsicsToDefine.push_back(I);
-          continue;
         case Intrinsic::bswap:
         case Intrinsic::ceil:
         case Intrinsic::ctlz:
@@ -1757,7 +1755,8 @@ void CWriter::generateHeader(Module &M) {
         case Intrinsic::rint:
         case Intrinsic::sqrt:
         case Intrinsic::trunc:
-          break;
+          intrinsicsToDefine.push_back(I);
+          continue;
       }
     }
 
@@ -3003,7 +3002,6 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   Type *elemT = funT->getParamType(0);
   IntegerType *elemIntT = dyn_cast<IntegerType>(funT->getParamType(0));
   char i, numParams = funT->getNumParams();
-
   bool isSigned;
   switch (F.getIntrinsicID()) {
   default:
@@ -3015,10 +3013,8 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
     isSigned = true;
     break;
   }
+  assert(numParams > 0 && numParams < 26);
 
-  assert(isSupportedIntegerSize(*elemIntT) &&
-         "CBackend does not support arbitrary size integers.");
-  assert(numParams > 0);
   // static inline Rty _llvm_op_ixx(unsigned ixx a, unsigned ixx b) {
   //   Rty r;
   //   <opcode here>
@@ -3030,8 +3026,17 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   Out << GetValueName(&F);
   Out << "(";
   for (i = 0; i < numParams; i++) {
-    assert(elemT == funT->getParamType(i));
-    printSimpleType(Out, elemT, isSigned);
+    switch (F.getIntrinsicID()) {
+    // optional intrinsic validity assertion checks
+    default:
+      // default case: assume all parameters must have the same type
+      assert(elemT == funT->getParamType(i));
+      break;
+    case Intrinsic::ctlz:
+    case Intrinsic::cttz:
+      break;
+    }
+    printSimpleType(Out, funT->getParamType(i), isSigned);
     Out << " " << (char)('a' + i);
     if (i != numParams - 1) Out << ", ";
   }
@@ -3039,57 +3044,149 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   printTypeName(Out, retT);
   Out << " r;\n";
 
-  switch (F.getIntrinsicID()) {
-  default:
-#ifndef NDEBUG
-    errs() << "Unsupported Intrinsic!" << F;
-#endif
-    llvm_unreachable(0);
+  if (elemIntT) {
+    // handle integer ops
+    assert(isSupportedIntegerSize(*elemIntT) &&
+           "CBackend does not support arbitrary size integers.");
+    switch (F.getIntrinsicID()) {
+    default:
+  #ifndef NDEBUG
+      errs() << "Unsupported Intrinsic!" << F;
+  #endif
+      llvm_unreachable(0);
 
-  case Intrinsic::uadd_with_overflow:
-    //   r.field0 = a + b;
-    //   r.field1 = (r.field0 < a);
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field0 = a + b;\n";
-    Out << "  r.field1 = (a >= -b);\n";
-    break;
+    case Intrinsic::uadd_with_overflow:
+      //   r.field0 = a + b;
+      //   r.field1 = (r.field0 < a);
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field0 = a + b;\n";
+      Out << "  r.field1 = (a >= -b);\n";
+      break;
 
-  case Intrinsic::sadd_with_overflow:
-    //   r.field1 = (b > 0 && a > XX_MAX - b) ||
-    //              (b < 0 && a < XX_MIN - b);
-    //   r.field0 = r.field1 ? 0 : a + b;
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field0 = a + b;\n";
-    Out << "  r.field1 = (b >= 0 ? a > ";
-    printLimitValue(*elemIntT, true, true, Out);
-    Out << " - b : a < ";
-    printLimitValue(*elemIntT, true, false, Out);
-    Out << " - b);\n";
-    break;
+    case Intrinsic::sadd_with_overflow:
+      //   r.field0 = a + b;
+      //   r.field1 = (b > 0 && a > XX_MAX - b) ||
+      //              (b < 0 && a < XX_MIN - b);
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field0 = a + b;\n";
+      Out << "  r.field1 = (b >= 0 ? a > ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " - b : a < ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " - b);\n";
+      break;
 
-  case Intrinsic::usub_with_overflow:
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field0 = a - b;\n";
-    Out << "  r.field1 = (a < b);\n";
-    break;
+    case Intrinsic::usub_with_overflow:
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field0 = a - b;\n";
+      Out << "  r.field1 = (a < b);\n";
+      break;
 
-  case Intrinsic::ssub_with_overflow:
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field0 = a - b;\n";
-    Out << "  r.field1 = (a >= b);\n";
-    break;
+    case Intrinsic::ssub_with_overflow:
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field0 = a - b;\n";
+      Out << "  r.field1 = (b <= 0 ? a > ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " + b : a < ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " + b);\n";
+      break;
 
-  case Intrinsic::umul_with_overflow:
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field1 = LLVMMul_sov(sizeof(a), &a, &b, &r.field0);\n";
-    break;
+    case Intrinsic::umul_with_overflow:
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
+      break;
 
-  case Intrinsic::smul_with_overflow:
-    assert(cast<StructType>(retT)->getElementType(0) == elemT);
-    Out << "  r.field1 = LLVMMul_uov(sizeof(a), &a, &b, &r.field0);\n";
-    break;
+    case Intrinsic::smul_with_overflow:
+      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      Out << "  r.field1 = LLVMMul_uov(8 * sizeof(a), &a, &b, &r.field0);\n";
+      break;
 
+    case Intrinsic::bswap:
+      assert(retT == elemT);
+      Out << "  LLVMFlipAllBits(8 * sizeof(a), &a, &r);\n";
+      break;
+
+    case Intrinsic::ctpop:
+      assert(retT == elemT);
+      Out << "  r = LLVMCountPopulation(8 * sizeof(a), &a);\n";
+      break;
+
+    case Intrinsic::ctlz:
+      assert(retT == elemT);
+      Out << "  (void)b;\n  r = LLVMCountLeadingZeros(8 * sizeof(a), &a);\n";
+      break;
+
+    case Intrinsic::cttz:
+      assert(retT == elemT);
+      Out << "  (void)b;\n  r = LLVMCountTrailingZeros(8 * sizeof(a), &a);\n";
+      break;
+    }
+  } else {
+    // handle FP ops
+    const char *suffix;
+    assert(retT == elemT);
+    if (elemT->isFloatTy() || elemT->isHalfTy()) {
+        suffix = "f";
+    } else if (elemT->isDoubleTy()) {
+        suffix = "";
+    } else if (elemT->isFP128Ty()) {
+    } else if (elemT->isX86_FP80Ty()) {
+    } else if (elemT->isPPC_FP128Ty()) {
+        suffix = "l";
+    } else {
+  #ifndef NDEBUG
+      errs() << "Unsupported Intrinsic!" << F;
+  #endif
+      llvm_unreachable(0);
+    }
+
+    switch (F.getIntrinsicID()) {
+    default:
+  #ifndef NDEBUG
+      errs() << "Unsupported Intrinsic!" << F;
+  #endif
+      llvm_unreachable(0);
+
+    case Intrinsic::ceil:
+      Out << "  r = ceil" << suffix << "(a);\n";
+      break;
+
+    case Intrinsic::fabs:
+      Out << "  r = fabs" << suffix << "(a);\n";
+      break;
+
+    case Intrinsic::floor:
+      Out << "  r = floor" << suffix << "(a);\n";
+      break;
+
+    case Intrinsic::fma:
+      Out << "  r = fma" << suffix << "(a, b, c);\n";
+      break;
+
+    case Intrinsic::fmuladd:
+      Out << "  r = a * b + c;\n";
+      break;
+
+    case Intrinsic::pow:
+      Out << "  r = pow" << suffix << "(a, b);\n";
+      break;
+
+    case Intrinsic::rint:
+      Out << "  r = rint" << suffix << "(a);\n";
+      break;
+
+    case Intrinsic::sqrt:
+      Out << "  r = sqrt" << suffix << "(a);\n";
+      break;
+
+    case Intrinsic::trunc:
+      Out << "  r = trunc" << suffix << "(a);\n";
+      break;
+
+    }
   }
+
   Out << "  return r;\n}\n";
 }
 
@@ -3136,8 +3233,8 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::powi:
           case Intrinsic::rint:
           case Intrinsic::sqrt:
-          case Intrinsic::trap:
           case Intrinsic::trunc:
+          case Intrinsic::trap:
           case Intrinsic::stackprotector:
               // We directly implement these intrinsics
             break;
