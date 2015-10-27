@@ -3815,6 +3815,11 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
 void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
                                 bool IsVolatile, unsigned Alignment /*bytes*/) {
+  if (isAddressExposed(Operand)) {
+    writeOperandInternal(Operand);
+    return;
+  }
+
   bool IsUnaligned = Alignment &&
     Alignment < TD->getABITypeAlignment(OperandType);
 
