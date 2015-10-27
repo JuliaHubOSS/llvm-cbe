@@ -2443,8 +2443,14 @@ void CWriter::printFunction(Function &F) {
   // print local variable information for the function
   for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I) {
     if (AllocaInst *AI = isDirectAlloca(&*I)) {
+      unsigned Alignment = AI->getAlignment();
+      bool IsOveraligned = Alignment &&
+        Alignment > TD->getABITypeAlignment(AI->getAllocatedType());
       Out << "  ";
-      printTypeName(Out, AI->getAllocatedType(), false) << ' ' << GetValueName(AI);
+      printTypeName(Out, AI->getAllocatedType(), false) << ' ';
+      if (IsOveraligned)
+        Out << "__attribute__((aligned(" << Alignment << "))) ";
+      Out << GetValueName(AI);
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
     } else if (I->getType() != Type::getVoidTy(F.getContext()) &&
