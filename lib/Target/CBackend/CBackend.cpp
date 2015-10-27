@@ -1632,6 +1632,7 @@ void CWriter::generateHeader(Module &M) {
   Out << "#include <setjmp.h>\n";      // Unwind support
   Out << "#include <limits.h>\n";      // With overflow intrinsics support.
   Out << "#include <stdint.h>\n";      // Sized integer support
+  Out << "#include <string.h>\n";      // built-in definitions of many c library functions
   Out << "#include <APInt-C.h>\n";     // Implementations of many llvm intrinsics
   generateCompilerSpecificCode(Out, TD);
 
@@ -1760,12 +1761,14 @@ void CWriter::generateHeader(Module &M) {
       }
     }
 
+    // Skip a few functions that have already been defined in headers
     if (I->getName() == "setjmp" ||
         I->getName() == "longjmp" ||
         I->getName() == "_setjmp" ||
         I->getName() == "siglongjmp" ||
         I->getName() == "sigsetjmp" ||
-        I->getName() == "memcmp")
+        I->getName() == "memcmp" ||
+        I->getName() == "memcpy")
       continue;
 
     if (I->hasDLLImportStorageClass())
@@ -3337,6 +3340,18 @@ void CWriter::visitCallInst(CallInst &I) {
   if (isStructRet) {   // Skip struct return argument.
     ++AI;
     ++ArgNo;
+  }
+
+  Function *F = I.getCalledFunction();
+  if (F) {
+    StringRef Name = F->getName();
+    // emit cast for the first argument to type expected by header prototype
+    // the jmp_buf type is an array, so the array-to-pointer decay adds the
+    // strange extra *'s
+    if (Name == "sigsetjmp")
+        Out << "*(sigjmp_buf*)";
+    else if (Name == "setjmp")
+        Out << "*(jmp_buf*)";
   }
 
   for (; AI != AE; ++AI, ++ArgNo) {
