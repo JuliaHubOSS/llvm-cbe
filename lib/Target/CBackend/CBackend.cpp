@@ -3491,6 +3491,9 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << ")";
     return true;
   case Intrinsic::stackprotector:
+    writeOperandDeref(I.getArgOperand(1));
+    Out << " = ";
+    writeOperand(I.getArgOperand(0));
     return true;
   case Intrinsic::uadd_with_overflow:
   case Intrinsic::sadd_with_overflow:
