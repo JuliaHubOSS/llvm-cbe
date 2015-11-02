@@ -1862,6 +1862,34 @@ void CWriter::generateHeader(Module &M) {
     }
   }
 
+  // Alias declarations...
+  if (!M.alias_empty()) {
+    Out << "\n/* External Alias Declarations */\n";
+    for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
+         I != E; ++I) {
+      assert(!I->isDeclaration());
+      if (I->hasLocalLinkage())
+        continue; // Internal Global
+
+      if (I->hasDLLImportStorageClass())
+        Out << "__declspec(dllimport) ";
+      else if (I->hasDLLExportStorageClass())
+        Out << "__declspec(dllexport) ";
+
+      // Thread Local Storage
+      if (I->isThreadLocal())
+        Out << "__thread ";
+
+      printTypeName(Out, I->getType(), false) << ' ' << I->getName();
+
+      if (I->hasExternalWeakLinkage())
+         Out << " __EXTERNAL_WEAK__";
+      Out << " = ";
+      writeOperand(I->getAliasee(), true);
+      Out << ";\n";
+    }
+  }
+
   Out << "\n\n/* LLVM Intrinsic Builtin Function Bodies */\n";
 
   // Emit some helper functions for dealing with FCMP instruction's
