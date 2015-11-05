@@ -160,10 +160,10 @@ namespace {
     void printCast(unsigned opcode, Type *SrcTy, Type *DstTy);
     void printConstant(Constant *CPV, bool Static);
     void printConstantWithCast(Constant *CPV, unsigned Opcode);
-    bool printConstExprCast(ConstantExpr *CE, bool Static);
-    void printConstantArray(ConstantArray *CPA, bool Static);
-    void printConstantVector(ConstantVector *CV, bool Static);
-    void printConstantDataSequential(ConstantDataSequential *CDS, bool Static);
+    bool printConstExprCast(ConstantExpr *CE);
+    void printConstantArray(ConstantArray *CPA);
+    void printConstantVector(ConstantVector *CV);
+    void printConstantDataSequential(ConstantDataSequential *CDS);
 
     bool isAddressExposed(Value *V) const;
     bool isInlinableInst(Instruction &I);
@@ -225,8 +225,7 @@ namespace {
                                     BasicBlock *Successor, unsigned Indent);
     void printBranchToBlock(BasicBlock *CurBlock, BasicBlock *SuccBlock,
                             unsigned Indent);
-    void printGEPExpression(Value *Ptr, gep_type_iterator I,
-                            gep_type_iterator E, bool Static);
+    void printGEPExpression(Value *Ptr, gep_type_iterator I, gep_type_iterator E);
 
     std::string GetValueName(Value *Operand);
   };
