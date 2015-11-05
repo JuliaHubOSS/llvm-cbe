@@ -28,7 +28,7 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Pass.h"
-#include "llvm/PassManager.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Transforms/Scalar.h"
 
@@ -47,7 +47,7 @@ namespace {
   class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     std::string _Out;
     raw_string_ostream Out;
-    raw_ostream &FileOut;
+    raw_pwrite_stream &FileOut;
     IntrinsicLowering *IL;
     LoopInfo *LI;
     const Module *TheModule;
@@ -87,19 +87,18 @@ namespace {
 
   public:
     static char ID;
-    explicit CWriter(formatted_raw_ostream &o)
+    explicit CWriter(raw_pwrite_stream &o)
       : FunctionPass(ID), Out(_Out), FileOut(o), IL(0), LI(0),
         TheModule(0), TAsm(0), MRI(0), MOFI(0), TCtx(0), TD(0),
         OpaqueCounter(0), NextAnonValueNumber(0),
         NextAnonStructNumber(0), NextFunctionNumber(0) {
-      initializeLoopInfoPass(*PassRegistry::getPassRegistry());
       FPCounter = 0;
     }
 
     virtual const char *getPassName() const { return "C backend"; }
 
     void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.addRequired<LoopInfo>();
+      AU.addRequired<LoopInfoWrapperPass>();
       AU.setPreservesCFG();
     }
 

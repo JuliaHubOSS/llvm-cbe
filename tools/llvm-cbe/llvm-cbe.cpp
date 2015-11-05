@@ -13,22 +13,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/ADT/Triple.h"
-/* 6-09-14  Greg Simpson
-cannot find PrintModulePass.h
-add another include 
-#include "llvm/Assembly/PrintModulePass.h" */
-#include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Pass.h"
-#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormattedStream.h"
@@ -42,7 +40,6 @@ add another include
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
 using namespace llvm;
@@ -81,11 +78,6 @@ TargetTriple("mtriple", cl::desc("Override target triple for module"));
 
 cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
                        cl::desc("Do not verify input module"));
-
-cl::opt<bool>
-DisableSimplifyLibCalls("disable-simplify-libcalls",
-                        cl::desc("Disable simplify-libcalls"),
-                        cl::init(false));
 
 static int compileModule(char**, LLVMContext&);
 
@@ -153,14 +145,14 @@ static tool_output_file *GetOutputStream(const char *TargetName,
   }
 
   // Open the file.
-  std::string error;
+  std::error_code error;
   sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
   if (Binary)
     OpenFlags |= sys::fs::F_Text;
   tool_output_file *FDOut = new tool_output_file(OutputFilename.c_str(), error,
                                                  OpenFlags);
-  if (!error.empty()) {
-    errs() << error << '\n';
+  if (error) {
+    errs() << error.message() << '\n';
     delete FDOut;
     return 0;
   }
@@ -216,8 +208,6 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Load the module to be compiled...
   SMDiagnostic Err;
   
-  //Jackson Korba 9/30/14
-  //OwningPtr<Module> M;
   std::unique_ptr<Module> M;
   
   Module *mod = 0;
@@ -228,7 +218,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
-    M.reset(ParseIRFile(InputFilename, Err, Context));
+    M = parseIRFile(InputFilename, Err, Context);
     mod = M.get();
     if (mod == 0) {
       Err.print(argv[0], errs());
@@ -281,25 +271,18 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   TargetOptions Options;
   Options.LessPreciseFPMADOption = EnableFPMAD;
-  Options.NoFramePointerElim = DisableFPElim;
   Options.AllowFPOpFusion = FuseFPOps;
   Options.UnsafeFPMath = EnableUnsafeFPMath;
   Options.NoInfsFPMath = EnableNoInfsFPMath;
   Options.NoNaNsFPMath = EnableNoNaNsFPMath;
   Options.HonorSignDependentRoundingFPMathOption =
       EnableHonorSignDependentRoundingFPMath;
-  Options.UseSoftFloat = GenerateSoftFloatCalls;
   if (FloatABIForCalls != FloatABI::Default)
     Options.FloatABIType = FloatABIForCalls;
   Options.NoZerosInBSS = DontPlaceZerosInBSS;
   Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
-  Options.DisableTailCalls = DisableTailCalls;
   Options.StackAlignmentOverride = OverrideStackAlignment;
-  Options.TrapFuncName = TrapFuncName;
   Options.PositionIndependentExecutable = EnablePIE;
-  //Jackson Korba 9/30/14
-  //Options.EnableSegmentedStacks = SegmentedStacks;
-  Options.UseInitArray = UseInitArray;
   
   //Jackson Korba 9/30/14
   //OwningPtr<targetMachine>
@@ -311,24 +294,6 @@ static int compileModule(char **argv, LLVMContext &Context) {
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
 
-  /* Greg Simpson - 6-09-14
-    Could not find any instance of DisableDotLoc in llvm file CommandFlags.h
-    removed statement 
-  if (DisableDotLoc)
-    Target.setMCUseLoc(false);
-
-  */
-  /* Jackson Korba 9/30/14
-  if (DisableCFI)
-    Target.setMCUseCFI(false);
-  
-  if (EnableDwarfDirectory)
-    Target.setMCUseDwarfDirectory(true);
-  */
-
-  if (GenerateSoftFloatCalls)
-    FloatABIForCalls = FloatABI::Soft;
-
   // Disable .loc support for older OS X versions.
   if (TheTriple.isMacOSX() &&
       TheTriple.isMacOSXVersionLT(10, 6)){}
@@ -339,48 +304,27 @@ static int compileModule(char **argv, LLVMContext &Context) {
     Target.setMCUseLoc(false);  */
 
   //Jackson Korba 9/30/14 
-  //OwningPtr<tool_output_file> Out
   std::unique_ptr<tool_output_file> Out
     (GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
   if (!Out) return 1;
 
   // Build up all of the passes that we want to do to the module.
-  PassManager PM;
+  legacy::PassManager PM;
 
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
-  TargetLibraryInfo *TLI = new TargetLibraryInfo(TheTriple);
-  if (DisableSimplifyLibCalls)
-    TLI->disableAllFunctions();
+  TargetLibraryInfoWrapperPass *TLI = new TargetLibraryInfoWrapperPass(TheTriple);
   PM.add(TLI);
 
   // Add intenal analysis passes from the target machine.
-  Target.addAnalysisPasses(PM);
-
-  // Add the target data from the target machine, if it exists, or the module.
-  if (const DataLayout *TD = Target.getDataLayout())
-    //Jackson Korba 9/30/14
-    //PM.add(new DataLayout(*TD));
-    PM.add(new DataLayoutPass(*TD));
-  else
-    //PM.add(new DataLayout(mod));
-    PM.add(new DataLayoutPass(mod));
-
-  // Override default to generate verbose assembly.
-  Target.setAsmVerbosityDefault(true);
+  PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
   if (RelaxAll) {
     if (FileType != TargetMachine::CGFT_ObjectFile)
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj";
-    /*Jackson Korba 9/30/14
-    else
-      Target.setMCRelaxAll(true);
-    */
   }
 
   {
-    formatted_raw_ostream FOS(Out->os());
-
     AnalysisID StartAfterID = 0;
     AnalysisID StopAfterID = 0;
     const PassRegistry *PR = PassRegistry::getPassRegistry();
@@ -402,7 +346,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
     }
 
     // Ask the target to add backend passes as necessary.
-    if (Target.addPassesToEmitFile(PM, FOS, FileType, NoVerify,
+    if (Target.addPassesToEmitFile(PM, Out->os(), FileType, NoVerify,
                                    StartAfterID, StopAfterID)) {
       errs() << argv[0] << ": target does not support generation of this"
              << " file type!\n";

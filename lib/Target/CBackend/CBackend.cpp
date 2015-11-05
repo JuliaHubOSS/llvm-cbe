@@ -13,9 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CBackend.h"
-#include "llvm/Analysis/ConstantsScanner.h"
-#include "llvm/Analysis/FindUsedTypes.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -125,7 +124,7 @@ bool CWriter::runOnFunction(Function &F) {
  if (F.hasAvailableExternallyLinkage())
    return false;
 
-  LI = &getAnalysis<LoopInfo>();
+  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 
   // Get rid of intrinsics we can't handle.
   lowerIntrinsics(F);
@@ -867,7 +866,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         V = Tmp.convertToDouble();
       }
 
-      if (IsNAN(V)) {
+      if (isnan(V)) {
         // The value is NaN
 
         // FIXME the actual NaN bits should be emitted.
@@ -891,7 +890,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         else
           Out << "LLVM_NAN" << (Val == QuietNaN ? "" : "S") << "(\""
               << Buffer << "\") /*nan*/ ";
-      } else if (IsInf(V)) {
+      } else if (isinf(V)) {
         // The value is Inf
         if (V < 0) Out << '-';
         Out << "LLVM_INF" <<
@@ -2217,10 +2216,10 @@ void CWriter::printFloatingPointConstants(Function &F) {
   // the precision of the printed form, unless the printed form preserves
   // precision.
   //
-  for (constant_iterator I = constant_begin(&F), E = constant_end(&F);
-       I != E; ++I)
-    printFloatingPointConstants(*I);
-
+  for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I)
+      for (Instruction::op_iterator I_Op = I->op_begin(), E_Op = I->op_end(); I_Op != E_Op; ++I_Op)
+          if (const Constant *C = dyn_cast<Constant>(I_Op))
+            printFloatingPointConstants(C);
   Out << '\n';
 }
 
@@ -2346,7 +2345,7 @@ void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
   if (Ty->isPointerTy() && !Ty->isVectorTy())
     return;
   // Check to see if we have already printed this struct.
-  if (!StructPrinted.insert(Ty)) return;
+  if (!StructPrinted.insert(Ty).second) return;
 
   // Print all contained types first.
   for (Type::subtype_iterator I = Ty->subtype_begin(),
@@ -4029,18 +4028,17 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
 //                       External Interface declaration
 //===----------------------------------------------------------------------===//
 
-bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
-                                         formatted_raw_ostream &o,
-                                         CodeGenFileType FileType,
-                                         bool DisableVerify,
-                                         AnalysisID StartAfter,
-                                         AnalysisID StopAfter) {
+bool CTargetMachine::addPassesToEmitFile(
+    PassManagerBase &PM, raw_pwrite_stream &Out, CodeGenFileType FileType,
+    bool DisableVerify, AnalysisID StartBefore,
+    AnalysisID StartAfter, AnalysisID StopAfter,
+    MachineFunctionInitializer *MFInitializer) {
+
   if (FileType != TargetMachine::CGFT_AssemblyFile) return true;
 
   PM.add(createGCLoweringPass());
   PM.add(createLowerInvokePass());
   PM.add(createCFGSimplificationPass());   // clean up after lower invoke.
-  PM.add(new CWriter(o));
-//  PM.add(createGCInfoDeleter()); Deprecated in 3.3+
+  PM.add(new CWriter(Out));
   return false;
 }

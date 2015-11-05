@@ -20,21 +20,19 @@
 namespace llvm {
 
 struct CTargetMachine : public TargetMachine {
-  CTargetMachine(const Target &T, StringRef TT,
-                 StringRef CPU, StringRef FS, const TargetOptions &Options,
-                 Reloc::Model RM, CodeModel::Model CM,
-                 CodeGenOpt::Level OL)
-    : TargetMachine(T, TT, CPU, FS, Options) { }
+  CTargetMachine(const Target &T, const Triple &TargetTriple, StringRef CPU, StringRef FS,
+                 const TargetOptions &Options, Reloc::Model RM,
+                 CodeModel::Model CM, CodeGenOpt::Level OL)
+    : TargetMachine(T, "", TargetTriple, CPU, FS, Options) { }
 
-  virtual bool addPassesToEmitFile(PassManagerBase &PM,
-                                   formatted_raw_ostream &Out,
-                                   CodeGenFileType FileType,
-                                   bool DisableVerify,
-								   AnalysisID StartAfter,
-								   AnalysisID StartBefore
-								   );
+  /// Add passes to the specified pass manager to get the specified file
+  /// emitted.  Typically this will involve several steps of code generation.
+  bool addPassesToEmitFile(
+    PassManagerBase &PM, raw_pwrite_stream &Out, CodeGenFileType FileType,
+    bool DisableVerify = true, AnalysisID StartBefore = nullptr,
+    AnalysisID StartAfter = nullptr, AnalysisID StopAfter = nullptr,
+    MachineFunctionInitializer *MFInitializer = nullptr) override;
 
-  virtual const DataLayout *getDataLayout() const { return 0; }
 };
 
 extern Target TheCBackendTarget;
