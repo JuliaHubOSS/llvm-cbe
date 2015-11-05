@@ -171,17 +171,9 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
     unsigned NumBits = cast<IntegerType>(Ty)->getBitWidth();
     if (NumBits == 1)
       return Out << "bool";
-    else if (NumBits <= 8)
-      return Out << (isSigned?"i8":"u8");
-    else if (NumBits <= 16)
-      return Out << (isSigned?"i16":"u16");
-    else if (NumBits <= 32)
-      return Out << (isSigned?"i32":"u32");
-    else if (NumBits <= 64)
-      return Out << (isSigned?"i64":"u64");
     else {
       assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
-      return Out << (isSigned?"i128":"u128");
+      return Out << (isSigned?"i":"u") << NumBits;
     }
   }
   case Type::FloatTyID:    return Out << "f32";
@@ -634,7 +626,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
     case Instruction::IntToPtr:
     case Instruction::PtrToInt:
       // Avoid "cast to pointer from integer of different size" warnings
-      Out << "(unsigned long)";
+      Out << "(uintptr_t)";
       break;
     case Instruction::Trunc:
     case Instruction::BitCast:
@@ -649,7 +641,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
 }
 
 // printConstant - The LLVM Constant to C Constant converter.
-// Static context means that it is being used in a context where the 
+// Static context means that it is being used in a context where the
 // type cast is implicit, such as the RHS of a `type var = RHS;` expression
 // or inside a struct initializer expression
 void CWriter::printConstant(Constant *CPV, bool Static) {
@@ -1162,8 +1154,7 @@ std::string CWriter::GetValueName(Value *Operand) {
 /// writeInstComputationInline - Emit the computation for the specified
 /// instruction inline, with no destination provided.
 void CWriter::writeInstComputationInline(Instruction &I) {
-  // We can't currently support integer types other than 1, 8, 16, 32, 64.
-  // Validate this.
+  // C can't handle non-power-of-two integer types
   unsigned mask = 0;
   Type *Ty = I.getType();
   if (Ty->isIntegerTy()) {
@@ -1263,16 +1254,14 @@ bool CWriter::writeInstructionCast(Instruction &I) {
 // Write the operand with a cast to another type based on the Opcode being used.
 // This will be used in cases where an instruction has specific type
 // requirements (usually signedness) for its operands.
-void CWriter::writeOperandWithCast(Value* Operand, unsigned Opcode) {
+void CWriter::opcodeNeedsCast(unsigned Opcode,
+      // Indicate whether to do the cast or not.
+      bool &shouldCast,
+      // Indicate whether the cast should be to a signed type or not.
+      bool &castIsSigned) {
 
-  // Extract the operand's type, we'll need it.
-  Type* OpTy = Operand->getType();
-
-  // Indicate whether to do the cast or not.
-  bool shouldCast = false;
-
-  // Indicate whether the cast should be to a signed type or not.
-  bool castIsSigned = false;
+  shouldCast = false;
+  castIsSigned = false;
 
   // Based on the Opcode for which this Operand is being written, determine
   // the new type to which the operand should be casted by setting the value
@@ -1300,9 +1289,18 @@ void CWriter::writeOperandWithCast(Value* Operand, unsigned Opcode) {
       castIsSigned = true;
       break;
   }
+}
 
+void CWriter::writeOperandWithCast(Value* Operand, unsigned Opcode) {
   // Write out the casted operand if we should, otherwise just write the
   // operand.
+
+  // Extract the operand's type, we'll need it.
+  bool shouldCast;
+  bool castIsSigned;
+  opcodeNeedsCast(Opcode, shouldCast, castIsSigned);
+
+  Type* OpTy = Operand->getType();
   if (shouldCast) {
     Out << "((";
     printSimpleType(Out, OpTy, castIsSigned);
@@ -1596,7 +1594,7 @@ bool CWriter::doFinalization(Module &M) {
   ArrayTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
-  VectorOpDeclTypes.clear();
+  InlineOpDeclTypes.clear();
   CastOpDeclTypes.clear();
   prototypesToGen.clear();
 
@@ -2098,7 +2096,7 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all simple vector operations
-  for (std::set<std::pair<unsigned, VectorType*>>::iterator it = VectorOpDeclTypes.begin(), end = VectorOpDeclTypes.end();
+  for (std::set<std::pair<unsigned, Type*>>::iterator it = InlineOpDeclTypes.begin(), end = InlineOpDeclTypes.end();
        it != end; ++it) {
     // static inline <u32 x 4> llvm_BinOp_u32x4(<u32 x 4> a, <u32 x 4> b) {
     //     Rty r = {
@@ -2110,20 +2108,11 @@ void CWriter::generateHeader(Module &M) {
     //     return r;
     // }
     unsigned opcode = (*it).first;
-    VectorType *OpTy = (*it).second;
-    Type *ElemTy = OpTy->getVectorElementType();
+    Type *OpTy = (*it).second;
+    Type *ElemTy = isa<VectorType>(OpTy) ? OpTy->getVectorElementType() : OpTy;
+    bool shouldCast;
     bool isSigned;
-    switch (opcode) {
-    default:
-      isSigned = false;
-      break;
-    case Instruction::AShr:
-    case Instruction::SDiv:
-    case Instruction::SRem:
-      isSigned = true;
-      break;
-    }
-
+    opcodeNeedsCast(opcode, shouldCast, isSigned);
 
     Out << "static inline ";
     printTypeName(Out, OpTy);
@@ -2148,54 +2137,119 @@ void CWriter::generateHeader(Module &M) {
       printTypeName(Out, OpTy, isSigned);
       Out << " b) {\n  ";
     }
+
     printTypeName(Out, OpTy);
-    Out << " r = {\n";
-    unsigned n, l = OpTy->getVectorNumElements();
-    for (n = 0; n < l; n++) {
-      if (opcode == BinaryNeg) {
-        Out << "    -a[" << n << "]";
-      } else if (opcode == BinaryNot) {
-        Out << "    ~a[" << n << "]";
-      } else if (opcode == Instruction::FRem) {
-        // Output a call to fmod/fmodf instead of emitting a%b
-        if (ElemTy->isFloatTy())
-          Out << "fmodf(a[" << n << "], b[" << n << "])";
-        else if (ElemTy->isDoubleTy())
-          Out << "fmod(a[" << n << "], b[" << n << "])";
-        else  // all 3 flavors of long double
-          Out << "fmodl(a[" << n << "], b[" << n << "])";
-      } else {
-        Out << "    a[" << n << "]";
-        switch (opcode) {
-        case Instruction::Add:
-        case Instruction::FAdd: Out << " + "; break;
-        case Instruction::Sub:
-        case Instruction::FSub: Out << " - "; break;
-        case Instruction::Mul:
-        case Instruction::FMul: Out << " * "; break;
-        case Instruction::URem:
-        case Instruction::SRem:
-        case Instruction::FRem: Out << " % "; break;
-        case Instruction::UDiv:
-        case Instruction::SDiv:
-        case Instruction::FDiv: Out << " / "; break;
-        case Instruction::And:  Out << " & "; break;
-        case Instruction::Or:   Out << " | "; break;
-        case Instruction::Xor:  Out << " ^ "; break;
-        case Instruction::Shl : Out << " << "; break;
-        case Instruction::LShr:
-        case Instruction::AShr: Out << " >> "; break;
-        default:
-#ifndef NDEBUG
-           errs() << "Invalid operator type!" << opcode;
-#endif
-           llvm_unreachable(0);
-        }
-        Out << "b[" << n << "]";
-      }
-      if (n != l - 1) Out << ",\n";
+    // C can't handle non-power-of-two integer types
+    unsigned mask = 0;
+    if (ElemTy->isIntegerTy()) {
+       IntegerType *ITy = static_cast<IntegerType*>(ElemTy);
+       if (!ITy->isPowerOf2ByteWidth())
+         mask = ITy->getBitMask();
     }
-    Out << "\n};\n  return r;\n}\n";
+
+    if (isa<VectorType>(OpTy)) {
+      Out << " r = {\n";
+      unsigned n, l = OpTy->getVectorNumElements();
+      for (n = 0; n < l; n++) {
+        Out << "    ";
+        if (mask)
+          Out << "(";
+        if (opcode == BinaryNeg) {
+          Out << "    -a[" << n << "]";
+        } else if (opcode == BinaryNot) {
+          Out << "    ~a[" << n << "]";
+        } else if (opcode == Instruction::FRem) {
+          // Output a call to fmod/fmodf instead of emitting a%b
+          if (ElemTy->isFloatTy())
+            Out << "fmodf(a[" << n << "], b[" << n << "])";
+          else if (ElemTy->isDoubleTy())
+            Out << "fmod(a[" << n << "], b[" << n << "])";
+          else  // all 3 flavors of long double
+            Out << "fmodl(a[" << n << "], b[" << n << "])";
+        } else {
+          Out << "    a[" << n << "]";
+          switch (opcode) {
+          case Instruction::Add:
+          case Instruction::FAdd: Out << " + "; break;
+          case Instruction::Sub:
+          case Instruction::FSub: Out << " - "; break;
+          case Instruction::Mul:
+          case Instruction::FMul: Out << " * "; break;
+          case Instruction::URem:
+          case Instruction::SRem:
+          case Instruction::FRem: Out << " % "; break;
+          case Instruction::UDiv:
+          case Instruction::SDiv:
+          case Instruction::FDiv: Out << " / "; break;
+          case Instruction::And:  Out << " & "; break;
+          case Instruction::Or:   Out << " | "; break;
+          case Instruction::Xor:  Out << " ^ "; break;
+          case Instruction::Shl : Out << " << "; break;
+          case Instruction::LShr:
+          case Instruction::AShr: Out << " >> "; break;
+          default:
+#ifndef NDEBUG
+             errs() << "Invalid operator type!" << opcode;
+#endif
+             llvm_unreachable(0);
+          }
+          Out << "b[" << n << "]";
+          if (mask)
+            Out << ") & " << mask;
+        }
+        if (n != l - 1) Out << ",\n";
+      }
+      Out << "\n};\n";
+    } else {
+      Out << " r = ";
+        if (mask)
+          Out << "(";
+        if (opcode == BinaryNeg) {
+          Out << "-a";
+        } else if (opcode == BinaryNot) {
+          Out << "~a";
+        } else if (opcode == Instruction::FRem) {
+          // Output a call to fmod/fmodf instead of emitting a%b
+          if (ElemTy->isFloatTy())
+            Out << "fmodf(a, b)";
+          else if (ElemTy->isDoubleTy())
+            Out << "fmod(a, b)";
+          else  // all 3 flavors of long double
+            Out << "fmodl(a, b)";
+        } else {
+          Out << "a";
+          switch (opcode) {
+          case Instruction::Add:
+          case Instruction::FAdd: Out << " + "; break;
+          case Instruction::Sub:
+          case Instruction::FSub: Out << " - "; break;
+          case Instruction::Mul:
+          case Instruction::FMul: Out << " * "; break;
+          case Instruction::URem:
+          case Instruction::SRem:
+          case Instruction::FRem: Out << " % "; break;
+          case Instruction::UDiv:
+          case Instruction::SDiv:
+          case Instruction::FDiv: Out << " / "; break;
+          case Instruction::And:  Out << " & "; break;
+          case Instruction::Or:   Out << " | "; break;
+          case Instruction::Xor:  Out << " ^ "; break;
+          case Instruction::Shl : Out << " << "; break;
+          case Instruction::LShr:
+          case Instruction::AShr: Out << " >> "; break;
+          default:
+#ifndef NDEBUG
+             errs() << "Invalid operator type!" << opcode;
+#endif
+             llvm_unreachable(0);
+          }
+          Out << "b";
+          if (mask)
+            Out << ") & " << mask;
+        }
+        Out << ";\n";
+    }
+    Out << "  return r;\n}\n";
   }
 
   // Emit definitions of the intrinsics.
@@ -2724,8 +2778,22 @@ void CWriter::visitPHINode(PHINode &I) {
 }
 
 void CWriter::visitBinaryOperator(BinaryOperator &I) {
-  if (I.getType()->isVectorTy()) {
-    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
+  // binary instructions, shift instructions, setCond instructions.
+  assert(!I.getType()->isPointerTy());
+
+  // We must cast the results of binary operations which might be promoted.
+  bool needsCast = false;
+  if ((I.getType() == Type::getInt8Ty(I.getContext())) ||
+      (I.getType() == Type::getInt16Ty(I.getContext()))
+      || (I.getType() == Type::getFloatTy(I.getContext()))) {
+    needsCast = true;
+  }
+  bool shouldCast;
+  bool castIsSigned;
+  opcodeNeedsCast(I.getOpcode(), shouldCast, castIsSigned);
+
+  if (I.getType()->isVectorTy() || needsCast || shouldCast) {
+    Type *VTy = I.getOperand(0)->getType();
     unsigned opcode;
     if (BinaryOperator::isNeg(&I)) {
       opcode = BinaryNeg;
@@ -2755,22 +2823,8 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
       writeOperand(I.getOperand(1));
     }
     Out << ")";
-    VectorOpDeclTypes.insert(std::pair<unsigned, VectorType*>(opcode, VTy));
+    InlineOpDeclTypes.insert(std::pair<unsigned, Type*>(opcode, VTy));
     return;
-  }
-
-  // binary instructions, shift instructions, setCond instructions.
-  assert(!I.getType()->isPointerTy());
-
-  // We must cast the results of binary operations which might be promoted.
-  bool needsCast = false;
-  if ((I.getType() == Type::getInt8Ty(I.getContext())) ||
-      (I.getType() == Type::getInt16Ty(I.getContext()))
-      || (I.getType() == Type::getFloatTy(I.getContext()))) {
-    needsCast = true;
-    Out << "((";
-    printTypeName(Out, I.getType(), false);
-    Out << ")(";
   }
 
   // If this is a negation operation, print it out as such.  For FP, we don't
@@ -3887,20 +3941,17 @@ void CWriter::visitStoreInst(StoreInst &I) {
                     I.isVolatile(), I.getAlignment());
   Out << " = ";
   Value *Operand = I.getOperand(0);
-  Constant *BitMask = 0;
+  unsigned BitMask = 0;
   if (IntegerType* ITy = dyn_cast<IntegerType>(Operand->getType()))
     if (!ITy->isPowerOf2ByteWidth())
       // We have a bit width that doesn't match an even power-of-2 byte
       // size. Consequently we must & the value with the type's bit mask
-      BitMask = ConstantInt::get(ITy, ITy->getBitMask());
+      BitMask = ITy->getBitMask();
   if (BitMask)
     Out << "((";
   writeOperand(Operand);
-  if (BitMask) {
-    Out << ") & ";
-    printConstant(BitMask, false);
-    Out << ")";
-  }
+  if (BitMask)
+    Out << ") & " << BitMask << ")";
 }
 
 void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {

@@ -75,7 +75,7 @@ namespace {
     std::set<Type*> SelectDeclTypes;
     std::set<std::pair<CmpInst::Predicate, VectorType*>> CmpDeclTypes;
     std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>> CastOpDeclTypes;
-    std::set<std::pair<unsigned, VectorType*>> VectorOpDeclTypes;
+    std::set<std::pair<unsigned, Type*>> InlineOpDeclTypes;
 
     DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;
@@ -106,6 +106,8 @@ namespace {
     virtual bool doFinalization(Module &M);
     virtual bool runOnFunction(Function &F);
 
+  private:
+
     void generateHeader(Module &M);
 
     raw_ostream &printFunctionProto(raw_ostream &Out, FunctionType *Ty,
@@ -127,18 +129,18 @@ namespace {
     std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
     std::string getArrayName(ArrayType *AT);
 
-
     void writeOperandDeref(Value *Operand);
     void writeOperand(Value *Operand, bool Static = false);
     void writeInstComputationInline(Instruction &I);
     void writeOperandInternal(Value *Operand, bool Static = false);
     void writeOperandWithCast(Value* Operand, unsigned Opcode);
+    void opcodeNeedsCast(unsigned Opcode, bool &shouldCast, bool &castIsSigned);
+
     void writeOperandWithCast(Value* Operand, ICmpInst &I);
     bool writeInstructionCast(Instruction &I);
     void writeMemoryAccess(Value *Operand, Type *OperandType,
                            bool IsVolatile, unsigned Alignment);
 
-  private :
     std::string InterpretASMConstraint(InlineAsm::ConstraintInfo& c);
 
     void lowerIntrinsics(Function &F);
