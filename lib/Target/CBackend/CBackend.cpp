@@ -56,6 +56,23 @@ enum UnaryOps {
   BinaryNot,
 };
 
+static bool isEmptyType(Type *Ty) {
+    if (StructType *STy = dyn_cast<StructType>(Ty))
+        return STy->getNumElements() == 0 ||
+            std::all_of(STy->element_begin(), STy->element_end(), [](Type *T){ return isEmptyType(T); });
+    if (VectorType *VTy = dyn_cast<VectorType>(Ty))
+        return VTy->getNumElements() == 0 ||
+            isEmptyType(VTy->getElementType());
+    if (ArrayType *ATy = dyn_cast<ArrayType>(Ty))
+        return ATy->getNumElements() == 0 ||
+            isEmptyType(ATy->getElementType());
+    return Ty->isVoidTy();
+}
+
+bool CWriter::isEmptyType(Type *Ty) const {
+    return ::isEmptyType(Ty);
+}
+
 /// isAddressExposed - Return true if the specified value's name needs to
 /// have its address taken in order to get a C value of the correct type.
 /// This happens for global variables, byval parameters, and direct allocas.
@@ -70,7 +87,7 @@ bool CWriter::isAddressExposed(Value *V) const {
 // what is acceptable to inline, so that variable declarations don't get
 // printed and an extra copy of the expr is not emitted.
 //
-bool CWriter::isInlinableInst(Instruction &I) {
+bool CWriter::isInlinableInst(Instruction &I) const {
   // Always inline cmp instructions, even if they are shared by multiple
   // expressions.  GCC generates horrible code if we don't.
   if (isa<CmpInst>(I))
@@ -78,7 +95,7 @@ bool CWriter::isInlinableInst(Instruction &I) {
 
   // Must be an expression, must be used exactly once.  If it is dead, we
   // emit it inline where it would go.
-  if (I.getType() == Type::getVoidTy(I.getContext()) || !I.hasOneUse() ||
+  if (isEmptyType(I.getType()) || !I.hasOneUse() ||
       isa<TerminatorInst>(I) || isa<CallInst>(I) || isa<PHINode>(I) ||
       isa<LoadInst>(I) || isa<VAArgInst>(I) || isa<InsertElementInst>(I) ||
       isa<InsertValueInst>(I))
@@ -112,7 +129,7 @@ AllocaInst *CWriter::isDirectAlloca(Value *V) const {
 }
 
 // isInlineAsm - Check if the instruction is a call to an inline asm chunk.
-bool CWriter::isInlineAsm(Instruction& I) {
+bool CWriter::isInlineAsm(Instruction& I) const {
   if (CallInst *CI = dyn_cast<CallInst>(&I))
     return isa<InlineAsm>(CI->getCalledValue());
   return false;
@@ -156,7 +173,9 @@ static std::string CBEMangle(const std::string &S) {
 
 raw_ostream &
 CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
-  if (Ty->isStructTy()) {
+  if (StructType *STy = dyn_cast<StructType>(Ty)) {
+    assert(!STy->isLiteral() && !STy->getName().empty());
+    assert(STy->getNumElements() != 0);
     return Out << "l_struct_" << CBEMangle(Ty->getStructName());
   }
 
@@ -187,12 +206,14 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
 
   case Type::VectorTyID: {
     VectorType *VTy = cast<VectorType>(Ty);
+    assert(VTy->getNumElements() != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
     return Out << "x" << VTy->getNumElements();
   }
 
   case Type::ArrayTyID: {
     ArrayType *ATy = cast<ArrayType>(Ty);
+    assert(ATy->getNumElements() != 0);
     printTypeString(Out, ATy->getElementType(), isSigned);
     return Out << "a" << ATy->getNumElements();
   }
@@ -206,6 +227,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
 }
 
 std::string CWriter::getStructName(StructType *ST) {
+  assert(ST->getNumElements() != 0);
   if (!ST->isLiteral() && !ST->getName().empty())
     return "struct l_struct_" + CBEMangle(ST->getName().str());
 
@@ -227,6 +249,7 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     raw_string_ostream ArrayInnards(astr);
     // Arrays are wrapped in structs to allow them to have normal
     // value semantics (avoiding the array "decay").
+    assert(AT->getNumElements() != 0);
     printTypeName(ArrayInnards, AT->getElementType(), false);
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
@@ -277,7 +300,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::IntegerTyID: {
     unsigned NumBits = cast<IntegerType>(Ty)->getBitWidth();
     if (NumBits == 1)
-      return Out << " bool";
+      return Out << "bool";
     else if (NumBits <= 8)
       return Out << (isSigned?"signed":"unsigned") << " char";
     else if (NumBits <= 16)
@@ -325,6 +348,9 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
       return printSimpleType(Out, Ty, isSigned);
   }
 
+  if (isEmptyType(Ty))
+    return Out << "void";
+
   switch (Ty->getTypeID()) {
   case Type::FunctionTyID: {
     FunctionType *FTy = cast<FunctionType>(Ty);
@@ -337,8 +363,7 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
   }
 
   case Type::PointerTyID: {
-    PointerType *PTy = cast<PointerType>(Ty);
-    return printTypeName(Out, PTy->getElementType(), false) << '*';
+    return printTypeName(Out, Ty->getPointerElementType(), false) << '*';
   }
 
   case Type::ArrayTyID: {
@@ -360,9 +385,12 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
     Out << getStructName(STy) << " {\n";
     unsigned Idx = 0;
     for (StructType::element_iterator I = STy->element_begin(),
-           E = STy->element_end(); I != E; ++I) {
+           E = STy->element_end(); I != E; ++I, Idx++) {
       Out << "  ";
-      printTypeName(Out, *I, false) << " field" << utostr(Idx++);
+      bool empty = isEmptyType(*I);
+      if (empty) Out << "/* "; // skip zero-sized types
+      printTypeName(Out, *I, false) << " field" << utostr(Idx);
+      if (empty) Out << " */"; // skip zero-sized types
       Out << ";\n";
     }
     Out << '}';
@@ -432,6 +460,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 
 raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *Ty) {
     ArrayType *ATy = cast<ArrayType>(Ty);
+    assert(ATy->getNumElements() != 0);
     // Arrays are wrapped in structs to allow them to have normal
     // value semantics (avoiding the array "decay").
     Out << getArrayName(Ty) << " {\n  ";
@@ -921,15 +950,13 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       ArrayType *AT = cast<ArrayType>(CPV->getType());
-      Out << '{';
-      if (AT->getNumElements()) {
-        Out << ' ';
-        Constant *CZ = Constant::getNullValue(AT->getElementType());
+      assert(AT->getNumElements() != 0 && !isEmptyType(AT));
+      Constant *CZ = Constant::getNullValue(AT->getElementType());
+      Out << "{ ";
+      printConstant(CZ, true);
+      for (unsigned i = 1, e = AT->getNumElements(); i != e; ++i) {
+        Out << ", ";
         printConstant(CZ, true);
-        for (unsigned i = 1, e = AT->getNumElements(); i != e; ++i) {
-          Out << ", ";
-          printConstant(CZ, true);
-        }
       }
       Out << " }";
     }
@@ -951,6 +978,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       VectorType *VT = cast<VectorType>(CPV->getType());
+      assert(VT->getNumElements() != 0 && !isEmptyType(VT));
       Out << "{ ";
       Constant *CZ = Constant::getNullValue(VT->getElementType());
       printConstant(CZ, true);
@@ -971,26 +999,28 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     }
     if (isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV)) {
       StructType *ST = cast<StructType>(CPV->getType());
-      Out << '{';
-      if (ST->getNumElements()) {
-        Out << ' ';
-        printConstant(Constant::getNullValue(ST->getElementType(0)), true);
-        for (unsigned i = 1, e = ST->getNumElements(); i != e; ++i) {
-          Out << ", ";
-          printConstant(Constant::getNullValue(ST->getElementType(i)), true);
-        }
+      Out << "{ ";
+      bool printed = false;
+      for (unsigned i = 0, e = ST->getNumElements(); i != e; ++i) {
+        Type *ElTy = ST->getElementType(i);
+        if (isEmptyType(ElTy)) continue;
+        if (printed) Out << ", ";
+        printConstant(Constant::getNullValue(ElTy), true);
+        printed = true;
       }
+      assert(printed);
       Out << " }";
     } else {
-      Out << '{';
-      if (CPV->getNumOperands()) {
-        Out << ' ';
-        printConstant(cast<Constant>(CPV->getOperand(0)), true);
-        for (unsigned i = 1, e = CPV->getNumOperands(); i != e; ++i) {
-          Out << ", ";
-          printConstant(cast<Constant>(CPV->getOperand(i)), true);
-        }
+      Out << "{ ";
+      bool printed = false;
+      for (unsigned i = 0, e = CPV->getNumOperands(); i != e; ++i) {
+        Constant *C = cast<Constant>(CPV->getOperand(i));
+        if (isEmptyType(C->getType())) continue;
+        if (printed) Out << ", ";
+        printConstant(C, true);
+        printed = true;
       }
+      assert(printed);
       Out << " }";
     }
     break;
@@ -1693,7 +1723,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Global Variable Declarations */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (!I->isDeclaration())
+      if (!I->isDeclaration() || isEmptyType(I->getType()->getPointerElementType()))
         continue;
 
       if (I->hasDLLImportStorageClass())
@@ -1711,7 +1741,7 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-      printTypeName(Out, I->getType()->getElementType(), false) << ' ' << GetValueName(I);
+      printTypeName(Out, I->getType()->getPointerElementType(), false) << ' ' << GetValueName(I);
 
       if (I->hasExternalWeakLinkage())
          Out << " __EXTERNAL_WEAK__";
@@ -1801,62 +1831,63 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n\n/* Global Variable Definitions and Initialization */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (!I->isDeclaration()) {
-        // Ignore special globals, such as debug info.
-        if (getGlobalVariableClass(I))
+      if (I->isDeclaration() || isEmptyType(I->getType()->getPointerElementType()))
           continue;
 
-        if (I->hasDLLImportStorageClass())
-          Out << "__declspec(dllimport) ";
-        else if (I->hasDLLExportStorageClass())
-          Out << "__declspec(dllexport) ";
+      // Ignore special globals, such as debug info.
+      if (getGlobalVariableClass(I))
+        continue;
 
-        if (I->hasLocalLinkage())
-          Out << "static ";
+      if (I->hasDLLImportStorageClass())
+        Out << "__declspec(dllimport) ";
+      else if (I->hasDLLExportStorageClass())
+        Out << "__declspec(dllexport) ";
 
-        // Thread Local Storage
-        if (I->isThreadLocal())
-          Out << "__thread ";
+      if (I->hasLocalLinkage())
+        Out << "static ";
 
-        printTypeName(Out, I->getType()->getElementType(), false) << ' ' << GetValueName(I);
-        if (I->hasLinkOnceLinkage())
-          Out << " __attribute__((common))";
-        else if (I->hasWeakLinkage())
-          Out << " __ATTRIBUTE_WEAK__";
-        else if (I->hasCommonLinkage())
-          Out << " __ATTRIBUTE_WEAK__";
+      // Thread Local Storage
+      if (I->isThreadLocal())
+        Out << "__thread ";
 
-        if (I->hasHiddenVisibility())
-          Out << " __HIDDEN__";
+      printTypeName(Out, I->getType()->getPointerElementType(), false) << ' ' << GetValueName(I);
+      if (I->hasLinkOnceLinkage())
+        Out << " __attribute__((common))";
+      else if (I->hasWeakLinkage())
+        Out << " __ATTRIBUTE_WEAK__";
+      else if (I->hasCommonLinkage())
+        Out << " __ATTRIBUTE_WEAK__";
 
-        // If the initializer is not null, emit the initializer.  If it is null,
-        // we try to avoid emitting large amounts of zeros.  The problem with
-        // this, however, occurs when the variable has weak linkage.  In this
-        // case, the assembler will complain about the variable being both weak
-        // and common, so we disable this optimization.
-        // FIXME common linkage should avoid this problem.
-        if (!I->getInitializer()->isNullValue()) {
-          Out << " = " ;
+      if (I->hasHiddenVisibility())
+        Out << " __HIDDEN__";
+
+      // If the initializer is not null, emit the initializer.  If it is null,
+      // we try to avoid emitting large amounts of zeros.  The problem with
+      // this, however, occurs when the variable has weak linkage.  In this
+      // case, the assembler will complain about the variable being both weak
+      // and common, so we disable this optimization.
+      // FIXME common linkage should avoid this problem.
+      if (!I->getInitializer()->isNullValue()) {
+        Out << " = " ;
+        writeOperand(I->getInitializer(), true);
+      } else if (I->hasWeakLinkage()) {
+        // We have to specify an initializer, but it doesn't have to be
+        // complete.  If the value is an aggregate, print out { 0 }, and let
+        // the compiler figure out the rest of the zeros.
+        Out << " = " ;
+        if (I->getInitializer()->getType()->isStructTy() ||
+            I->getInitializer()->getType()->isVectorTy()) {
+          Out << "{ 0 }";
+        } else if (I->getInitializer()->getType()->isArrayTy()) {
+          // As with structs and vectors, but with an extra set of braces
+          // because arrays are wrapped in structs.
+          Out << "{ { 0 } }";
+        } else {
+          // Just print it out normally.
           writeOperand(I->getInitializer(), true);
-        } else if (I->hasWeakLinkage()) {
-          // We have to specify an initializer, but it doesn't have to be
-          // complete.  If the value is an aggregate, print out { 0 }, and let
-          // the compiler figure out the rest of the zeros.
-          Out << " = " ;
-          if (I->getInitializer()->getType()->isStructTy() ||
-              I->getInitializer()->getType()->isVectorTy()) {
-            Out << "{ 0 }";
-          } else if (I->getInitializer()->getType()->isArrayTy()) {
-            // As with structs and vectors, but with an extra set of braces
-            // because arrays are wrapped in structs.
-            Out << "{ { 0 } }";
-          } else {
-            // Just print it out normally.
-            writeOperand(I->getInitializer(), true);
-          }
         }
-        Out << ";\n";
       }
+      Out << ";\n";
     }
   }
 
@@ -1865,7 +1896,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Alias Declarations */\n";
     for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
          I != E; ++I) {
-      assert(!I->isDeclaration());
+      assert(!I->isDeclaration() && !isEmptyType(I->getType()->getPointerElementType()));
       if (I->hasLocalLinkage())
         continue; // Internal Global
 
@@ -2401,6 +2432,8 @@ void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
     return;
   // Check to see if we have already printed this struct.
   if (!StructPrinted.insert(Ty).second) return;
+  // Skip empty structs
+  if (isEmptyType(Ty)) return;
 
   // Print all contained types first.
   for (Type::subtype_iterator I = Ty->subtype_begin(),
@@ -2535,7 +2568,7 @@ void CWriter::printFunction(Function &F) {
       Out << GetValueName(AI);
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
-    } else if (I->getType() != Type::getVoidTy(F.getContext()) &&
+    } else if (!isEmptyType(I->getType()) &&
                !isInlinableInst(*I)) {
       Out << "  ";
       printTypeName(Out, I->getType(), false) << ' ' << GetValueName(&*I);
@@ -2612,7 +2645,7 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
     if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
-      if (II->getType() != Type::getVoidTy(BB->getContext()) &&
+      if (!isEmptyType(II->getType()) &&
           !isInlineAsm(*II))
         outputLValue(II);
       else
@@ -2714,7 +2747,7 @@ void CWriter::printPHICopiesForSuccessor (BasicBlock *CurBlock,
     PHINode *PN = cast<PHINode>(I);
     // Now we have to do the printing.
     Value *IV = PN->getIncomingValueForBlock(CurBlock);
-    if (!isa<UndefValue>(IV)) {
+    if (!isa<UndefValue>(IV) && !isEmptyType(IV->getType())) {
       Out << std::string(Indent, ' ');
       Out << "  " << GetValueName(I) << "__PHI_TEMPORARY = ";
       writeOperand(IV);
@@ -3968,8 +4001,13 @@ void CWriter::visitVAArgInst(VAArgInst &I) {
 }
 
 void CWriter::visitInsertElementInst(InsertElementInst &I) {
-  Type *EltTy = I.getType()->getElementType();
+  // Start by copying the entire aggregate value into the result variable.
   writeOperand(I.getOperand(0));
+  Type *EltTy = I.getType()->getElementType();
+  assert(I.getOperand(1)->getType() == EltTy);
+  if (isEmptyType(EltTy)) return;
+
+  // Then do the insert to update the field.
   Out << ";\n  ";
   Out << "((";
   printTypeName(Out, PointerType::getUnqual(EltTy));
@@ -3982,9 +4020,10 @@ void CWriter::visitInsertElementInst(InsertElementInst &I) {
 
 void CWriter::visitExtractElementInst(ExtractElementInst &I) {
   // We know that our operand is not inlined.
-  Out << "((";
   Type *EltTy =
     cast<VectorType>(I.getOperand(0)->getType())->getElementType();
+  assert (!isEmptyType(EltTy));
+  Out << "((";
   printTypeName(Out, PointerType::getUnqual(EltTy));
   Out << ")(&" << GetValueName(I.getOperand(0)) << "))[";
   writeOperand(I.getOperand(1));
@@ -4002,6 +4041,7 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   VectorType *InputVT = cast<VectorType>(SVI.getOperand(0)->getType());
   unsigned NumInputElts = InputVT->getNumElements(); // n
   Type *EltTy = VT->getElementType();
+  assert(NumElts != 0);
 
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i) Out << ", ";
@@ -4035,9 +4075,11 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
 void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
   // Start by copying the entire aggregate value into the result variable.
   writeOperand(IVI.getOperand(0));
-  Out << ";\n  ";
+  Type *EltTy = IVI.getOperand(1)->getType();
+  if (isEmptyType(EltTy)) return;
 
   // Then do the insert to update the field.
+  Out << ";\n  ";
   Out << GetValueName(&IVI);
   for (const unsigned *b = IVI.idx_begin(), *i = b, *e = IVI.idx_end();
        i != e; ++i) {

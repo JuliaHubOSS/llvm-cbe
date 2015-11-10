@@ -167,10 +167,11 @@ namespace {
     void printConstantVector(ConstantVector *CV);
     void printConstantDataSequential(ConstantDataSequential *CDS);
 
+    bool isEmptyType(Type *Ty) const;
     bool isAddressExposed(Value *V) const;
-    bool isInlinableInst(Instruction &I);
+    bool isInlinableInst(Instruction &I) const;
     AllocaInst *isDirectAlloca(Value *V) const;
-    bool isInlineAsm(Instruction& I);
+    bool isInlineAsm(Instruction& I) const;
 
     // Instruction visitation functions
     friend class InstVisitor<CWriter>;
