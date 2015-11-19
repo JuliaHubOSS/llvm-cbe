@@ -1923,52 +1923,52 @@ void CWriter::generateHeader(Module &M) {
 
   // Emit some helper functions for dealing with FCMP instruction's
   // predicates
-  Out << "static inline int llvm_fcmp_ord(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ord(double X, double Y) { ";
   Out << "return X == X && Y == Y; }\n";
-  Out << "static inline int llvm_fcmp_uno(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_uno(double X, double Y) { ";
   Out << "return X != X || Y != Y; }\n";
-  Out << "static inline int llvm_fcmp_ueq(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ueq(double X, double Y) { ";
   Out << "return X == Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_une(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_une(double X, double Y) { ";
   Out << "return X != Y; }\n";
-  Out << "static inline int llvm_fcmp_ult(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ult(double X, double Y) { ";
   Out << "return X <  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_ugt(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ugt(double X, double Y) { ";
   Out << "return X >  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_ule(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ule(double X, double Y) { ";
   Out << "return X <= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_uge(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_uge(double X, double Y) { ";
   Out << "return X >= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_oeq(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_oeq(double X, double Y) { ";
   Out << "return X == Y ; }\n";
-  Out << "static inline int llvm_fcmp_one(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_one(double X, double Y) { ";
   Out << "return X != Y && llvm_fcmp_ord(X, Y); }\n";
-  Out << "static inline int llvm_fcmp_olt(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_olt(double X, double Y) { ";
   Out << "return X <  Y ; }\n";
-  Out << "static inline int llvm_fcmp_ogt(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ogt(double X, double Y) { ";
   Out << "return X >  Y ; }\n";
-  Out << "static inline int llvm_fcmp_ole(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_ole(double X, double Y) { ";
   Out << "return X <= Y ; }\n";
-  Out << "static inline int llvm_fcmp_oge(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_oge(double X, double Y) { ";
   Out << "return X >= Y ; }\n";
-  Out << "static inline int llvm_fcmp_0(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_0(double X, double Y) { ";
   Out << "return 0; }\n";
-  Out << "static inline int llvm_fcmp_1(double X, double Y) { ";
+  Out << "static __inline int llvm_fcmp_1(double X, double Y) { ";
   Out << "return 1; }\n";
 
   // Loop over all select operations
   for (std::set<Type*>::iterator it = SelectDeclTypes.begin(), end = SelectDeclTypes.end();
        it != end; ++it) {
-    // static inline Rty llvm_select_u8x4(<bool x 4> condition, <u8 x 4> iftrue, <u8 x 4> ifnot) {
-    //     Rty r = {
-    //          condition[0] ? iftrue[0] : ifnot[0],
-    //          condition[1] ? iftrue[1] : ifnot[1],
-    //          condition[2] ? iftrue[2] : ifnot[2],
-    //          condition[3] ? iftrue[3] : ifnot[3]
-    //          };
-    //     return r;
+    // static __inline Rty llvm_select_u8x4(<bool x 4> condition, <u8 x 4> iftrue, <u8 x 4> ifnot) {
+    //   Rty r = {
+    //     condition[0] ? iftrue[0] : ifnot[0],
+    //     condition[1] ? iftrue[1] : ifnot[1],
+    //     condition[2] ? iftrue[2] : ifnot[2],
+    //     condition[3] ? iftrue[3] : ifnot[3]
+    //   };
+    //   return r;
     // }
-    Out << "static inline ";
+    Out << "static __inline ";
     printTypeName(Out, *it, false);
     Out << " llvm_select_";
     printTypeString(Out, *it, false);
@@ -1991,7 +1991,7 @@ void CWriter::generateHeader(Module &M) {
         Out << "    condition[" << n << "] ? iftrue[" << n << "] : ifnot[" << n << "]";
         if (n != l - 1) Out << ",\n";
       }
-      Out << "\n    };\n";
+      Out << "\n  };\n";
     }
     else {
       Out << "condition ? iftrue : ifnot;\n";
@@ -2002,19 +2002,19 @@ void CWriter::generateHeader(Module &M) {
   // Loop over all compare operations
   for (std::set< std::pair<CmpInst::Predicate, VectorType*> >::iterator it = CmpDeclTypes.begin(), end = CmpDeclTypes.end();
        it != end; ++it) {
-    // static inline <bool x 4> llvm_icmp_ge_u8x4(<u8 x 4> l, <u8 x 4> r) {
-    //     Rty r = {
-    //          l[0] >= r[0],
-    //          l[1] >= r[1],
-    //          l[2] >= r[2],
-    //          l[3] >= r[3],
-    //          };
-    //     return r;
+    // static __inline <bool x 4> llvm_icmp_ge_u8x4(<u8 x 4> l, <u8 x 4> r) {
+    //   Rty r = {
+    //     l[0] >= r[0],
+    //     l[1] >= r[1],
+    //     l[2] >= r[2],
+    //     l[3] >= r[3],
+    //   };
+    //   return r;
     // }
     unsigned n, l = (*it).second->getVectorNumElements();
     VectorType *RTy = VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
     bool isSigned = CmpInst::isSigned((*it).first);
-    Out << "static inline ";
+    Out << "static __inline ";
     printTypeName(Out, RTy, isSigned);
     if (CmpInst::isFPPredicate((*it).first))
       Out << " llvm_fcmp_";
@@ -2053,29 +2053,29 @@ void CWriter::generateHeader(Module &M) {
       }
       if (n != l - 1) Out << ",\n";
     }
-    Out << "\n    };\n";
+    Out << "\n  };\n";
     Out << "  return c;\n}\n";
   }
 
   // Loop over all (vector) cast operations
   for (std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>>::iterator it = CastOpDeclTypes.begin(), end = CastOpDeclTypes.end();
        it != end; ++it) {
-    // static inline <u32 x 4> llvm_ZExt_u8x4_u32x4(<u8 x 4> in) { // Src->isVector == Dst->isVector
-    //     Rty out = {
-    //          in[0],
-    //          in[1],
-    //          in[2],
-    //          in[3]
-    //          };
-    //     return out;
+    // static __inline <u32 x 4> llvm_ZExt_u8x4_u32x4(<u8 x 4> in) { // Src->isVector == Dst->isVector
+    //   Rty out = {
+    //     in[0],
+    //     in[1],
+    //     in[2],
+    //     in[3]
+    //   };
+    //   return out;
     // }
-    // static inline u32 llvm_BitCast_u8x4_u32(<u8 x 4> in) { // Src->bitsSize == Dst->bitsSize
-    //     union {
-    //       <u8 x 4> in;
-    //       u32 out;
-    //     } cast;
-    //     cast.in = in;
-    //     return cast.out;
+    // static __inline u32 llvm_BitCast_u8x4_u32(<u8 x 4> in) { // Src->bitsSize == Dst->bitsSize
+    //   union {
+    //     <u8 x 4> in;
+    //     u32 out;
+    //   } cast;
+    //   cast.in = in;
+    //   return cast.out;
     // }
     CastInst::CastOps opcode = (*it).first;
     Type *SrcTy = (*it).second.first;
@@ -2096,7 +2096,7 @@ void CWriter::generateHeader(Module &M) {
       DstSigned = true;
     }
 
-    Out << "static inline ";
+    Out << "static __inline ";
     printTypeName(Out, DstTy, DstSigned);
     Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
     printTypeString(Out, SrcTy, false);
@@ -2122,21 +2122,21 @@ void CWriter::generateHeader(Module &M) {
         Out << "    in[" << n << "]";
         if (n != l - 1) Out << ",\n";
       }
-      Out << "\n};\n  return out;\n}\n";
+      Out << "\n  };\n  return out;\n}\n";
     }
   }
 
   // Loop over all simple vector operations
   for (std::set<std::pair<unsigned, Type*>>::iterator it = InlineOpDeclTypes.begin(), end = InlineOpDeclTypes.end();
        it != end; ++it) {
-    // static inline <u32 x 4> llvm_BinOp_u32x4(<u32 x 4> a, <u32 x 4> b) {
-    //     Rty r = {
-    //          a[0] OP b[0],
-    //          a[1] OP b[1],
-    //          a[2] OP b[2],
-    //          a[3] OP b[3],
-    //          };
-    //     return r;
+    // static __inline <u32 x 4> llvm_BinOp_u32x4(<u32 x 4> a, <u32 x 4> b) {
+    //   Rty r = {
+    //      a[0] OP b[0],
+    //      a[1] OP b[1],
+    //      a[2] OP b[2],
+    //      a[3] OP b[3],
+    //   };
+    //   return r;
     // }
     unsigned opcode = (*it).first;
     Type *OpTy = (*it).second;
@@ -2145,7 +2145,7 @@ void CWriter::generateHeader(Module &M) {
     bool isSigned;
     opcodeNeedsCast(opcode, shouldCast, isSigned);
 
-    Out << "static inline ";
+    Out << "static __inline ";
     printTypeName(Out, OpTy);
     if (opcode == BinaryNeg) {
       Out << " llvm_neg_";
@@ -2230,7 +2230,7 @@ void CWriter::generateHeader(Module &M) {
         }
         if (n != l - 1) Out << ",\n";
       }
-      Out << "\n};\n";
+      Out << "\n  };\n";
     } else {
       Out << " r = ";
         if (mask)
@@ -3140,12 +3140,12 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   }
   assert(numParams > 0 && numParams < 26);
 
-  // static inline Rty _llvm_op_ixx(unsigned ixx a, unsigned ixx b) {
+  // static __inline Rty _llvm_op_ixx(unsigned ixx a, unsigned ixx b) {
   //   Rty r;
   //   <opcode here>
   //   return r;
   // }
-  Out << "static inline ";
+  Out << "static __inline ";
   printTypeName(Out, retT);
   Out << " ";
   Out << GetValueName(&F);
