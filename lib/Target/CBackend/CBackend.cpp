@@ -307,16 +307,16 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
     if (NumBits == 1)
       return Out << "bool";
     else if (NumBits <= 8)
-      return Out << (isSigned?"signed":"unsigned") << " char";
+      return Out << (isSigned?"int8_t":"uint8_t");
     else if (NumBits <= 16)
-      return Out << (isSigned?"signed":"unsigned") << " short";
+      return Out << (isSigned?"int16_t":"uint16_t");
     else if (NumBits <= 32)
-      return Out << (isSigned?"signed":"unsigned") << " int";
+      return Out << (isSigned?"int32_t":"uint32_t");
     else if (NumBits <= 64)
-      return Out << (isSigned?"signed":"unsigned") << " long long";
+      return Out << (isSigned?"int64_t":"uint64_t");
     else {
       assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
-      return Out << (isSigned?"llvmInt128":"llvmUInt128");
+      return Out << (isSigned?"int128_t":"uint128_t");
     }
   }
   case Type::FloatTyID:  return Out << "float";
@@ -681,6 +681,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
 // or inside a struct initializer expression
 void CWriter::printConstant(Constant *CPV, bool Static) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(CPV)) {
+    assert(CE->getType()->isIntegerTy() || CE->getType()->isFloatingPointTy() || CE->getType()->isPointerTy()); // TODO: VectorType are valid here, but not supported
     switch (CE->getOpcode()) {
     case Instruction::Trunc:
     case Instruction::ZExt:
@@ -701,7 +702,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         // Make sure we really sext from bool here by subtracting from 0
         Out << "0-";
       }
-      printConstant(CE->getOperand(0), false);
+      printConstant(CE->getOperand(0), true);
       if (CE->getType() == Type::getInt1Ty(CPV->getContext()) &&
           (CE->getOpcode() == Instruction::Trunc ||
            CE->getOpcode() == Instruction::FPToUI ||
@@ -832,8 +833,13 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
 
   if (ConstantInt *CI = dyn_cast<ConstantInt>(CPV)) {
     Type* Ty = CI->getType();
+    unsigned ActiveBits = CI->getValue().getMinSignedBits();
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
+    } else if (Static && ActiveBits <= 64 && ActiveBits < Ty->getPrimitiveSizeInBits()) {
+      Out << CI->getSExtValue(); // most likely a shorter representation
+      if (ActiveBits >= 32)
+        Out << "ll";
     } else if (Ty->getPrimitiveSizeInBits() < 32 && !Static) {
       Out << "((";
       printSimpleType(Out, Ty, false) << ')';
@@ -842,12 +848,11 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
       else
         Out << CI->getSExtValue();
       Out << ')';
-    }
-    else if (Ty->getPrimitiveSizeInBits() <= 32)
+    } else if (Ty->getPrimitiveSizeInBits() <= 32) {
       Out << CI->getZExtValue() << 'u';
-    else if (Ty->getPrimitiveSizeInBits() <= 64)
+    } else if (Ty->getPrimitiveSizeInBits() <= 64) {
       Out << CI->getZExtValue() << "ull";
-    else if (Ty->getPrimitiveSizeInBits() <= 128) {
+    } else if (Ty->getPrimitiveSizeInBits() <= 128) {
       const APInt &V = CI->getValue();
       const APInt &Vlo = V.getLoBits(64);
       const APInt &Vhi = V.getHiBits(64);
@@ -946,7 +951,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     assert(AT->getNumElements() != 0 && !isEmptyType(AT));
     if (!Static) {
       CtorDeclTypes.insert(AT);
-      Out << " llvm_ctor_";
+      Out << "llvm_ctor_";
       printTypeString(Out, AT, false);
       Out << "( ";
     } else {
@@ -966,7 +971,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         printConstant(CZ, Static);
       }
     }
-    Out << (Static ? " } }" : " )"); // Arrays are wrapped in struct types.
+    Out << (Static ? " } }" : ")"); // Arrays are wrapped in struct types.
     break;
   }
 
@@ -975,7 +980,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (!Static) {
       CtorDeclTypes.insert(VT);
-      Out << " llvm_ctor_";
+      Out << "llvm_ctor_";
       printTypeString(Out, VT, false);
       Out << "(";
     } else {
@@ -995,7 +1000,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         printConstant(CZ, Static);
       }
     }
-    Out << (Static ? " }" : " )");
+    Out << (Static ? " }" : ")");
     break;
   }
 
@@ -1004,7 +1009,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     assert(!isEmptyType(ST));
     if (!Static) {
       CtorDeclTypes.insert(ST);
-      Out << " llvm_ctor_";
+      Out << "llvm_ctor_";
       printTypeString(Out, ST, false);
       Out << "(";
     } else {
@@ -1032,7 +1037,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
       }
       assert(printed);
     }
-    Out << (Static ? " }" : " )");
+    Out << (Static ? " }" : ")");
     break;
   }
 
@@ -1110,6 +1115,7 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
 
   // Extract the operand's type, we'll need it.
   Type* OpTy = CPV->getType();
+  assert(OpTy->isIntegerTy() || OpTy->isFloatingPointTy()); // TODO: VectorType are valid here, but not supported
 
   // Indicate whether to do the cast or not.
   bool shouldCast = false;
@@ -1147,10 +1153,10 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
     Out << "((";
     printSimpleType(Out, OpTy, typeIsSigned);
     Out << ")";
-    printConstant(CPV, false);
+    printConstant(CPV, true);
     Out << ")";
   } else
-    printConstant(CPV, false);
+    printConstant(CPV, true);
 }
 
 std::string CWriter::GetValueName(Value *Operand) {
@@ -1342,14 +1348,15 @@ void CWriter::writeOperandWithCast(Value* Operand, unsigned Opcode) {
   opcodeNeedsCast(Opcode, shouldCast, castIsSigned);
 
   Type* OpTy = Operand->getType();
+  assert(OpTy->isIntegerTy() || OpTy->isFloatingPointTy() || OpTy->isPointerTy()); // TODO: VectorType are valid here, but not supported
   if (shouldCast) {
     Out << "((";
     printSimpleType(Out, OpTy, castIsSigned);
     Out << ")";
-    writeOperand(Operand);
+    writeOperand(Operand, true);
     Out << ")";
   } else
-    writeOperand(Operand);
+    writeOperand(Operand, true);
 }
 
 // Write the operand with a cast to another type based on the icmp predicate
@@ -1415,12 +1422,6 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#include <alloca.h>\n"
       << "#endif\n\n";
 
-  // We output GCC specific attributes to preserve 'linkonce'ness on globals.
-  // If we aren't being compiled with GCC, just drop these attributes.
-  Out << "#ifndef __GNUC__  /* Can only support \"linkonce\" vars with GCC */\n"
-      << "#define __attribute__(X)\n"
-      << "#endif\n\n";
-
   // On Mac OS X, "external weak" is spelled "__attribute__((weak_import))".
   Out << "#if defined(__GNUC__) && defined(__APPLE_CC__)\n"
       << "#define __EXTERNAL_WEAK__ __attribute__((weak_import))\n"
@@ -1444,7 +1445,7 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
 
-  // Define NaN and Inf as GCC builtins if using GCC, as 0 otherwise
+  // Define NaN and Inf as GCC builtins if using GCC
   // From the GCC documentation:
   //
   //   double __builtin_nan (const char *str)
@@ -1478,29 +1479,27 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
   Out << "#ifdef __GNUC__\n"
       << "#define LLVM_NAN(NanStr)   __builtin_nan(NanStr)   /* Double */\n"
       << "#define LLVM_NANF(NanStr)  __builtin_nanf(NanStr)  /* Float */\n"
-      << "#define LLVM_NANS(NanStr)  __builtin_nans(NanStr)  /* Double */\n"
-      << "#define LLVM_NANSF(NanStr) __builtin_nansf(NanStr) /* Float */\n"
+      //<< "#define LLVM_NANS(NanStr)  __builtin_nans(NanStr)  /* Double */\n"
+      //<< "#define LLVM_NANSF(NanStr) __builtin_nansf(NanStr) /* Float */\n"
       << "#define LLVM_INF           __builtin_inf()         /* Double */\n"
       << "#define LLVM_INFF          __builtin_inff()        /* Float */\n"
       << "#define LLVM_PREFETCH(addr,rw,locality) "
                               "__builtin_prefetch(addr,rw,locality)\n"
       << "#define __ATTRIBUTE_CTOR__ __attribute__((constructor))\n"
       << "#define __ATTRIBUTE_DTOR__ __attribute__((destructor))\n"
-      << "#define LLVM_ASM           __asm__\n"
       << "#else\n"
-      << "#define LLVM_NAN(NanStr)   ((double)0.0)           /* Double */\n"
-      << "#define LLVM_NANF(NanStr)  0.0F                    /* Float */\n"
-      << "#define LLVM_NANS(NanStr)  ((double)0.0)           /* Double */\n"
-      << "#define LLVM_NANSF(NanStr) 0.0F                    /* Float */\n"
-      << "#define LLVM_INF           ((double)0.0)           /* Double */\n"
-      << "#define LLVM_INFF          0.0F                    /* Float */\n"
+      << "#define LLVM_NAN(NanStr)   ((double)NAN)           /* Double */\n"
+      << "#define LLVM_NANF(NanStr)  ((float)NAN))           /* Float */\n"
+      //<< "#define LLVM_NANS(NanStr)  ((double)NAN)           /* Double */\n"
+      //<< "#define LLVM_NANSF(NanStr) ((single)NAN)           /* Float */\n"
+      << "#define LLVM_INF           ((double)INFINITY)      /* Double */\n"
+      << "#define LLVM_INFF          ((float)INFINITY)       /* Float */\n"
       << "#define LLVM_PREFETCH(addr,rw,locality)            /* PREFETCH */\n"
-      << "#define __ATTRIBUTE_CTOR__\n"
-      << "#define __ATTRIBUTE_DTOR__\n"
-      << "#define LLVM_ASM(X)\n"
+      << "#define __ATTRIBUTE_CTOR__ \"__attribute__((constructor)) not supported on this compiler\"\n"
+      << "#define __ATTRIBUTE_DTOR__ \"__attribute__((destructor)) not supported on this compiler\"\n"
       << "#endif\n\n";
 
-  Out << "#if __GNUC__ < 4 /* Old GCC's, or compilers not GCC */ \n"
+  Out << "#if !defined(__GNUC__) || __GNUC__ < 4 /* Old GCC's, or compilers not GCC */ \n"
       << "#define __builtin_stack_save() 0   /* not implemented */\n"
       << "#define __builtin_stack_restore(X) /* noop */\n"
       << "#endif\n\n";
@@ -1508,13 +1507,16 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
   // Output typedefs for 128-bit integers. If these are needed with a
   // 32-bit target or with a C compiler that doesn't support mode(TI),
   // more drastic measures will be needed.
-  Out << "#if __GNUC__ && __LP64__ /* 128-bit integer types */\n"
-      << "typedef int __attribute__((mode(TI))) llvmInt128;\n"
-      << "typedef unsigned __attribute__((mode(TI))) llvmUInt128;\n"
+  Out << "#if defined(__GNUC__) && defined(__LP64__) /* 128-bit integer types */\n"
+      << "typedef int __attribute__((mode(TI))) int128_t;\n"
+      << "typedef unsigned __attribute__((mode(TI))) uint128_t;\n"
       << "#endif\n\n";
 
-  // Output target-specific code that should be inserted into main.
-  Out << "#define CODE_FOR_MAIN() /* Any target-specific code for main()*/\n";
+  // We output GCC specific attributes to preserve 'linkonce'ness on globals.
+  // If we aren't being compiled with GCC, just drop these attributes.
+  Out << "#ifndef __GNUC__  /* Can only support \"linkonce\" vars with GCC */\n"
+      << "#define __attribute__(X)\n"
+      << "#endif\n\n";
 }
 
 /// FindStaticTors - Given a static ctor/dtor list, unpack its contents into
@@ -1673,6 +1675,7 @@ void CWriter::generateHeader(Module &M) {
   Out << "#include <limits.h>\n";      // With overflow intrinsics support.
   Out << "#include <stdint.h>\n";      // Sized integer support
   Out << "#include <string.h>\n";      // built-in definitions of many c library functions
+  Out << "#include <math.h>\n";        // definitions for some math functions and numeric constants
   Out << "#include <APInt-C.h>\n";     // Implementations of many llvm intrinsics
   generateCompilerSpecificCode(Out, TD);
 
@@ -1681,15 +1684,13 @@ void CWriter::generateHeader(Module &M) {
       << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n"
 
       << "\n\n/* Support for floating point constants */\n"
-      << "typedef unsigned long long ConstantDoubleTy;\n"
-      << "typedef unsigned int        ConstantFloatTy;\n"
-      << "typedef struct { unsigned long long f1; unsigned short f2; "
-         "unsigned short pad[3]; } ConstantFP80Ty;\n"
+      << "typedef uint64_t ConstantDoubleTy;\n"
+      << "typedef uint32_t ConstantFloatTy;\n"
+      << "typedef struct { uint64_t f1; uint16_t f2; "
+         "uint16_t pad[3]; } ConstantFP80Ty;\n"
       // This is used for both kinds of 128-bit long double; meaning differs.
-      << "typedef struct { unsigned long long f1; unsigned long long f2; }"
+      << "typedef struct { uint64_t f1; uint64_t f2; }"
          " ConstantFP128Ty;\n"
-      << "typedef __uint128_t uint128_t;\n"
-      << "typedef __int128_t int128_t;\n"
       << "\n\n/* Global Declarations */\n";
 
   // First output all the declarations for the program, because C requires
@@ -1697,7 +1698,7 @@ void CWriter::generateHeader(Module &M) {
   //
   if (!M.getModuleInlineAsm().empty()) {
     Out << "\n/* Module asm statements */\n"
-        << "asm(";
+        << "__asm__ (";
 
     // Split the string into lines, to make it easier to read the .ll file.
     std::string Asm = M.getModuleInlineAsm();
@@ -1763,9 +1764,6 @@ void CWriter::generateHeader(Module &M) {
 
   // Function declarations
   Out << "\n/* Function Declarations */\n";
-  Out << "double fmod(double, double);\n";   // Support for FP rem
-  Out << "float fmodf(float, float);\n";
-  Out << "long double fmodl(long double, long double);\n";
 
   // Store the intrinsics which will be declared/defined below.
   SmallVector<Function*, 16> intrinsicsToDefine;
@@ -1833,7 +1831,7 @@ void CWriter::generateHeader(Module &M) {
       Out << " __HIDDEN__";
 
     if (I->hasName() && I->getName()[0] == 1)
-      Out << " LLVM_ASM(\"" << I->getName().substr(1) << "\")";
+      Out << " __asm__ (\"" << I->getName().substr(1) << "\")";
 
     Out << ";\n";
   }
@@ -2313,21 +2311,37 @@ void CWriter::generateHeader(Module &M) {
     ArrayType *ATy = dyn_cast<ArrayType>(*it);
     VectorType *VTy = dyn_cast<VectorType>(*it);
     unsigned e = (STy ? STy->getNumElements() : (ATy ? ATy->getNumElements() : VTy->getNumElements()));
+    bool printed = false;
     for (unsigned i = 0; i != e; ++i) {
-        printTypeName(Out, STy ? STy->getElementType(i) : (*it)->getSequentialElementType());
+        Type *ElTy = STy ? STy->getElementType(i) : (*it)->getSequentialElementType();
+        if (isEmptyType(ElTy))
+          Out << " /* ";
+        else if (printed)
+          Out << ", ";
+        printTypeName(Out, ElTy);
         Out << " x" << i;
-        if (i != e - 1) Out << ", ";
+        if (isEmptyType(ElTy))
+          Out << " */";
+        else
+          printed = true;
     }
     Out << ") {\n  ";
     printTypeName(Out, *it);
-    Out << " r = {\n    ";
-    if (isa<ArrayType>(*it)) Out << "{ "; // Arrays are wrapped in structs
+    Out << " r;";
     for (unsigned i = 0; i != e; ++i) {
-        Out << "x" << i;
-        if (i != e - 1) Out << ", ";
+        Type *ElTy = STy ? STy->getElementType(i) : (*it)->getSequentialElementType();
+        if (isEmptyType(ElTy))
+          continue;
+        if (STy)
+          Out << "\n  r.field" << i << " = x" << i << ";";
+        else if (ATy)
+          Out << "\n  r.array[" << i << "] = x" << i << ";";
+        else if (VTy)
+          Out << "\n  r[" << i << "] = x" << i << ";";
+        else
+          assert(0);
     }
-    if (isa<ArrayType>(*it)) Out << " }"; // Arrays are wrapped in structs
-    Out << "\n  };\n  return r;\n}\n";
+    Out << "\n  return r;\n}\n";
   }
 
   // Emit definitions of the intrinsics.
@@ -2417,8 +2431,8 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
 void CWriter::printModuleTypes(raw_ostream &Out) {
   Out << "/* Helper union for bitcasts */\n";
   Out << "typedef union {\n";
-  Out << "  unsigned int Int32;\n";
-  Out << "  unsigned long long Int64;\n";
+  Out << "  uint32_t Int32;\n";
+  Out << "  uint64_t Int64;\n";
   Out << "  float Float;\n";
   Out << "  double Double;\n";
   Out << "} llvmBitCastUnion;\n";
@@ -2640,9 +2654,6 @@ void CWriter::printFunction(Function &F) {
 
   if (PrintedVar)
     Out << '\n';
-
-  if (F.hasExternalLinkage() && F.getName() == "main")
-    Out << "  CODE_FOR_MAIN();\n";
 
   // print the basic blocks
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
@@ -3107,7 +3118,7 @@ void CWriter::visitCastInst(CastInst &I) {
       I.getOpcode() == Instruction::SExt)
     Out << "0-";
 
-  writeOperand(I.getOperand(0));
+  writeOperand(I.getOperand(0), true);
 
   if (DstTy == Type::getInt1Ty(I.getContext()) &&
       (I.getOpcode() == Instruction::Trunc ||
@@ -3955,6 +3966,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   }
 
   for (; I != E; ++I) {
+    assert(I.getOperand()->getType()->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid, but we don't support it here
     if ((*I)->isStructTy()) {
       Out << ".field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
     } else if ((*I)->isArrayTy()) {
