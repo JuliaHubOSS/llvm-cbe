@@ -76,6 +76,7 @@ namespace {
     std::set<std::pair<CmpInst::Predicate, VectorType*>> CmpDeclTypes;
     std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>> CastOpDeclTypes;
     std::set<std::pair<unsigned, Type*>> InlineOpDeclTypes;
+    std::set<Type*> CtorDeclTypes;
 
     DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;
@@ -163,9 +164,10 @@ namespace {
     void printConstant(Constant *CPV, bool Static);
     void printConstantWithCast(Constant *CPV, unsigned Opcode);
     bool printConstExprCast(ConstantExpr *CE);
-    void printConstantArray(ConstantArray *CPA);
-    void printConstantVector(ConstantVector *CV);
-    void printConstantDataSequential(ConstantDataSequential *CDS);
+    void printConstantArray(ConstantArray *CPA, bool Static);
+    void printConstantVector(ConstantVector *CV, bool Static);
+    void printConstantDataSequential(ConstantDataSequential *CDS, bool Static);
+    bool printConstantString(Constant *C, bool Static);
 
     bool isEmptyType(Type *Ty) const;
     bool isAddressExposed(Value *V) const;

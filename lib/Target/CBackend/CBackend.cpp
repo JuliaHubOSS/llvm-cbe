@@ -173,10 +173,15 @@ static std::string CBEMangle(const std::string &S) {
 
 raw_ostream &
 CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
-  if (StructType *STy = dyn_cast<StructType>(Ty)) {
-    assert(!STy->isLiteral() && !STy->getName().empty());
-    assert(STy->getNumElements() != 0);
-    return Out << "l_struct_" << CBEMangle(Ty->getStructName());
+  if (StructType *ST = dyn_cast<StructType>(Ty)) {
+    assert(ST->getNumElements() != 0);
+    if (!ST->isLiteral() && !ST->getName().empty())
+      return Out << "struct_" << CBEMangle(ST->getName());
+
+    unsigned &id = UnnamedStructIDs[ST];
+    if (id == 0)
+      id = ++NextAnonStructNumber;
+    return Out << "unnamed_" + utostr(id);
   }
 
   if (Ty->isPointerTy()) {
@@ -233,7 +238,7 @@ std::string CWriter::getStructName(StructType *ST) {
 
   unsigned &id = UnnamedStructIDs[ST];
   if (id == 0)
-      id = ++NextAnonStructNumber;
+    id = ++NextAnonStructNumber;
   return "struct l_unnamed_" + utostr(id);
 }
 
@@ -388,10 +393,13 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
            E = STy->element_end(); I != E; ++I, Idx++) {
       Out << "  ";
       bool empty = isEmptyType(*I);
-      if (empty) Out << "/* "; // skip zero-sized types
+      if (empty)
+          Out << "/* "; // skip zero-sized types
       printTypeName(Out, *I, false) << " field" << utostr(Idx);
-      if (empty) Out << " */"; // skip zero-sized types
-      Out << ";\n";
+      if (empty)
+          Out << " */"; // skip zero-sized types
+      else
+          Out << ";\n";
     }
     Out << '}';
     if (STy->isPacked())
@@ -469,82 +477,80 @@ raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *Ty) {
     return Out;
 }
 
-void CWriter::printConstantArray(ConstantArray *CPA) {
-  Out << "{ ";
-  printConstant(cast<Constant>(CPA->getOperand(0)), true);
+void CWriter::printConstantArray(ConstantArray *CPA, bool Static) {
+  printConstant(cast<Constant>(CPA->getOperand(0)), Static);
   for (unsigned i = 1, e = CPA->getNumOperands(); i != e; ++i) {
     Out << ", ";
-    printConstant(cast<Constant>(CPA->getOperand(i)), true);
+    printConstant(cast<Constant>(CPA->getOperand(i)), Static);
   }
-  Out << " }";
 }
 
-void CWriter::printConstantVector(ConstantVector *CP) {
-  Out << "{ ";
-  printConstant(cast<Constant>(CP->getOperand(0)), true);
+void CWriter::printConstantVector(ConstantVector *CP, bool Static) {
+  printConstant(cast<Constant>(CP->getOperand(0)), Static);
   for (unsigned i = 1, e = CP->getNumOperands(); i != e; ++i) {
     Out << ", ";
-    printConstant(cast<Constant>(CP->getOperand(i)), true);
+    printConstant(cast<Constant>(CP->getOperand(i)), Static);
   }
-  Out << " }";
 }
 
-void CWriter::printConstantDataSequential(ConstantDataSequential *CDS) {
+void CWriter::printConstantDataSequential(ConstantDataSequential *CDS, bool Static) {
+  printConstant(CDS->getElementAsConstant(0), Static);
+  for (unsigned i = 1, e = CDS->getNumElements(); i != e; ++i) {
+    Out << ", ";
+    printConstant(CDS->getElementAsConstant(i), Static);
+  }
+}
+
+bool CWriter::printConstantString(Constant *C, bool Static) {
   // As a special case, print the array as a string if it is an array of
   // ubytes or an array of sbytes with positive values.
-  //
-  if (CDS->isCString()) {
-    Out << '\"';
-    // Keep track of whether the last number was a hexadecimal escape.
-    bool LastWasHex = false;
+  ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C);
+  if (!CDS || !CDS->isCString()) return false;
+  if (!Static) return false; // TODO
 
-    StringRef Bytes = CDS->getAsCString();
+  Out << "{ \"";
+  // Keep track of whether the last number was a hexadecimal escape.
+  bool LastWasHex = false;
 
-    // Do not include the last character, which we know is null
-    for (unsigned i = 0, e = Bytes.size(); i != e; ++i) {
-      unsigned char C = Bytes[i];
+  StringRef Bytes = CDS->getAsString();
 
-      // Print it out literally if it is a printable character.  The only thing
-      // to be careful about is when the last letter output was a hex escape
-      // code, in which case we have to be careful not to print out hex digits
-      // explicitly (the C compiler thinks it is a continuation of the previous
-      // character, sheesh...)
-      //
-      if (isprint(C) && (!LastWasHex || !isxdigit(C))) {
-        LastWasHex = false;
-        if (C == '"' || C == '\\')
-          Out << "\\" << (char)C;
-        else
-          Out << (char)C;
-      } else {
-        LastWasHex = false;
-        switch (C) {
-          case '\n': Out << "\\n"; break;
-          case '\t': Out << "\\t"; break;
-          case '\r': Out << "\\r"; break;
-          case '\v': Out << "\\v"; break;
-          case '\a': Out << "\\a"; break;
-          case '\"': Out << "\\\""; break;
-          case '\'': Out << "\\\'"; break;
-          default:
-            Out << "\\x";
-            Out << (char)(( C/16  < 10) ? ( C/16 +'0') : ( C/16 -10+'A'));
-            Out << (char)(((C&15) < 10) ? ((C&15)+'0') : ((C&15)-10+'A'));
-            LastWasHex = true;
-            break;
-        }
+  // Do not include the last character, which we know is null
+  for (unsigned i = 0, e = Bytes.size() - 1; i < e; ++i) {
+    unsigned char C = Bytes[i];
+
+    // Print it out literally if it is a printable character.  The only thing
+    // to be careful about is when the last letter output was a hex escape
+    // code, in which case we have to be careful not to print out hex digits
+    // explicitly (the C compiler thinks it is a continuation of the previous
+    // character, sheesh...)
+    //
+    if (isprint(C) && (!LastWasHex || !isxdigit(C))) {
+      LastWasHex = false;
+      if (C == '"' || C == '\\')
+        Out << "\\" << (char)C;
+      else
+        Out << (char)C;
+    } else {
+      LastWasHex = false;
+      switch (C) {
+        case '\n': Out << "\\n"; break;
+        case '\t': Out << "\\t"; break;
+        case '\r': Out << "\\r"; break;
+        case '\v': Out << "\\v"; break;
+        case '\a': Out << "\\a"; break;
+        case '\"': Out << "\\\""; break;
+        case '\'': Out << "\\\'"; break;
+        default:
+          Out << "\\x";
+          Out << (char)(( C/16  < 10) ? ( C/16 +'0') : ( C/16 -10+'A'));
+          Out << (char)(((C&15) < 10) ? ((C&15)+'0') : ((C&15)-10+'A'));
+          LastWasHex = true;
+          break;
       }
     }
-    Out << '\"';
-  } else {
-    Out << "{ ";
-    printConstant(CDS->getElementAsConstant(0), true);
-    for (unsigned i = 1, e = CDS->getNumElements(); i != e; ++i) {
-      Out << ", ";
-      printConstant(CDS->getElementAsConstant(i), true);
-    }
-    Out << " }";
   }
+  Out << "\" }";
+  return true;
 }
 
 
@@ -934,96 +940,101 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     break;
   }
 
-  case Type::ArrayTyID:
-    // Use C99 compound expression literal initializer syntax.
+  case Type::ArrayTyID: {
+    if (printConstantString(CPV, Static)) break;
+    ArrayType *AT = cast<ArrayType>(CPV->getType());
+    assert(AT->getNumElements() != 0 && !isEmptyType(AT));
     if (!Static) {
-      Out << "(";
-      printTypeName(Out, CPV->getType());
-      Out << ")";
+      CtorDeclTypes.insert(AT);
+      Out << " llvm_ctor_";
+      printTypeString(Out, AT, false);
+      Out << "( ";
+    } else {
+      Out << "{ { "; // Arrays are wrapped in struct types.
     }
-    Out << "{ "; // Arrays are wrapped in struct types.
     if (ConstantArray *CA = dyn_cast<ConstantArray>(CPV)) {
-      printConstantArray(CA);
+      printConstantArray(CA, Static);
     } else if (ConstantDataSequential *CDS =
                  dyn_cast<ConstantDataSequential>(CPV)) {
-      printConstantDataSequential(CDS);
+      printConstantDataSequential(CDS, Static);
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
-      ArrayType *AT = cast<ArrayType>(CPV->getType());
-      assert(AT->getNumElements() != 0 && !isEmptyType(AT));
       Constant *CZ = Constant::getNullValue(AT->getElementType());
-      Out << "{ ";
-      printConstant(CZ, true);
+      printConstant(CZ, Static);
       for (unsigned i = 1, e = AT->getNumElements(); i != e; ++i) {
         Out << ", ";
-        printConstant(CZ, true);
+        printConstant(CZ, Static);
       }
-      Out << " }";
     }
-    Out << " }"; // Arrays are wrapped in struct types.
+    Out << (Static ? " } }" : " )"); // Arrays are wrapped in struct types.
     break;
+  }
 
-  case Type::VectorTyID:
-    // Use C99 compound expression literal initializer syntax.
+  case Type::VectorTyID: {
+    VectorType *VT = cast<VectorType>(CPV->getType());
+    assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (!Static) {
+      CtorDeclTypes.insert(VT);
+      Out << " llvm_ctor_";
+      printTypeString(Out, VT, false);
       Out << "(";
-      printTypeName(Out, CPV->getType());
-      Out << ")";
+    } else {
+      Out << "{ ";
     }
     if (ConstantVector *CV = dyn_cast<ConstantVector>(CPV)) {
-      printConstantVector(CV);
+      printConstantVector(CV, Static);
     } else if (ConstantDataSequential *CDS =
                dyn_cast<ConstantDataSequential>(CPV)) {
-      printConstantDataSequential(CDS);
+      printConstantDataSequential(CDS, Static);
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
-      VectorType *VT = cast<VectorType>(CPV->getType());
-      assert(VT->getNumElements() != 0 && !isEmptyType(VT));
-      Out << "{ ";
       Constant *CZ = Constant::getNullValue(VT->getElementType());
-      printConstant(CZ, true);
+      printConstant(CZ, Static);
       for (unsigned i = 1, e = VT->getNumElements(); i != e; ++i) {
         Out << ", ";
-        printConstant(CZ, true);
+        printConstant(CZ, Static);
       }
-      Out << " }";
     }
+    Out << (Static ? " }" : " )");
     break;
+  }
 
-  case Type::StructTyID:
-    // Use C99 compound expression literal initializer syntax.
+  case Type::StructTyID: {
+    StructType *ST = cast<StructType>(CPV->getType());
+    assert(!isEmptyType(ST));
     if (!Static) {
+      CtorDeclTypes.insert(ST);
+      Out << " llvm_ctor_";
+      printTypeString(Out, ST, false);
       Out << "(";
-      printTypeName(Out, CPV->getType());
-      Out << ")";
-    }
-    if (isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV)) {
-      StructType *ST = cast<StructType>(CPV->getType());
+    } else {
       Out << "{ ";
+    }
+
+    if (isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV)) {
       bool printed = false;
       for (unsigned i = 0, e = ST->getNumElements(); i != e; ++i) {
         Type *ElTy = ST->getElementType(i);
         if (isEmptyType(ElTy)) continue;
         if (printed) Out << ", ";
-        printConstant(Constant::getNullValue(ElTy), true);
+        printConstant(Constant::getNullValue(ElTy), Static);
         printed = true;
       }
       assert(printed);
-      Out << " }";
     } else {
-      Out << "{ ";
       bool printed = false;
       for (unsigned i = 0, e = CPV->getNumOperands(); i != e; ++i) {
         Constant *C = cast<Constant>(CPV->getOperand(i));
         if (isEmptyType(C->getType())) continue;
         if (printed) Out << ", ";
-        printConstant(C, true);
+        printConstant(C, Static);
         printed = true;
       }
       assert(printed);
-      Out << " }";
     }
+    Out << (Static ? " }" : " )");
     break;
+  }
 
   case Type::PointerTyID:
     if (isa<ConstantPointerNull>(CPV)) {
@@ -1624,8 +1635,9 @@ bool CWriter::doFinalization(Module &M) {
   ArrayTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
-  InlineOpDeclTypes.clear();
   CastOpDeclTypes.clear();
+  InlineOpDeclTypes.clear();
+  CtorDeclTypes.clear();
   prototypesToGen.clear();
 
   // reset all state
@@ -2281,6 +2293,41 @@ void CWriter::generateHeader(Module &M) {
         Out << ";\n";
     }
     Out << "  return r;\n}\n";
+  }
+
+  // Loop over all inline constructors
+  for (std::set<Type*>::iterator it = CtorDeclTypes.begin(), end = CtorDeclTypes.end();
+       it != end; ++it) {
+    // static __inline <u32 x 4> llvm_ctor_u32x4(u32 x1, u32 x2, u32 x3, u32 x4) {
+    //   Rty r = {
+    //     x1, x2, x3, x4
+    //   };
+    //   return r;
+    // }
+    Out << "static __inline ";
+    printTypeName(Out, *it);
+    Out << " llvm_ctor_";
+    printTypeString(Out, *it, false);
+    Out << "(";
+    StructType *STy = dyn_cast<StructType>(*it);
+    ArrayType *ATy = dyn_cast<ArrayType>(*it);
+    VectorType *VTy = dyn_cast<VectorType>(*it);
+    unsigned e = (STy ? STy->getNumElements() : (ATy ? ATy->getNumElements() : VTy->getNumElements()));
+    for (unsigned i = 0; i != e; ++i) {
+        printTypeName(Out, STy ? STy->getElementType(i) : (*it)->getSequentialElementType());
+        Out << " x" << i;
+        if (i != e - 1) Out << ", ";
+    }
+    Out << ") {\n  ";
+    printTypeName(Out, *it);
+    Out << " r = {\n    ";
+    if (isa<ArrayType>(*it)) Out << "{ "; // Arrays are wrapped in structs
+    for (unsigned i = 0; i != e; ++i) {
+        Out << "x" << i;
+        if (i != e - 1) Out << ", ";
+    }
+    if (isa<ArrayType>(*it)) Out << " }"; // Arrays are wrapped in structs
+    Out << "\n  };\n  return r;\n}\n";
   }
 
   // Emit definitions of the intrinsics.
