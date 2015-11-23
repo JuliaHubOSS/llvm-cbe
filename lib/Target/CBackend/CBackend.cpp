@@ -328,7 +328,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::FP128TyID:  return Out << "long double";
 
   case Type::X86_MMXTyID:
-    return printSimpleType(Out, Type::getInt32Ty(Ty->getContext()), isSigned) << " __attribute__((vector_size(64)))";
+    return Out << (isSigned?"int32_t":"uint32_t") << " __attribute__((vector_size(8)))";
 
   case Type::VectorTyID: {
     VectorType *VTy = cast<VectorType>(Ty);
