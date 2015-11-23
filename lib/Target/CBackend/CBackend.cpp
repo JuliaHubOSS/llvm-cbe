@@ -387,6 +387,8 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
 
 
 raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) {
+    if (STy->isPacked())
+      Out << "#ifdef _MSC_VER\n#pragma pack(push, 1)\n#endif\n";
     Out << getStructName(STy) << " {\n";
     unsigned Idx = 0;
     for (StructType::element_iterator I = STy->element_begin(),
@@ -404,7 +406,10 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
     Out << '}';
     if (STy->isPacked())
       Out << " __attribute__ ((packed))";
-    return Out << ";\n";
+    Out << ";\n";
+    if (STy->isPacked())
+      Out << "#ifdef _MSC_VER\n#pragma pack(pop)\n#endif\n";
+    return Out;
 }
 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
@@ -1420,6 +1425,20 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
 
+  // Defined unaligned-load helper macro
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __UNALIGNED_LOAD__(type, align, op) *((type __unaligned*)op)\n";
+  Out << "#else\n";
+  Out << "#define __UNALIGNED_LOAD__(type, align, op) ((struct { type data __attribute__((packed, aligned(align))); }*)op)->data\n";
+  Out << "#endif\n\n";
+
+  // Defined unaligned-load helper macro
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __ALIGN__(X) __declspec(align(X))\n";
+  Out << "#else\n";
+  Out << "#define __ALIGN__(X) __attribute__((aligned(X)))\n";
+  Out << "#endif\n\n";
+
   // Define NaN and Inf as GCC builtins if using GCC
   // From the GCC documentation:
   //
@@ -1489,7 +1508,7 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
 
   // We output GCC specific attributes to preserve 'linkonce'ness on globals.
   // If we aren't being compiled with GCC, just drop these attributes.
-  Out << "#ifndef __GNUC__  /* Can only support \"linkonce\" vars with GCC */\n"
+  Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
       << "#define __attribute__(X)\n"
       << "#endif\n\n";
 }
@@ -2600,7 +2619,7 @@ void CWriter::printFunction(Function &F) {
       Out << "  ";
       printTypeName(Out, AI->getAllocatedType(), false) << ' ';
       if (IsOveraligned)
-        Out << "__attribute__((aligned(" << Alignment << "))) ";
+        Out << "__ALIGN__(" << Alignment << ") ";
       Out << GetValueName(AI);
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
@@ -3981,19 +4000,24 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
   if (!IsUnaligned)
     Out << '*';
 
-  else if (IsVolatile || IsUnaligned) {
-    Out << "(";
-    if (IsUnaligned) Out << "(struct { ";
+  else if (IsUnaligned) {
+    Out << "__UNALIGNED_LOAD__(";
     printTypeName(Out, OperandType, false);
-    if (IsUnaligned) Out << " data __attribute__ ((packed, aligned(" << Alignment << "))); } ";
-    if (IsVolatile) Out << "volatile";
+    if (IsVolatile) Out << " volatile";
+    Out << ", " << Alignment << ", ";
+  }
+
+  else if (IsVolatile) {
+    Out << "(";
+    printTypeName(Out, OperandType, false);
+    Out << "volatile";
     Out << "*)";
   }
 
   writeOperand(Operand);
 
   if (IsUnaligned) {
-    Out << ")->data";
+    Out << ")";
   }
 }
 
