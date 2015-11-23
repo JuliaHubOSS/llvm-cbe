@@ -130,10 +130,21 @@ namespace {
     std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
     std::string getArrayName(ArrayType *AT);
 
+    enum OperandContext {
+        ContextNormal,
+        ContextCasted,
+            // Casted context means the type-cast will be implicit,
+            // such as the RHS of a `var = RHS;` expression
+            // or inside a struct initializer expression
+        ContextStatic
+            // Static context means that it is being used in as a static initializer
+            // (also implies ContextCasted)
+    };
+
     void writeOperandDeref(Value *Operand);
-    void writeOperand(Value *Operand, bool Static = false);
+    void writeOperand(Value *Operand, enum OperandContext Context = ContextNormal);
     void writeInstComputationInline(Instruction &I);
-    void writeOperandInternal(Value *Operand, bool Static = false);
+    void writeOperandInternal(Value *Operand, enum OperandContext Context = ContextNormal);
     void writeOperandWithCast(Value* Operand, unsigned Opcode);
     void opcodeNeedsCast(unsigned Opcode, bool &shouldCast, bool &castIsSigned);
 
@@ -161,13 +172,13 @@ namespace {
     void printLoop(Loop *L);
 
     void printCast(unsigned opcode, Type *SrcTy, Type *DstTy);
-    void printConstant(Constant *CPV, bool Static);
+    void printConstant(Constant *CPV, enum OperandContext Context);
     void printConstantWithCast(Constant *CPV, unsigned Opcode);
     bool printConstExprCast(ConstantExpr *CE);
-    void printConstantArray(ConstantArray *CPA, bool Static);
-    void printConstantVector(ConstantVector *CV, bool Static);
-    void printConstantDataSequential(ConstantDataSequential *CDS, bool Static);
-    bool printConstantString(Constant *C, bool Static);
+    void printConstantArray(ConstantArray *CPA, enum OperandContext Context);
+    void printConstantVector(ConstantVector *CV, enum OperandContext Context);
+    void printConstantDataSequential(ConstantDataSequential *CDS, enum OperandContext Context);
+    bool printConstantString(Constant *C, enum OperandContext Context);
 
     bool isEmptyType(Type *Ty) const;
     bool isAddressExposed(Value *V) const;

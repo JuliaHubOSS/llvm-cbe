@@ -477,36 +477,36 @@ raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *Ty) {
     return Out;
 }
 
-void CWriter::printConstantArray(ConstantArray *CPA, bool Static) {
-  printConstant(cast<Constant>(CPA->getOperand(0)), Static);
+void CWriter::printConstantArray(ConstantArray *CPA, enum OperandContext Context) {
+  printConstant(cast<Constant>(CPA->getOperand(0)), Context);
   for (unsigned i = 1, e = CPA->getNumOperands(); i != e; ++i) {
     Out << ", ";
-    printConstant(cast<Constant>(CPA->getOperand(i)), Static);
+    printConstant(cast<Constant>(CPA->getOperand(i)), Context);
   }
 }
 
-void CWriter::printConstantVector(ConstantVector *CP, bool Static) {
-  printConstant(cast<Constant>(CP->getOperand(0)), Static);
+void CWriter::printConstantVector(ConstantVector *CP, enum OperandContext Context) {
+  printConstant(cast<Constant>(CP->getOperand(0)), Context);
   for (unsigned i = 1, e = CP->getNumOperands(); i != e; ++i) {
     Out << ", ";
-    printConstant(cast<Constant>(CP->getOperand(i)), Static);
+    printConstant(cast<Constant>(CP->getOperand(i)), Context);
   }
 }
 
-void CWriter::printConstantDataSequential(ConstantDataSequential *CDS, bool Static) {
-  printConstant(CDS->getElementAsConstant(0), Static);
+void CWriter::printConstantDataSequential(ConstantDataSequential *CDS, enum OperandContext Context) {
+  printConstant(CDS->getElementAsConstant(0), Context);
   for (unsigned i = 1, e = CDS->getNumElements(); i != e; ++i) {
     Out << ", ";
-    printConstant(CDS->getElementAsConstant(i), Static);
+    printConstant(CDS->getElementAsConstant(i), Context);
   }
 }
 
-bool CWriter::printConstantString(Constant *C, bool Static) {
+bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
   // As a special case, print the array as a string if it is an array of
   // ubytes or an array of sbytes with positive values.
   ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C);
   if (!CDS || !CDS->isCString()) return false;
-  if (!Static) return false; // TODO
+  if (Context != ContextStatic) return false; // TODO
 
   Out << "{ \"";
   // Keep track of whether the last number was a hexadecimal escape.
@@ -676,10 +676,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
 }
 
 // printConstant - The LLVM Constant to C Constant converter.
-// Static context means that it is being used in a context where the
-// type cast is implicit, such as the RHS of a `type var = RHS;` expression
-// or inside a struct initializer expression
-void CWriter::printConstant(Constant *CPV, bool Static) {
+void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(CPV)) {
     assert(CE->getType()->isIntegerTy() || CE->getType()->isFloatingPointTy() || CE->getType()->isPointerTy()); // TODO: VectorType are valid here, but not supported
     switch (CE->getOpcode()) {
@@ -702,7 +699,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         // Make sure we really sext from bool here by subtracting from 0
         Out << "0-";
       }
-      printConstant(CE->getOperand(0), true);
+      printConstant(CE->getOperand(0), ContextCasted);
       if (CE->getType() == Type::getInt1Ty(CPV->getContext()) &&
           (CE->getOpcode() == Instruction::Trunc ||
            CE->getOpcode() == Instruction::FPToUI ||
@@ -721,11 +718,11 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
       return;
     case Instruction::Select:
       Out << '(';
-      printConstant(CE->getOperand(0), false);
+      printConstant(CE->getOperand(0), ContextCasted);
       Out << '?';
-      printConstant(CE->getOperand(1), false);
+      printConstant(CE->getOperand(1), ContextNormal);
       Out << ':';
-      printConstant(CE->getOperand(2), false);
+      printConstant(CE->getOperand(2), ContextNormal);
       Out << ')';
       return;
     case Instruction::Add:
@@ -802,9 +799,9 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         Out << "1";
       else {
         Out << "llvm_fcmp_" << getCmpPredicateName((CmpInst::Predicate)CE->getPredicate()) << "(";
-        printConstantWithCast(CE->getOperand(0), CE->getOpcode());
+        printConstant(CE->getOperand(0), ContextCasted);
         Out << ", ";
-        printConstantWithCast(CE->getOperand(1), CE->getOpcode());
+        printConstant(CE->getOperand(1), ContextCasted);
         Out << ")";
       }
       if (NeedsClosingParens)
@@ -836,11 +833,11 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
     unsigned ActiveBits = CI->getValue().getMinSignedBits();
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
-    } else if (Static && ActiveBits <= 64 && ActiveBits < Ty->getPrimitiveSizeInBits()) {
+    } else if (Context != ContextNormal && ActiveBits < 64 && ActiveBits < Ty->getPrimitiveSizeInBits()) {
       Out << CI->getSExtValue(); // most likely a shorter representation
       if (ActiveBits >= 32)
         Out << "ll";
-    } else if (Ty->getPrimitiveSizeInBits() < 32 && !Static) {
+    } else if (Ty->getPrimitiveSizeInBits() < 32 && Context == ContextNormal) {
       Out << "((";
       printSimpleType(Out, Ty, false) << ')';
       if (CI->isMinValue(true))
@@ -946,72 +943,75 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
   }
 
   case Type::ArrayTyID: {
-    if (printConstantString(CPV, Static)) break;
+    if (printConstantString(CPV, Context)) break;
     ArrayType *AT = cast<ArrayType>(CPV->getType());
     assert(AT->getNumElements() != 0 && !isEmptyType(AT));
-    if (!Static) {
+    if (Context != ContextStatic) {
       CtorDeclTypes.insert(AT);
       Out << "llvm_ctor_";
       printTypeString(Out, AT, false);
       Out << "( ";
+      Context = ContextCasted;
     } else {
       Out << "{ { "; // Arrays are wrapped in struct types.
     }
     if (ConstantArray *CA = dyn_cast<ConstantArray>(CPV)) {
-      printConstantArray(CA, Static);
+      printConstantArray(CA, Context);
     } else if (ConstantDataSequential *CDS =
                  dyn_cast<ConstantDataSequential>(CPV)) {
-      printConstantDataSequential(CDS, Static);
+      printConstantDataSequential(CDS, Context);
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       Constant *CZ = Constant::getNullValue(AT->getElementType());
-      printConstant(CZ, Static);
+      printConstant(CZ, Context);
       for (unsigned i = 1, e = AT->getNumElements(); i != e; ++i) {
         Out << ", ";
-        printConstant(CZ, Static);
+        printConstant(CZ, Context);
       }
     }
-    Out << (Static ? " } }" : ")"); // Arrays are wrapped in struct types.
+    Out << (Context == ContextStatic ? " } }" : ")"); // Arrays are wrapped in struct types.
     break;
   }
 
   case Type::VectorTyID: {
     VectorType *VT = cast<VectorType>(CPV->getType());
     assert(VT->getNumElements() != 0 && !isEmptyType(VT));
-    if (!Static) {
+    if (Context != ContextStatic) {
       CtorDeclTypes.insert(VT);
       Out << "llvm_ctor_";
       printTypeString(Out, VT, false);
       Out << "(";
+      Context = ContextCasted;
     } else {
       Out << "{ ";
     }
     if (ConstantVector *CV = dyn_cast<ConstantVector>(CPV)) {
-      printConstantVector(CV, Static);
+      printConstantVector(CV, Context);
     } else if (ConstantDataSequential *CDS =
                dyn_cast<ConstantDataSequential>(CPV)) {
-      printConstantDataSequential(CDS, Static);
+      printConstantDataSequential(CDS, Context);
     } else {
       assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       Constant *CZ = Constant::getNullValue(VT->getElementType());
-      printConstant(CZ, Static);
+      printConstant(CZ, Context);
       for (unsigned i = 1, e = VT->getNumElements(); i != e; ++i) {
         Out << ", ";
-        printConstant(CZ, Static);
+        printConstant(CZ, Context);
       }
     }
-    Out << (Static ? " }" : ")");
+    Out << (Context == ContextStatic ? " }" : ")");
     break;
   }
 
   case Type::StructTyID: {
     StructType *ST = cast<StructType>(CPV->getType());
     assert(!isEmptyType(ST));
-    if (!Static) {
+    if (Context != ContextStatic) {
       CtorDeclTypes.insert(ST);
       Out << "llvm_ctor_";
       printTypeString(Out, ST, false);
       Out << "(";
+      Context = ContextCasted;
     } else {
       Out << "{ ";
     }
@@ -1022,7 +1022,7 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         Type *ElTy = ST->getElementType(i);
         if (isEmptyType(ElTy)) continue;
         if (printed) Out << ", ";
-        printConstant(Constant::getNullValue(ElTy), Static);
+        printConstant(Constant::getNullValue(ElTy), Context);
         printed = true;
       }
       assert(printed);
@@ -1032,12 +1032,12 @@ void CWriter::printConstant(Constant *CPV, bool Static) {
         Constant *C = cast<Constant>(CPV->getOperand(i));
         if (isEmptyType(C->getType())) continue;
         if (printed) Out << ", ";
-        printConstant(C, Static);
+        printConstant(C, Context);
         printed = true;
       }
       assert(printed);
     }
-    Out << (Static ? " }" : ")");
+    Out << (Context == ContextStatic ? " }" : ")");
     break;
   }
 
@@ -1118,34 +1118,9 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
   assert(OpTy->isIntegerTy() || OpTy->isFloatingPointTy()); // TODO: VectorType are valid here, but not supported
 
   // Indicate whether to do the cast or not.
-  bool shouldCast = false;
-  bool typeIsSigned = false;
-
-  // Based on the Opcode for which this Constant is being written, determine
-  // the new type to which the operand should be casted by setting the value
-  // of OpTy. If we change OpTy, also set shouldCast to true so it gets
-  // casted below.
-  switch (Opcode) {
-    default:
-      // for most instructions, it doesn't matter
-      break;
-    case Instruction::Add:
-    case Instruction::Sub:
-    case Instruction::Mul:
-      // We need to cast integer arithmetic so that it is always performed
-      // as unsigned, to avoid undefined behavior on overflow.
-    case Instruction::LShr:
-    case Instruction::UDiv:
-    case Instruction::URem:
-      shouldCast = true;
-      break;
-    case Instruction::AShr:
-    case Instruction::SDiv:
-    case Instruction::SRem:
-      shouldCast = true;
-      typeIsSigned = true;
-      break;
-  }
+  bool shouldCast;
+  bool typeIsSigned;
+  opcodeNeedsCast(Opcode, shouldCast, typeIsSigned);
 
   // Write out the casted constant if we should, otherwise just write the
   // operand.
@@ -1153,10 +1128,10 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
     Out << "((";
     printSimpleType(Out, OpTy, typeIsSigned);
     Out << ")";
-    printConstant(CPV, true);
+    printConstant(CPV, ContextCasted);
     Out << ")";
   } else
-    printConstant(CPV, true);
+    printConstant(CPV, ContextCasted);
 }
 
 std::string CWriter::GetValueName(Value *Operand) {
@@ -1224,7 +1199,7 @@ void CWriter::writeInstComputationInline(Instruction &I) {
 }
 
 
-void CWriter::writeOperandInternal(Value *Operand, bool Static) {
+void CWriter::writeOperandInternal(Value *Operand, enum OperandContext Context) {
   if (Instruction *I = dyn_cast<Instruction>(Operand))
     // Should we inline this instruction to build a tree?
     if (isInlinableInst(*I) && !isDirectAlloca(I)) {
@@ -1237,17 +1212,17 @@ void CWriter::writeOperandInternal(Value *Operand, bool Static) {
   Constant* CPV = dyn_cast<Constant>(Operand);
 
   if (CPV && !isa<GlobalValue>(CPV))
-    printConstant(CPV, Static);
+    printConstant(CPV, Context);
   else
     Out << GetValueName(Operand);
 }
 
-void CWriter::writeOperand(Value *Operand, bool Static) {
+void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
   bool isAddressImplicit = isAddressExposed(Operand);
   if (isAddressImplicit)
     Out << "(&";  // Global variables are referenced as their addresses by llvm
 
-  writeOperandInternal(Operand, Static);
+  writeOperandInternal(Operand, Context);
 
   if (isAddressImplicit)
     Out << ')';
@@ -1307,15 +1282,14 @@ void CWriter::opcodeNeedsCast(unsigned Opcode,
       // Indicate whether the cast should be to a signed type or not.
       bool &castIsSigned) {
 
-  shouldCast = false;
-  castIsSigned = false;
-
   // Based on the Opcode for which this Operand is being written, determine
   // the new type to which the operand should be casted by setting the value
   // of OpTy. If we change OpTy, also set shouldCast to true.
   switch (Opcode) {
     default:
       // for most instructions, it doesn't matter
+      shouldCast = false;
+      castIsSigned = false;
       break;
     case Instruction::Add:
     case Instruction::Sub:
@@ -1348,15 +1322,14 @@ void CWriter::writeOperandWithCast(Value* Operand, unsigned Opcode) {
   opcodeNeedsCast(Opcode, shouldCast, castIsSigned);
 
   Type* OpTy = Operand->getType();
-  assert(OpTy->isIntegerTy() || OpTy->isFloatingPointTy() || OpTy->isPointerTy()); // TODO: VectorType are valid here, but not supported
   if (shouldCast) {
     Out << "((";
     printSimpleType(Out, OpTy, castIsSigned);
     Out << ")";
-    writeOperand(Operand, true);
+    writeOperand(Operand, ContextCasted);
     Out << ")";
   } else
-    writeOperand(Operand, true);
+    writeOperand(Operand, ContextCasted);
 }
 
 // Write the operand with a cast to another type based on the icmp predicate
@@ -1879,7 +1852,7 @@ void CWriter::generateHeader(Module &M) {
       // FIXME common linkage should avoid this problem.
       if (!I->getInitializer()->isNullValue()) {
         Out << " = " ;
-        writeOperand(I->getInitializer(), true);
+        writeOperand(I->getInitializer(), ContextStatic);
       } else if (I->hasWeakLinkage()) {
         // We have to specify an initializer, but it doesn't have to be
         // complete.  If the value is an aggregate, print out { 0 }, and let
@@ -1894,7 +1867,7 @@ void CWriter::generateHeader(Module &M) {
           Out << "{ { 0 } }";
         } else {
           // Just print it out normally.
-          writeOperand(I->getInitializer(), true);
+          writeOperand(I->getInitializer(), ContextStatic);
         }
       }
       Out << ";\n";
@@ -1924,7 +1897,7 @@ void CWriter::generateHeader(Module &M) {
       if (I->hasExternalWeakLinkage())
          Out << " __EXTERNAL_WEAK__";
       Out << " = ";
-      writeOperand(I->getAliasee(), true);
+      writeOperand(I->getAliasee(), ContextStatic);
       Out << ";\n";
     }
   }
@@ -2741,7 +2714,7 @@ void CWriter::visitReturnInst(ReturnInst &I) {
   Out << "  return";
   if (I.getNumOperands()) {
     Out << ' ';
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
   }
   Out << ";\n";
 }
@@ -2808,7 +2781,7 @@ void CWriter::printPHICopiesForSuccessor (BasicBlock *CurBlock,
     if (!isa<UndefValue>(IV) && !isEmptyType(IV->getType())) {
       Out << std::string(Indent, ' ');
       Out << "  " << GetValueName(I) << "__PHI_TEMPORARY = ";
-      writeOperand(IV);
+      writeOperand(IV, ContextCasted);
       Out << ";   /* for PHI node */\n";
     }
   }
@@ -2831,7 +2804,7 @@ void CWriter::visitBranchInst(BranchInst &I) {
   if (I.isConditional()) {
     if (isGotoCodeNecessary(I.getParent(), I.getSuccessor(0))) {
       Out << "  if (";
-      writeOperand(I.getCondition());
+      writeOperand(I.getCondition(), ContextCasted);
       Out << ") {\n";
 
       printPHICopiesForSuccessor (I.getParent(), I.getSuccessor(0), 2);
@@ -2845,7 +2818,7 @@ void CWriter::visitBranchInst(BranchInst &I) {
     } else {
       // First goto not necessary, assume second one is...
       Out << "  if (!";
-      writeOperand(I.getCondition());
+      writeOperand(I.getCondition(), ContextCasted);
       Out << ") {\n";
 
       printPHICopiesForSuccessor (I.getParent(), I.getSuccessor(1), 2);
@@ -2891,27 +2864,27 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNegArgument(&I));
+      writeOperand(BinaryOperator::getNegArgument(&I), ContextCasted);
     } else if (BinaryOperator::isFNeg(&I)) {
       opcode = BinaryNeg;
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getFNegArgument(&I));
+      writeOperand(BinaryOperator::getFNegArgument(&I), ContextCasted);
     } else if (BinaryOperator::isNot(&I)) {
       opcode = BinaryNot;
       Out << "llvm_not_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNotArgument(&I));
+      writeOperand(BinaryOperator::getNotArgument(&I), ContextCasted);
     } else {
       opcode = I.getOpcode();
       Out << "llvm_" << Instruction::getOpcodeName(opcode) << "_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(I.getOperand(0));
+      writeOperand(I.getOperand(0), ContextCasted);
       Out << ", ";
-      writeOperand(I.getOperand(1));
+      writeOperand(I.getOperand(1), ContextCasted);
     }
     Out << ")";
     InlineOpDeclTypes.insert(std::pair<unsigned, Type*>(opcode, VTy));
@@ -2940,9 +2913,9 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
       Out << "fmod(";
     else  // all 3 flavors of long double
       Out << "fmodl(";
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getOperand(1));
+    writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
   } else {
 
@@ -2997,9 +2970,9 @@ void CWriter::visitICmpInst(ICmpInst &I) {
     Out << "llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
     printTypeString(Out, VTy, I.isSigned());
     Out << "(";
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getOperand(1));
+    writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
     CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
     return;
@@ -3050,9 +3023,9 @@ void CWriter::visitFCmpInst(FCmpInst &I) {
     Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "_";
     printTypeString(Out, VTy, I.isSigned());
     Out << "(";
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getOperand(1));
+    writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
     CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
     return;
@@ -3060,10 +3033,10 @@ void CWriter::visitFCmpInst(FCmpInst &I) {
 
   Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "(";
   // Write the first operand
-  writeOperand(I.getOperand(0));
+  writeOperand(I.getOperand(0), ContextCasted);
   Out << ", ";
   // Write the second operand
-  writeOperand(I.getOperand(1));
+  writeOperand(I.getOperand(1), ContextCasted);
   Out << ")";
 }
 
@@ -3092,7 +3065,7 @@ void CWriter::visitCastInst(CastInst &I) {
     Out << "_";
     printTypeString(Out, DstTy, false);
     Out << "(";
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
     Out << ")";
     CastOpDeclTypes.insert(std::pair<Instruction::CastOps, std::pair<Type*, Type*> >(I.getOpcode(), std::pair<Type*, Type*>(SrcTy, DstTy)));
     return;
@@ -3103,7 +3076,7 @@ void CWriter::visitCastInst(CastInst &I) {
     // These int<->float and long<->double casts need to be handled specially
     Out << GetValueName(&I) << "__BITCAST_TEMPORARY."
         << getFloatBitCastField(I.getOperand(0)->getType()) << " = ";
-    writeOperand(I.getOperand(0));
+    writeOperand(I.getOperand(0), ContextCasted);
     Out << ", " << GetValueName(&I) << "__BITCAST_TEMPORARY."
         << getFloatBitCastField(I.getType());
     Out << ')';
@@ -3118,7 +3091,7 @@ void CWriter::visitCastInst(CastInst &I) {
       I.getOpcode() == Instruction::SExt)
     Out << "0-";
 
-  writeOperand(I.getOperand(0), true);
+  writeOperand(I.getOperand(0), ContextCasted);
 
   if (DstTy == Type::getInt1Ty(I.getContext()) &&
       (I.getOpcode() == Instruction::Trunc ||
@@ -3135,11 +3108,11 @@ void CWriter::visitSelectInst(SelectInst &I) {
   Out << "llvm_select_";
   printTypeString(Out, I.getType(), false);
   Out << "(";
-  writeOperand(I.getCondition());
+  writeOperand(I.getCondition(), ContextCasted);
   Out << ", ";
-  writeOperand(I.getTrueValue());
+  writeOperand(I.getTrueValue(), ContextCasted);
   Out << ", ";
-  writeOperand(I.getFalseValue());
+  writeOperand(I.getFalseValue(), ContextCasted);
   Out << ")";
   SelectDeclTypes.insert(I.getType());
 }
@@ -3501,7 +3474,7 @@ void CWriter::visitCallInst(CallInst &I) {
       printTypeName(Out, I.getCalledValue()->getType()->getPointerElementType(), false, PAL);
     Out << "*)(void*)";
   }
-  writeOperand(Callee);
+  writeOperand(Callee, ContextCasted);
   if (NeedsCast) Out << ')';
 
   Out << '(';
@@ -3546,7 +3519,7 @@ void CWriter::visitCallInst(CallInst &I) {
     if (I.getAttributes().hasAttribute(ArgNo+1, Attribute::ByVal))
       writeOperandDeref(*AI);
     else
-      writeOperand(*AI);
+      writeOperand(*AI, ContextCasted);
     PrintedArg = true;
   }
   Out << ')';
@@ -3565,7 +3538,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << "0; ";
 
     Out << "va_start(*(va_list*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
     // Output the last argument to the enclosing function.
     if (I.getParent()->getParent()->arg_empty())
@@ -3577,7 +3550,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::vaend:
     if (!isa<ConstantPointerNull>(I.getArgOperand(0))) {
       Out << "0; va_end(*(va_list*)";
-      writeOperand(I.getArgOperand(0));
+      writeOperand(I.getArgOperand(0), ContextCasted);
       Out << ')';
     } else {
       Out << "va_end(*(va_list*)0)";
@@ -3586,54 +3559,54 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::vacopy:
     Out << "0; ";
     Out << "va_copy(*(va_list*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", *(va_list*)";
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::returnaddress:
     Out << "__builtin_return_address(";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::frameaddress:
     Out << "__builtin_frame_address(";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::setjmp:
     Out << "setjmp(*(jmp_buf*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::longjmp:
     Out << "longjmp(*(jmp_buf*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::sigsetjmp:
     Out << "sigsetjmp(*(sigjmp_buf*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ',';
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::siglongjmp:
     Out << "siglongjmp(*(sigjmp_buf*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::prefetch:
     Out << "LLVM_PREFETCH((const void *)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ", ";
-    writeOperand(I.getArgOperand(2));
+    writeOperand(I.getArgOperand(2), ContextCasted);
     Out << ")";
     return true;
   case Intrinsic::stacksave:
@@ -3671,9 +3644,9 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
       Out << 'd';
 
     Out << "(";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
-    writeOperand(I.getArgOperand(1));
+    writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ")";
     return true;
   case Intrinsic::ppc_altivec_lvsl:
@@ -3681,13 +3654,13 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     printTypeName(Out, I.getType());
     Out << ')';
     Out << "__builtin_altivec_lvsl(0, (void*)";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ")";
     return true;
   case Intrinsic::stackprotector:
     writeOperandDeref(I.getArgOperand(1));
     Out << " = ";
-    writeOperand(I.getArgOperand(0));
+    writeOperand(I.getArgOperand(0), ContextCasted);
     return true;
   case Intrinsic::uadd_with_overflow:
   case Intrinsic::sadd_with_overflow:
@@ -3902,7 +3875,7 @@ void CWriter::visitAllocaInst(AllocaInst &I) {
   printTypeName(Out, I.getType()->getElementType());
   if (I.isArrayAllocation()) {
     Out << ") * (" ;
-    writeOperand(I.getArraySize());
+    writeOperand(I.getArraySize(), ContextCasted);
   }
   Out << "))";
 }
@@ -4041,7 +4014,7 @@ void CWriter::visitStoreInst(StoreInst &I) {
       BitMask = ITy->getBitMask();
   if (BitMask)
     Out << "((";
-  writeOperand(Operand);
+  writeOperand(Operand, BitMask ? ContextNormal : ContextCasted);
   if (BitMask)
     Out << ") & " << BitMask << ")";
 }
@@ -4053,7 +4026,7 @@ void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
 
 void CWriter::visitVAArgInst(VAArgInst &I) {
   Out << "va_arg(*(va_list*)";
-  writeOperand(I.getOperand(0));
+  writeOperand(I.getOperand(0), ContextCasted);
   Out << ", ";
   printTypeName(Out, I.getType());
   Out << ");\n ";
@@ -4073,7 +4046,7 @@ void CWriter::visitInsertElementInst(InsertElementInst &I) {
   Out << ")(&" << GetValueName(&I) << "))[";
   writeOperand(I.getOperand(2));
   Out << "] = (";
-  writeOperand(I.getOperand(1));
+  writeOperand(I.getOperand(1), ContextCasted);
   Out << ")";
 }
 
@@ -4124,7 +4097,7 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
       } else {
         printConstant(cast<ConstantVector>(Op)->getOperand(SrcVal &
                                                            (NumElts-1)),
-                      false);
+                      ContextNormal);
       }
     }
   }
@@ -4152,7 +4125,7 @@ void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
       Out << ".field" << *i;
   }
   Out << " = ";
-  writeOperand(IVI.getOperand(1));
+  writeOperand(IVI.getOperand(1), ContextCasted);
 }
 
 void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
