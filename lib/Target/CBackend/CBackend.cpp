@@ -834,9 +834,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
     } else if (Context != ContextNormal && ActiveBits < 64 && ActiveBits < Ty->getPrimitiveSizeInBits()) {
+      if (ActiveBits >= 32)
+        Out << "INT64_C(";
       Out << CI->getSExtValue(); // most likely a shorter representation
       if (ActiveBits >= 32)
-        Out << "ll";
+        Out << ")";
     } else if (Ty->getPrimitiveSizeInBits() < 32 && Context == ContextNormal) {
       Out << "((";
       printSimpleType(Out, Ty, false) << ')';
@@ -848,7 +850,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     } else if (Ty->getPrimitiveSizeInBits() <= 32) {
       Out << CI->getZExtValue() << 'u';
     } else if (Ty->getPrimitiveSizeInBits() <= 64) {
-      Out << CI->getZExtValue() << "ull";
+      Out << "UINT64_C(" << CI->getZExtValue() << ")";
     } else if (Ty->getPrimitiveSizeInBits() <= 128) {
       const APInt &V = CI->getValue();
       const APInt &Vlo = V.getLoBits(64);
