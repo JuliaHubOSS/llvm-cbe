@@ -70,8 +70,7 @@ namespace {
     DenseMap<StructType*, unsigned> UnnamedStructIDs;
     unsigned NextAnonStructNumber;
 
-    std::set<StructType*> StructTypes;
-    std::set<ArrayType*> ArrayTypes;
+    std::set<Type*> TypedefDeclTypes;
     std::set<Type*> SelectDeclTypes;
     std::set<std::pair<CmpInst::Predicate, VectorType*>> CmpDeclTypes;
     std::set<std::pair<CastInst::CastOps, std::pair<Type*, Type*>>> CastOpDeclTypes;
@@ -121,6 +120,7 @@ namespace {
                            AttributeSet PAL, const std::string &Name);
     raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
     raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
+    raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
 
     raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, AttributeSet PAL = AttributeSet());
     raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
@@ -129,6 +129,7 @@ namespace {
     std::string getStructName(StructType *ST);
     std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
     std::string getArrayName(ArrayType *AT);
+    std::string getVectorName(VectorType *VT);
 
     enum OperandContext {
         ContextNormal,
@@ -161,7 +162,7 @@ namespace {
     void printIntrinsicDefinition(Function &F, raw_ostream &Out);
 
     void printModuleTypes(raw_ostream &Out);
-    void printContainedStructs(raw_ostream &Out, Type *Ty, SmallPtrSet<Type *, 16> &);
+    void printContainedStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &);
     void printFunctionSignature(raw_ostream &Out, Function *F);
 
     void printFloatingPointConstants(Function &F);

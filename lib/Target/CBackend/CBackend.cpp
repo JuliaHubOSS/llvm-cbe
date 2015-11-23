@@ -174,7 +174,9 @@ static std::string CBEMangle(const std::string &S) {
 raw_ostream &
 CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
-    assert(ST->getNumElements() != 0);
+    assert(!isEmptyType(ST));
+    TypedefDeclTypes.insert(Ty);
+
     if (!ST->isLiteral() && !ST->getName().empty())
       return Out << "struct_" << CBEMangle(ST->getName());
 
@@ -210,6 +212,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
     return Out << (isSigned ? "i32y2" : "u32y2");
 
   case Type::VectorTyID: {
+    TypedefDeclTypes.insert(Ty);
     VectorType *VTy = cast<VectorType>(Ty);
     assert(VTy->getNumElements() != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
@@ -217,6 +220,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
   }
 
   case Type::ArrayTyID: {
+    TypedefDeclTypes.insert(Ty);
     ArrayType *ATy = cast<ArrayType>(Ty);
     assert(ATy->getNumElements() != 0);
     printTypeString(Out, ATy->getElementType(), isSigned);
@@ -254,10 +258,20 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     raw_string_ostream ArrayInnards(astr);
     // Arrays are wrapped in structs to allow them to have normal
     // value semantics (avoiding the array "decay").
-    assert(AT->getNumElements() != 0);
+    assert(!isEmptyType(AT));
     printTypeName(ArrayInnards, AT->getElementType(), false);
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
+
+std::string CWriter::getVectorName(VectorType *VT) {
+    std::string astr;
+    raw_string_ostream VectorInnards(astr);
+    // Vectors are handled like arrays
+    assert(!isEmptyType(VT));
+    printTypeName(VectorInnards, VT->getElementType(), false);
+    return "struct l_vector_" + utostr(VT->getNumElements()) + '_' + CBEMangle(VectorInnards.str());
+}
+
 
 static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   switch (P) {
@@ -330,12 +344,6 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::X86_MMXTyID:
     return Out << (isSigned?"int32_t":"uint32_t") << " __attribute__((vector_size(8)))";
 
-  case Type::VectorTyID: {
-    VectorType *VTy = cast<VectorType>(Ty);
-    printSimpleType(Out, VTy->getElementType(), isSigned);
-    return Out << " __attribute__((vector_size(" << utostr(TD->getTypeAllocSize(VTy)) << " )))";
-  }
-
   default:
 #ifndef NDEBUG
     errs() << "Unknown primitive type: " << *Ty << "\n";
@@ -349,7 +357,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
 //
 raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, AttributeSet PAL) {
   if (Ty->isSingleValueType() || Ty->isVoidTy()) {
-    if (!Ty->isPointerTy())
+    if (!Ty->isPointerTy() && !Ty->isVectorTy())
       return printSimpleType(Out, Ty, isSigned);
   }
 
@@ -362,9 +370,8 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
     return Out << getFunctionName(FTy, PAL);
   }
   case Type::StructTyID: {
-    StructType *STy = cast<StructType>(Ty);
-    StructTypes.insert(STy);
-    return Out << getStructName(STy);
+    TypedefDeclTypes.insert(Ty);
+    return Out << getStructName(cast<StructType>(Ty));
   }
 
   case Type::PointerTyID: {
@@ -372,9 +379,13 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
   }
 
   case Type::ArrayTyID: {
-    ArrayType *ATy = cast<ArrayType>(Ty);
-    ArrayTypes.insert(ATy);
-    return Out << getArrayName(ATy);
+    TypedefDeclTypes.insert(Ty);
+    return Out << getArrayName(cast<ArrayType>(Ty));
+  }
+
+  case Type::VectorTyID: {
+    TypedefDeclTypes.insert(Ty);
+    return Out << getVectorName(cast<VectorType>(Ty));
   }
 
   default:
@@ -471,14 +482,23 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     return Out;
 }
 
-raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *Ty) {
-    ArrayType *ATy = cast<ArrayType>(Ty);
-    assert(ATy->getNumElements() != 0);
+raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
+    assert(!isEmptyType(ATy));
     // Arrays are wrapped in structs to allow them to have normal
     // value semantics (avoiding the array "decay").
-    Out << getArrayName(Ty) << " {\n  ";
+    Out << getArrayName(ATy) << " {\n  ";
     printTypeName(Out, ATy->getElementType());
     Out << " array[" << utostr(ATy->getNumElements()) << "];\n};\n";
+    return Out;
+}
+
+raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out, VectorType *VTy) {
+    assert(!isEmptyType(VTy));
+    // Vectors are printed like arrays
+    Out << "__MSALIGN__(" << TD->getABITypeAlignment(VTy) << ") ";
+    Out << getVectorName(VTy) << " {\n  ";
+    printTypeName(Out, VTy->getElementType());
+    Out << " vector[" << utostr(VTy->getNumElements()) << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy) << ")));\n";
     return Out;
 }
 
@@ -1454,9 +1474,9 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
 
   // Defined unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
-  Out << "#define __ALIGN__(X) __declspec(align(X))\n";
+  Out << "#define __MSALIGN__(X) __declspec(align(X))\n";
   Out << "#else\n";
-  Out << "#define __ALIGN__(X) __attribute__((aligned(X)))\n";
+  Out << "#define __MSALIGN__(X)\n";
   Out << "#endif\n\n";
 
   // Define NaN and Inf as GCC builtins if using GCC
@@ -1647,8 +1667,7 @@ bool CWriter::doFinalization(Module &M) {
   AnonValueNumbers.clear();
   UnnamedStructIDs.clear();
   UnnamedFunctionIDs.clear();
-  StructTypes.clear();
-  ArrayTypes.clear();
+  TypedefDeclTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
   CastOpDeclTypes.clear();
@@ -1998,7 +2017,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeString(Out, *it, false);
     Out << "(";
     if (isa<VectorType>(*it))
-      printSimpleType(Out, VectorType::get(Type::getInt1Ty((*it)->getContext()), (*it)->getVectorNumElements()), false);
+      printTypeName(Out, VectorType::get(Type::getInt1Ty((*it)->getContext()), (*it)->getVectorNumElements()), false);
     else
       Out << "bool";
     Out << " condition, ";
@@ -2007,18 +2026,15 @@ void CWriter::generateHeader(Module &M) {
     printTypeName(Out, *it, false);
     Out << " ifnot) {\n  ";
     printTypeName(Out, *it, false);
-    Out << " r = ";
+    Out << " r;\n";
     if (isa<VectorType>(*it)) {
       unsigned n, l = (*it)->getVectorNumElements();
-      Out << "{\n";
       for (n = 0; n < l; n++) {
-        Out << "    condition[" << n << "] ? iftrue[" << n << "] : ifnot[" << n << "]";
-        if (n != l - 1) Out << ",\n";
+        Out << " r.vector[" << n << "] = condition.vector[" << n << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
       }
-      Out << "\n  };\n";
     }
     else {
-      Out << "condition ? iftrue : ifnot;\n";
+      Out << "  r = condition ? iftrue : ifnot;\n";
     }
     Out << "  return r;\n}\n";
   }
@@ -2027,13 +2043,13 @@ void CWriter::generateHeader(Module &M) {
   for (std::set< std::pair<CmpInst::Predicate, VectorType*> >::iterator it = CmpDeclTypes.begin(), end = CmpDeclTypes.end();
        it != end; ++it) {
     // static __inline <bool x 4> llvm_icmp_ge_u8x4(<u8 x 4> l, <u8 x 4> r) {
-    //   Rty r = {
+    //   Rty c = {
     //     l[0] >= r[0],
     //     l[1] >= r[1],
     //     l[2] >= r[2],
     //     l[3] >= r[3],
     //   };
-    //   return r;
+    //   return c;
     // }
     unsigned n, l = (*it).second->getVectorNumElements();
     VectorType *RTy = VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
@@ -2052,32 +2068,33 @@ void CWriter::generateHeader(Module &M) {
     printTypeName(Out, (*it).second, isSigned);
     Out << " r) {\n  ";
     printTypeName(Out, RTy, isSigned);
-    Out << " c = {\n";
+    Out << " c;\n";
     for (n = 0; n < l; n++) {
+      Out << "  c.vector[" << n << "] = ";
       if (CmpInst::isFPPredicate((*it).first)) {
-        Out << "    llvm_fcmp_" << getCmpPredicateName((*it).first) << "(l[" << n << "], r[" << n << "])"; break;
+        Out << "llvm_fcmp_ " << getCmpPredicateName((*it).first) << "(l.vector[" << n << "], r.vector[" << n << "]);\n";
       } else {
+        Out << "l.vector[" << n << "]";
         switch ((*it).first) {
-        case CmpInst::ICMP_EQ:  Out << "    l[" << n << "] == r[" << n << "]"; break;
-        case CmpInst::ICMP_NE:  Out << "    l[" << n << "] != r[" << n << "]"; break;
+        case CmpInst::ICMP_EQ:  Out << " == "; break;
+        case CmpInst::ICMP_NE:  Out << " != "; break;
         case CmpInst::ICMP_ULE:
-        case CmpInst::ICMP_SLE: Out << "    l[" << n << "] <= r[" << n << "]"; break;
+        case CmpInst::ICMP_SLE: Out << " <= "; break;
         case CmpInst::ICMP_UGE:
-        case CmpInst::ICMP_SGE: Out << "    l[" << n << "] >= r[" << n << "]"; break;
+        case CmpInst::ICMP_SGE: Out << " >= "; break;
         case CmpInst::ICMP_ULT:
-        case CmpInst::ICMP_SLT: Out << "    l[" << n << "] < r[" << n << "]"; break;
+        case CmpInst::ICMP_SLT: Out << " < "; break;
         case CmpInst::ICMP_UGT:
-        case CmpInst::ICMP_SGT: Out << "    l[" << n << "] > r[" << n << "]"; break;
+        case CmpInst::ICMP_SGT: Out << " > "; break;
         default:
   #ifndef NDEBUG
           errs() << "Invalid icmp predicate!" << (*it).first;
   #endif
           llvm_unreachable(0);
         }
+        Out << "r.vector[" << n << "];\n";
       }
-      if (n != l - 1) Out << ",\n";
     }
-    Out << "\n  };\n";
     Out << "  return c;\n}\n";
   }
 
@@ -2139,14 +2156,13 @@ void CWriter::generateHeader(Module &M) {
     }
     else {
       printTypeName(Out, DstTy, DstSigned);
-      Out << " out = {\n";
+      Out << " out;\n";
       unsigned n, l = DstTy->getVectorNumElements();
       assert(SrcTy->getVectorNumElements() == l);
       for (n = 0; n < l; n++) {
-        Out << "    in[" << n << "]";
-        if (n != l - 1) Out << ",\n";
+        Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
-      Out << "\n  };\n  return out;\n}\n";
+      Out << "  return out;\n}\n";
     }
   }
 
@@ -2203,26 +2219,26 @@ void CWriter::generateHeader(Module &M) {
     }
 
     if (isa<VectorType>(OpTy)) {
-      Out << " r = {\n";
+      Out << " r;\n";
       unsigned n, l = OpTy->getVectorNumElements();
       for (n = 0; n < l; n++) {
-        Out << "    ";
+        Out << "  r.vector[" << n << "] = ";
         if (mask)
           Out << "(";
         if (opcode == BinaryNeg) {
-          Out << "    -a[" << n << "]";
+          Out << "-a.vector[" << n << "]";
         } else if (opcode == BinaryNot) {
-          Out << "    ~a[" << n << "]";
+          Out << "~a.vector[" << n << "]";
         } else if (opcode == Instruction::FRem) {
           // Output a call to fmod/fmodf instead of emitting a%b
           if (ElemTy->isFloatTy())
-            Out << "fmodf(a[" << n << "], b[" << n << "])";
+            Out << "fmodf(a.vector[" << n << "], b.vector[" << n << "])";
           else if (ElemTy->isDoubleTy())
-            Out << "fmod(a[" << n << "], b[" << n << "])";
+            Out << "fmod(a.vector[" << n << "], b.vector[" << n << "])";
           else  // all 3 flavors of long double
-            Out << "fmodl(a[" << n << "], b[" << n << "])";
+            Out << "fmodl(a.vector[" << n << "], b.vector[" << n << "])";
         } else {
-          Out << "    a[" << n << "]";
+          Out << "a.vector[" << n << "]";
           switch (opcode) {
           case Instruction::Add:
           case Instruction::FAdd: Out << " + "; break;
@@ -2248,13 +2264,12 @@ void CWriter::generateHeader(Module &M) {
 #endif
              llvm_unreachable(0);
           }
-          Out << "b[" << n << "]";
-          if (mask)
-            Out << ") & " << mask;
+          Out << "b.vector[" << n << "]";
         }
-        if (n != l - 1) Out << ",\n";
+        if (mask)
+          Out << ") & " << mask;
+        Out << ";\n";
       }
-      Out << "\n  };\n";
     } else {
       Out << " r = ";
         if (mask)
@@ -2351,7 +2366,7 @@ void CWriter::generateHeader(Module &M) {
         else if (ATy)
           Out << "\n  r.array[" << i << "] = x" << i << ";";
         else if (VTy)
-          Out << "\n  r[" << i << "] = x" << i << ";";
+          Out << "\n  r.vector[" << i << "] = x" << i << ";";
         else
           assert(0);
     }
@@ -2452,24 +2467,12 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   Out << "} llvmBitCastUnion;\n";
 
   // Keep track of which structures have been printed so far.
-  SmallPtrSet<Type *, 16> StructPrinted;
+  std::set<Type*> StructPrinted;
 
   // Loop over all structures then push them into the stack so they are
   // printed in the correct order.
   Out << "\n/* Structure and Array contents */\n";
-  for (std::set<StructType*>::iterator it = StructTypes.begin(), end = StructTypes.end();
-       it != end; ++it) {
-    printContainedStructs(Out, *it, StructPrinted);
-  }
-
-  for (DenseMap<StructType*, unsigned>::iterator
-       I = UnnamedStructIDs.begin(), E = UnnamedStructIDs.end();
-       I != E; ++I) {
-    printContainedStructs(Out, I->first, StructPrinted);
-  }
-
-  // Loop over all arrays
-  for (std::set<ArrayType*>::iterator it = ArrayTypes.begin(), end = ArrayTypes.end();
+  for (std::set<Type*>::iterator it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
        it != end; ++it) {
     printContainedStructs(Out, *it, StructPrinted);
   }
@@ -2501,9 +2504,9 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 // TODO:  Make this work properly with vector types
 //
 void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
-                                    SmallPtrSet<Type *, 16> &StructPrinted) {
+                                    std::set<Type*> &StructPrinted) {
   // Don't walk through simple primitive types (including pointers)
-  if (Ty->isPointerTy() && !Ty->isVectorTy())
+  if (Ty->isPointerTy())
     return;
   // Check to see if we have already printed this struct.
   if (!StructPrinted.insert(Ty).second) return;
@@ -2521,6 +2524,9 @@ void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
   } else if (ArrayType *AT = dyn_cast<ArrayType>(Ty)) {
     // Print array type out.
     printArrayDeclaration(Out, AT);
+  } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
+    // Print vector type out.
+    printVectorDeclaration(Out, VT);
   }
 }
 
@@ -2637,10 +2643,12 @@ void CWriter::printFunction(Function &F) {
       bool IsOveraligned = Alignment &&
         Alignment > TD->getABITypeAlignment(AI->getAllocatedType());
       Out << "  ";
-      printTypeName(Out, AI->getAllocatedType(), false) << ' ';
       if (IsOveraligned)
-        Out << "__ALIGN__(" << Alignment << ") ";
+        Out << "__MSALIGN__(" << Alignment << ") ";
+      printTypeName(Out, AI->getAllocatedType(), false) << ' ';
       Out << GetValueName(AI);
+      if (IsOveraligned)
+        Out << " __attribute__((aligned(" << Alignment << ")))";
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
     } else if (!isEmptyType(I->getType()) &&
@@ -3012,6 +3020,7 @@ void CWriter::visitICmpInst(ICmpInst &I) {
     writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
     CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+    TypedefDeclTypes.insert(I.getType());
     return;
   }
 
@@ -3058,6 +3067,7 @@ void CWriter::visitFCmpInst(FCmpInst &I) {
     writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
     CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+    TypedefDeclTypes.insert(VTy);
     return;
   }
 
@@ -3145,6 +3155,7 @@ void CWriter::visitSelectInst(SelectInst &I) {
   writeOperand(I.getFalseValue(), ContextCasted);
   Out << ")";
   SelectDeclTypes.insert(I.getType());
+  assert(I.getCondition()->getType()->isVectorTy() == I.getType()->isVectorTy()); // TODO: might be scalarty == vectorty
 }
 
 // Returns the macro name or value of the max or min of an integer type
@@ -3222,7 +3233,7 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
     case Intrinsic::cttz:
       break;
     }
-    printSimpleType(Out, funT->getParamType(i), isSigned);
+    printTypeName(Out, funT->getParamType(i), isSigned);
     Out << " " << (char)('a' + i);
     if (i != numParams - 1) Out << ", ";
   }
