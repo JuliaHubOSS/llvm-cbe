@@ -822,13 +822,33 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       llvm_unreachable(0);
     }
   } else if (isa<UndefValue>(CPV) && CPV->getType()->isSingleValueType()) {
-    Out << "((";
-    printTypeName(Out, CPV->getType()); // sign doesn't matter
-    Out << ")/*UNDEF*/";
-    if (!CPV->getType()->isVectorTy()) {
-      Out << "0)";
+    if (CPV->getType()->isVectorTy()) {
+      if (Context == ContextStatic) {
+        Out << "{}";
+        return;
+      }
+      VectorType *VT = cast<VectorType>(CPV->getType());
+      assert(!isEmptyType(VT));
+      CtorDeclTypes.insert(VT);
+      Out << "/*undef*/llvm_ctor_";
+      printTypeString(Out, VT, false);
+      Out << "(";
+      unsigned NumElts = VT->getNumElements();
+      for (unsigned i = 0; i != NumElts; ++i) {
+        if (i) Out << ", ";
+        Out << " 0";
+      }
+      Out << ")";
+
     } else {
-      Out << "{})";
+      if (Context != ContextStatic) {
+        Out << "0";
+        return;
+      }
+      Out << "((";
+      printTypeName(Out, CPV->getType()); // sign doesn't matter
+      Out << ")/*UNDEF*/";
+      Out << "0)";
     }
     return;
   }
