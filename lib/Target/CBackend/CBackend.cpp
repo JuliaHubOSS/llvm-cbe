@@ -2535,13 +2535,13 @@ void CWriter::printFunctionSignature(raw_ostream &Out, Function *F) {
 
   switch (F->getCallingConv()) {
    case CallingConv::X86_StdCall:
-    Out << "__attribute__((stdcall)) ";
+    Out << "__stdcall ";
     break;
    case CallingConv::X86_FastCall:
-    Out << "__attribute__((fastcall)) ";
+    Out << "__fastcall ";
     break;
    case CallingConv::X86_ThisCall:
-    Out << "__attribute__((thiscall)) ";
+    Out << "__thiscall ";
     break;
    default:
     break;
