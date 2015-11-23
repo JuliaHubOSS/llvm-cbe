@@ -2999,10 +2999,6 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
     if (NeedsClosingParens)
       Out << "))";
   }
-
-  if (needsCast) {
-    Out << "))";
-  }
 }
 
 void CWriter::visitICmpInst(ICmpInst &I) {
@@ -3018,9 +3014,6 @@ void CWriter::visitICmpInst(ICmpInst &I) {
     CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
     return;
   }
-
-  // We must cast the results of icmp which might be promoted.
-  bool needsCast = false;
 
   // Write out the cast of the instruction's value back to the proper type
   // if necessary.
@@ -3052,10 +3045,6 @@ void CWriter::visitICmpInst(ICmpInst &I) {
   writeOperandWithCast(I.getOperand(1), I);
   if (NeedsClosingParens)
     Out << "))";
-
-  if (needsCast) {
-    Out << "))";
-  }
 }
 
 void CWriter::visitFCmpInst(FCmpInst &I) {
