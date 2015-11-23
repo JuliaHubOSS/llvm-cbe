@@ -957,7 +957,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       CtorDeclTypes.insert(AT);
       Out << "llvm_ctor_";
       printTypeString(Out, AT, false);
-      Out << "( ";
+      Out << "(";
       Context = ContextCasted;
     } else {
       Out << "{ { "; // Arrays are wrapped in struct types.
@@ -4091,16 +4091,19 @@ void CWriter::visitExtractElementInst(ExtractElementInst &I) {
 // <result> = shufflevector <n x <ty>> <v1>, <n x <ty>> <v2>, <m x i32> <mask>
 // ; yields <m x <ty>>
 void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
-  Out << "(";
-  printTypeName(Out, SVI.getType());
-  Out << "){ ";
   VectorType *VT = SVI.getType();
-  unsigned NumElts = VT->getNumElements();
-  VectorType *InputVT = cast<VectorType>(SVI.getOperand(0)->getType());
-  unsigned NumInputElts = InputVT->getNumElements(); // n
   Type *EltTy = VT->getElementType();
-  assert(NumElts != 0);
+  VectorType *InputVT = cast<VectorType>(SVI.getOperand(0)->getType());
+  assert(!isEmptyType(VT));
+  assert(InputVT->getElementType() == VT->getElementType());
 
+  CtorDeclTypes.insert(VT);
+  Out << "llvm_ctor_";
+  printTypeString(Out, VT, false);
+  Out << "(";
+
+  unsigned NumElts = VT->getNumElements();
+  unsigned NumInputElts = InputVT->getNumElements(); // n
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i) Out << ", ";
     int SrcVal = SVI.getMaskValue(i);
@@ -4127,7 +4130,7 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
       }
     }
   }
-  Out << "}";
+  Out << ")";
 }
 
 void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
