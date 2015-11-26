@@ -943,7 +943,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         V = Tmp.convertToDouble();
       }
 
-      if (isnan(V)) {
+      if (std::isnan(V)) {
         // The value is NaN
 
         // FIXME the actual NaN bits should be emitted.
@@ -967,7 +967,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         else
           Out << "LLVM_NAN" << (Val == QuietNaN ? "" : "S") << "(\""
               << Buffer << "\") /*nan*/ ";
-      } else if (isinf(V)) {
+      } else if (std::isinf(V)) {
         // The value is Inf
         if (V < 0) Out << '-';
         Out << "LLVM_INF" <<
