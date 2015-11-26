@@ -1839,7 +1839,24 @@ void CWriter::generateHeader(Module &M) {
         I->getName() == "siglongjmp" ||
         I->getName() == "sigsetjmp" ||
         I->getName() == "memcmp" ||
-        I->getName() == "memcpy")
+        I->getName() == "memcpy" ||
+        I->getName() == "pow" ||
+        I->getName() == "powf" ||
+        I->getName() == "sqrt" ||
+        I->getName() == "sqrtf" ||
+        I->getName() == "trunc" ||
+        I->getName() == "truncf" ||
+        I->getName() == "rint" ||
+        I->getName() == "rintf" ||
+        I->getName() == "floor" ||
+        I->getName() == "floorf" ||
+        I->getName() == "ceil" ||
+        I->getName() == "ceilf" ||
+        I->getName() == "alloca" ||
+        I->getName() == "_alloca" ||
+        I->getName() == "_chkstk" ||
+        I->getName() == "__chkstk" ||
+        I->getName() == "___chkstk_ms")
       continue;
 
     if (I->hasDLLImportStorageClass())
