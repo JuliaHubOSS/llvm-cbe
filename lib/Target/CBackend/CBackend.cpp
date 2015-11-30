@@ -445,6 +445,8 @@ raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *T
 
 raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
                                 AttributeSet PAL, const std::string &Name) {
+    if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
+      Out << "__noreturn ";
     // Should this function actually return a struct by-value?
     bool isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
                           PAL.hasAttribute(2, Attribute::StructRet);
@@ -1477,18 +1479,26 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
 
-  // Defined unaligned-load helper macro
+  // Define unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __UNALIGNED_LOAD__(type, align, op) *((type __unaligned*)op)\n";
   Out << "#else\n";
   Out << "#define __UNALIGNED_LOAD__(type, align, op) ((struct { type data __attribute__((packed, aligned(align))); }*)op)->data\n";
   Out << "#endif\n\n";
 
-  // Defined unaligned-load helper macro
+  // Define unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __MSALIGN__(X) __declspec(align(X))\n";
   Out << "#else\n";
   Out << "#define __MSALIGN__(X)\n";
+  Out << "#endif\n\n";
+
+  // Define compatibility macros to help msvc look more like gcc/clang
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __builtin_unreachable() __assume(0)\n";
+  Out << "#define __noreturn __declspec(noreturn)\n";
+  Out << "#else\n";
+  Out << "#define __noreturn __attribute__((noreturn))\n";
   Out << "#endif\n\n";
 
   // Define NaN and Inf as GCC builtins if using GCC
@@ -2612,6 +2622,9 @@ void CWriter::printFunctionSignature(raw_ostream &Out, Function *F) {
   FunctionType *FTy = F->getFunctionType();
   const AttributeSet &PAL = F->getAttributes();
 
+  if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
+    Out << "__noreturn ";
+
   // Get the return type for the function.
   Type *RetTy;
   if (!isStructReturn)
@@ -2859,7 +2872,7 @@ void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
 }
 
 void CWriter::visitUnreachableInst(UnreachableInst &I) {
-  Out << "__builtin_unreachable();\n"; // TODO: use __assume(0) on MSVC
+  Out << "  __builtin_unreachable();\n";
 }
 
 bool CWriter::isGotoCodeNecessary(BasicBlock *From, BasicBlock *To) {
