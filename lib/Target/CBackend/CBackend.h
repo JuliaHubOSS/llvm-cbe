@@ -123,13 +123,14 @@ namespace {
     raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
 
     raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, AttributeSet PAL = AttributeSet());
+    raw_ostream &printTypeNameUnaligned(raw_ostream &Out, Type *Ty, bool isSigned = false);
     raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
     raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
     std::string getStructName(StructType *ST);
     std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
     std::string getArrayName(ArrayType *AT);
-    std::string getVectorName(VectorType *VT);
+    std::string getVectorName(VectorType *VT, bool Aligned);
 
     enum OperandContext {
         ContextNormal,

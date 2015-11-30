@@ -263,11 +263,13 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
 
-std::string CWriter::getVectorName(VectorType *VT) {
+std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
     std::string astr;
     raw_string_ostream VectorInnards(astr);
     // Vectors are handled like arrays
     assert(!isEmptyType(VT));
+    if (Aligned)
+      Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
     printTypeName(VectorInnards, VT->getElementType(), false);
     return "struct l_vector_" + utostr(VT->getNumElements()) + '_' + CBEMangle(VectorInnards.str());
 }
@@ -375,7 +377,8 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
   }
 
   case Type::PointerTyID: {
-    return printTypeName(Out, Ty->getPointerElementType(), false) << '*';
+    Type *ElTy = Ty->getPointerElementType();
+    return printTypeName(Out, ElTy, false) << '*';
   }
 
   case Type::ArrayTyID: {
@@ -385,7 +388,7 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
 
   case Type::VectorTyID: {
     TypedefDeclTypes.insert(Ty);
-    return Out << getVectorName(cast<VectorType>(Ty));
+    return Out << getVectorName(cast<VectorType>(Ty), true);
   }
 
   default:
@@ -396,6 +399,16 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, A
   }
 }
 
+raw_ostream &CWriter::printTypeNameUnaligned(raw_ostream &Out, Type *Ty, bool isSigned) {
+  if (VectorType *VTy = dyn_cast<VectorType>(Ty)) {
+    // MSVC doesn't handle __declspec(align) on parameters,
+    // but we specify it for Vector (hoping the compiler will vectorize it)
+    // so we need to avoid it sometimes
+    TypedefDeclTypes.insert(VTy);
+    return Out << getVectorName(VTy, false);
+  }
+  return printTypeName(Out, Ty, isSigned);
+}
 
 raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) {
     if (STy->isPacked())
@@ -495,8 +508,7 @@ raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
 raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out, VectorType *VTy) {
     assert(!isEmptyType(VTy));
     // Vectors are printed like arrays
-    Out << "__MSALIGN__(" << TD->getABITypeAlignment(VTy) << ") ";
-    Out << getVectorName(VTy) << " {\n  ";
+    Out << getVectorName(VTy, false) << " {\n  ";
     printTypeName(Out, VTy->getElementType());
     Out << " vector[" << utostr(VTy->getNumElements()) << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy) << ")));\n";
     return Out;
@@ -1787,7 +1799,15 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-      printTypeName(Out, I->getType()->getPointerElementType(), false) << ' ' << GetValueName(I);
+      Type *ElTy = I->getType()->getElementType();
+      unsigned Alignment = I->getAlignment();
+      bool IsOveraligned = Alignment &&
+        Alignment > TD->getABITypeAlignment(ElTy);
+      if (IsOveraligned)
+        Out << "__MSALIGN__(" << Alignment << ") ";
+      printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+      if (IsOveraligned)
+        Out << " __attribute__((aligned(" << Alignment << ")))";
 
       if (I->hasExternalWeakLinkage())
          Out << " __EXTERNAL_WEAK__";
@@ -1910,7 +1930,16 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-      printTypeName(Out, I->getType()->getPointerElementType(), false) << ' ' << GetValueName(I);
+      Type *ElTy = I->getType()->getElementType();
+      unsigned Alignment = I->getAlignment();
+      bool IsOveraligned = Alignment &&
+        Alignment > TD->getABITypeAlignment(ElTy);
+      if (IsOveraligned)
+        Out << "__MSALIGN__(" << Alignment << ") ";
+      printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+      if (IsOveraligned)
+        Out << " __attribute__((aligned(" << Alignment << ")))";
+
       if (I->hasLinkOnceLinkage())
         Out << " __attribute__((common))";
       else if (I->hasWeakLinkage())
@@ -1969,7 +1998,17 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-      printTypeName(Out, I->getType(), false) << ' ' << I->getName();
+      Type *ElTy = I->getType()->getElementType();
+      unsigned Alignment = I->getAlignment();
+      bool IsOveraligned = Alignment &&
+        Alignment > TD->getABITypeAlignment(ElTy);
+      if (IsOveraligned)
+        Out << "__MSALIGN__(" << Alignment << ") ";
+      // GetValueName would resolve the alias, which is not what we want,
+      // so use getName directly instead (assuming that the Alias has a name...)
+      printTypeName(Out, ElTy, false) << " *" << I->getName();
+      if (IsOveraligned)
+        Out << " __attribute__((aligned(" << Alignment << ")))";
 
       if (I->hasExternalWeakLinkage())
          Out << " __EXTERNAL_WEAK__";
@@ -2029,20 +2068,20 @@ void CWriter::generateHeader(Module &M) {
     //   return r;
     // }
     Out << "static __inline ";
-    printTypeName(Out, *it, false);
+    printTypeNameUnaligned(Out, *it, false);
     Out << " llvm_select_";
     printTypeString(Out, *it, false);
     Out << "(";
     if (isa<VectorType>(*it))
-      printTypeName(Out, VectorType::get(Type::getInt1Ty((*it)->getContext()), (*it)->getVectorNumElements()), false);
+      printTypeNameUnaligned(Out, VectorType::get(Type::getInt1Ty((*it)->getContext()), (*it)->getVectorNumElements()), false);
     else
       Out << "bool";
     Out << " condition, ";
-    printTypeName(Out, *it, false);
+    printTypeNameUnaligned(Out, *it, false);
     Out << " iftrue, ";
-    printTypeName(Out, *it, false);
+    printTypeNameUnaligned(Out, *it, false);
     Out << " ifnot) {\n  ";
-    printTypeName(Out, *it, false);
+    printTypeNameUnaligned(Out, *it, false);
     Out << " r;\n";
     if (isa<VectorType>(*it)) {
       unsigned n, l = (*it)->getVectorNumElements();
@@ -2080,9 +2119,9 @@ void CWriter::generateHeader(Module &M) {
     Out << getCmpPredicateName((*it).first) << "_";
     printTypeString(Out, (*it).second, isSigned);
     Out << "(";
-    printTypeName(Out, (*it).second, isSigned);
+    printTypeNameUnaligned(Out, (*it).second, isSigned);
     Out << " l, ";
-    printTypeName(Out, (*it).second, isSigned);
+    printTypeNameUnaligned(Out, (*it).second, isSigned);
     Out << " r) {\n  ";
     printTypeName(Out, RTy, isSigned);
     Out << " c;\n";
@@ -2161,7 +2200,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "_";
     printTypeString(Out, DstTy, false);
     Out << "(";
-    printTypeName(Out, SrcTy, SrcSigned);
+    printTypeNameUnaligned(Out, SrcTy, SrcSigned);
     Out << " in) {\n  ";
     if (opcode == Instruction::BitCast) {
       Out << "union {\n    ";
@@ -2208,21 +2247,21 @@ void CWriter::generateHeader(Module &M) {
       Out << " llvm_neg_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeName(Out, OpTy, isSigned);
+      printTypeNameUnaligned(Out, OpTy, isSigned);
       Out << " a) {\n  ";
     } else if (opcode == BinaryNot) {
       Out << " llvm_not_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeName(Out, OpTy, isSigned);
+      printTypeNameUnaligned(Out, OpTy, isSigned);
       Out << " a) {\n  ";
     } else {
       Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeName(Out, OpTy, isSigned);
+      printTypeNameUnaligned(Out, OpTy, isSigned);
       Out << " a, ";
-      printTypeName(Out, OpTy, isSigned);
+      printTypeNameUnaligned(Out, OpTy, isSigned);
       Out << " b) {\n  ";
     }
 
@@ -2364,7 +2403,7 @@ void CWriter::generateHeader(Module &M) {
           Out << " /* ";
         else if (printed)
           Out << ", ";
-        printTypeName(Out, ElTy);
+        printTypeNameUnaligned(Out, ElTy);
         Out << " x" << i;
         if (isEmptyType(ElTy))
           Out << " */";
@@ -2608,7 +2647,7 @@ void CWriter::printFunctionSignature(raw_ostream &Out, Function *F) {
     }
     if (PrintedArg)
         Out << ", ";
-    printTypeName(Out, ArgTy, /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
+    printTypeNameUnaligned(Out, ArgTy, /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
     Out << ' ' << GetValueName(I);
     PrintedArg = true;
     ++Idx;
@@ -3250,7 +3289,7 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
     case Intrinsic::cttz:
       break;
     }
-    printTypeName(Out, funT->getParamType(i), isSigned);
+    printTypeNameUnaligned(Out, funT->getParamType(i), isSigned);
     Out << " " << (char)('a' + i);
     if (i != numParams - 1) Out << ", ";
   }
@@ -3569,7 +3608,7 @@ void CWriter::visitCallInst(CallInst &I) {
     if (ArgNo < NumDeclaredParams &&
         (*AI)->getType() != FTy->getParamType(ArgNo)) {
       Out << '(';
-      printTypeName(Out, FTy->getParamType(ArgNo),
+      printTypeNameUnaligned(Out, FTy->getParamType(ArgNo),
             /*isSigned=*/PAL.hasAttribute(ArgNo+1, Attribute::SExt));
       Out << ')';
     }
@@ -4039,7 +4078,7 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
 
   else if (IsUnaligned) {
     Out << "__UNALIGNED_LOAD__(";
-    printTypeName(Out, OperandType, false);
+    printTypeNameUnaligned(Out, OperandType, false);
     if (IsVolatile) Out << " volatile";
     Out << ", " << Alignment << ", ";
   }
