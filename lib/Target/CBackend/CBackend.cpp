@@ -892,7 +892,10 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     unsigned ActiveBits = CI->getValue().getMinSignedBits();
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
-    } else if (Context != ContextNormal && ActiveBits < 64 && ActiveBits < Ty->getPrimitiveSizeInBits()) {
+    } else if (Context != ContextNormal &&
+              ActiveBits < 64 &&
+              Ty->getPrimitiveSizeInBits() < 64 &&
+              ActiveBits < Ty->getPrimitiveSizeInBits()) {
       if (ActiveBits >= 32)
         Out << "INT64_C(";
       Out << CI->getSExtValue(); // most likely a shorter representation
@@ -914,12 +917,8 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       const APInt &V = CI->getValue();
       const APInt &Vlo = V.getLoBits(64);
       const APInt &Vhi = V.getHiBits(64);
-      Out << '(';
-      if (Vhi != 0) {
-          Out << "(((uint128_t)" << Vhi.getZExtValue() << "ull) << 64) | ";
-      }
-      Out << "(uint128_t)" << Vlo.getZExtValue() << "ull";
-      Out << ')';
+      Out << (Context == ContextStatic ? "UINT128_C" : "llvm_ctor_u128");
+      Out << "(UINT64_C(" << Vhi.getZExtValue() << "), UINT64_C(" << Vlo.getZExtValue() << "))";
     }
     return;
   }
@@ -1450,7 +1449,6 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || defined(__arm__)\n"
       << "#define alloca(x) __builtin_alloca(x)\n"
       << "#elif defined(_MSC_VER)\n"
-      << "#define inline _inline\n"
       << "#define alloca(x) _alloca(x)\n"
       << "#else\n"
       << "#include <alloca.h>\n"
@@ -1560,12 +1558,62 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
       << "#define __builtin_stack_restore(X) /* noop */\n"
       << "#endif\n\n";
 
-  // Output typedefs for 128-bit integers. If these are needed with a
-  // 32-bit target or with a C compiler that doesn't support mode(TI),
-  // more drastic measures will be needed.
+  // Output typedefs for 128-bit integers
   Out << "#if defined(__GNUC__) && defined(__LP64__) /* 128-bit integer types */\n"
       << "typedef int __attribute__((mode(TI))) int128_t;\n"
       << "typedef unsigned __attribute__((mode(TI))) uint128_t;\n"
+      << "#define UINT128_C(hi, lo) (((uint128_t)(hi) << 64) | (uint128_t)(lo))\n"
+      << "static __inline uint128_t llvm_ctor_u128(uint64_t hi, uint64_t lo) {"
+      << " return UINT128_C(hi, lo); }\n"
+      << "static __inline bool llvm_icmp_eq_u128(uint128_t l, uint128_t r) {"
+      << " return l == r; }\n"
+      << "static __inline bool llvm_icmp_ne_u128(uint128_t l, uint128_t r) {"
+      << " return l != r; }\n"
+      << "static __inline bool llvm_icmp_ule_u128(uint128_t l, uint128_t r) {"
+      << " return l <= r; }\n"
+      << "static __inline bool llvm_icmp_sle_i128(int128_t l, int128_t r) {"
+      << " return l <= r; }\n"
+      << "static __inline bool llvm_icmp_uge_u128(uint128_t l, uint128_t r) {"
+      << " return l >= r; }\n"
+      << "static __inline bool llvm_icmp_sge_i128(int128_t l, int128_t r) {"
+      << " return l >= r; }\n"
+      << "static __inline bool llvm_icmp_ult_u128(uint128_t l, uint128_t r) {"
+      << " return l < r; }\n"
+      << "static __inline bool llvm_icmp_slt_i128(int128_t l, int128_t r) {"
+      << " return l < r; }\n"
+      << "static __inline bool llvm_icmp_ugt_u128(uint128_t l, uint128_t r) {"
+      << " return l > r; }\n"
+      << "static __inline bool llvm_icmp_sgt_i128(int128_t l, int128_t r) {"
+      << " return l > r; }\n"
+
+      << "#else /* manual 128-bit types */\n"
+      // TODO: field order should be reversed for big-endian
+      << "typedef struct { uint64_t lo; uint64_t hi; } uint128_t;\n"
+      << "typedef uint128_t int128_t;\n"
+      << "#define UINT128_C(hi, lo) {(lo), (hi)}\n" // only use in Static context
+      << "static __inline uint128_t llvm_ctor_u128(uint64_t hi, uint64_t lo) {"
+      << " uint128_t r; r.lo = lo; r.hi = hi; return r; }\n"
+      << "static __inline bool llvm_icmp_eq_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi == r.hi && l.lo == r.lo; }\n"
+      << "static __inline bool llvm_icmp_ne_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi != r.hi || l.lo != r.lo; }\n"
+      << "static __inline bool llvm_icmp_ule_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi < r.hi ? 1 : (l.hi == r.hi ? l.lo <= l.lo : 0); }\n"
+      << "static __inline bool llvm_icmp_sle_i128(int128_t l, int128_t r) {"
+      << " return (int64_t)l.hi < (int64_t)r.hi ? 1 : (l.hi == r.hi ? (int64_t)l.lo <= (int64_t)l.lo : 0); }\n"
+      << "static __inline bool llvm_icmp_uge_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi > r.hi ? 1 : (l.hi == r.hi ? l.lo >= l.hi : 0); }\n"
+      << "static __inline bool llvm_icmp_sge_i128(int128_t l, int128_t r) {"
+      << " return (int64_t)l.hi > (int64_t)r.hi ? 1 : (l.hi == r.hi ? (int64_t)l.lo >= (int64_t)l.lo : 0); }\n"
+      << "static __inline bool llvm_icmp_ult_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi < r.hi ? 1 : (l.hi == r.hi ? l.lo < l.hi : 0); }\n"
+      << "static __inline bool llvm_icmp_slt_i128(int128_t l, int128_t r) {"
+      << " return (int64_t)l.hi < (int64_t)r.hi ? 1 : (l.hi == r.hi ? (int64_t)l.lo < (int64_t)l.lo : 0); }\n"
+      << "static __inline bool llvm_icmp_ugt_u128(uint128_t l, uint128_t r) {"
+      << " return l.hi > r.hi ? 1 : (l.hi == r.hi ? l.lo > l.hi : 0); }\n"
+      << "static __inline bool llvm_icmp_sgt_i128(int128_t l, int128_t r) {"
+      << " return (int64_t)l.hi > (int64_t)r.hi ? 1 : (l.hi == r.hi ? (int64_t)l.lo > (int64_t)l.lo : 0); }\n"
+      << "#define __emulate_i128\n"
       << "#endif\n\n";
 
   // We output GCC specific attributes to preserve 'linkonce'ness on globals.
@@ -1732,13 +1780,13 @@ void CWriter::generateHeader(Module &M) {
   Out << "#include <string.h>\n";      // built-in definitions of many c library functions
   Out << "#include <math.h>\n";        // definitions for some math functions and numeric constants
   Out << "#include <APInt-C.h>\n";     // Implementations of many llvm intrinsics
+  // Provide a definition for `bool' if not compiling with a C++ compiler.
+  Out << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
+  Out << "\n";
+
   generateCompilerSpecificCode(Out, TD);
 
-  // Provide a definition for `bool' if not compiling with a C++ compiler.
-  Out << "\n"
-      << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n"
-
-      << "\n\n/* Support for floating point constants */\n"
+  Out << "\n\n/* Support for floating point constants */\n"
       << "typedef uint64_t ConstantDoubleTy;\n"
       << "typedef uint32_t ConstantFloatTy;\n"
       << "typedef struct { uint64_t f1; uint16_t f2; "
@@ -1750,7 +1798,6 @@ void CWriter::generateHeader(Module &M) {
 
   // First output all the declarations for the program, because C requires
   // Functions & globals to be declared before they are used.
-  //
   if (!M.getModuleInlineAsm().empty()) {
     Out << "\n/* Module asm statements */\n"
         << "__asm__ (";
@@ -2096,7 +2143,7 @@ void CWriter::generateHeader(Module &M) {
     if (isa<VectorType>(*it)) {
       unsigned n, l = (*it)->getVectorNumElements();
       for (n = 0; n < l; n++) {
-        Out << " r.vector[" << n << "] = condition.vector[" << n << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
+        Out << "  r.vector[" << n << "] = condition.vector[" << n << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
       }
     }
     else {
@@ -2211,16 +2258,16 @@ void CWriter::generateHeader(Module &M) {
     printTypeString(Out, DstTy, false);
     Out << "(";
     printTypeNameUnaligned(Out, SrcTy, SrcSigned);
-    Out << " in) {\n  ";
+    Out << " in) {\n";
     if (opcode == Instruction::BitCast) {
-      Out << "union {\n    ";
+      Out << "  union {\n    ";
       printTypeName(Out, SrcTy, SrcSigned);
       Out << " in;\n    ";
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n  } cast;\n";
       Out << "  cast.in = in;\n  return cast.out;\n}\n";
-    }
-    else {
+    } else if (isa<VectorType>(DstTy)) {
+      Out << "  ";
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
       unsigned n, l = DstTy->getVectorNumElements();
@@ -2229,6 +2276,33 @@ void CWriter::generateHeader(Module &M) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
       Out << "  return out;\n}\n";
+    } else {
+      Out << "#ifndef __emulate_i128\n";
+      // easy case first: compiler supports i128 natively
+      Out << "  return in;\n";
+      Out << "#else\n";
+      Out << "  ";
+      printTypeName(Out, DstTy, DstSigned);
+      Out << " out;\n";
+      Out << "  LLVM";
+      switch (opcode) {
+      case Instruction::UIToFP: Out << "UItoFP"; break;
+      case Instruction::SIToFP: Out << "SItoFP"; break;
+      case Instruction::Trunc: Out << "Trunc"; break;
+      //case Instruction::FPExt:
+      //case Instruction::FPTrunc:
+      case Instruction::ZExt: Out << "ZExt"; break;
+      case Instruction::FPToUI: Out << "FPtoUI"; break;
+      case Instruction::SExt: Out << "SExt"; break;
+      case Instruction::FPToSI: Out << "FPtoSI"; break;
+      default:
+        llvm_unreachable("Invalid cast opcode for i128");
+      }
+      Out << "(" << SrcTy->getPrimitiveSizeInBits() << ", &in, "
+                 << DstTy->getPrimitiveSizeInBits() << ", &out);\n";
+      Out << "  return out;\n";
+      Out << "#endif\n";
+      Out << "}\n";
     }
   }
 
@@ -2336,54 +2410,146 @@ void CWriter::generateHeader(Module &M) {
           Out << ") & " << mask;
         Out << ";\n";
       }
+
+    } else if (OpTy->getPrimitiveSizeInBits() > 64) {
+      Out << " r;\n";
+      Out << "#ifndef __emulate_i128\n";
+      // easy case first: compiler supports i128 natively
+      Out << "  r = ";
+      if (opcode == BinaryNeg) {
+        Out << "-a;\n";
+      } else if (opcode == BinaryNot) {
+        Out << "~a;\n";
+      } else {
+        Out << "a";
+        switch (opcode) {
+        case Instruction::Add: Out << " + "; break;
+        case Instruction::Sub: Out << " - "; break;
+        case Instruction::Mul: Out << " * "; break;
+        case Instruction::URem:
+        case Instruction::SRem: Out << " % "; break;
+        case Instruction::UDiv:
+        case Instruction::SDiv: Out << " / "; break;
+        case Instruction::And:  Out << " & "; break;
+        case Instruction::Or:   Out << " | "; break;
+        case Instruction::Xor:  Out << " ^ "; break;
+        case Instruction::Shl:  Out << " << "; break;
+        case Instruction::LShr:
+        case Instruction::AShr: Out << " >> "; break;
+        default:
+#ifndef NDEBUG
+           errs() << "Invalid operator type!" << opcode;
+#endif
+           llvm_unreachable(0);
+        }
+        Out << "b;\n";
+      }
+      Out << "#else\n";
+      // emulated twos-complement i128 math
+      if (opcode == BinaryNeg) {
+        Out << "  r.hi = ~a.hi;\n";
+        Out << "  r.lo = ~a.lo + 1;\n";
+        Out << "  if (r.lo == 0) r.hi += 1;\n"; // overflow: carry the one
+      } else if (opcode == BinaryNot) {
+        Out << "  r.hi = ~a.hi;\n";
+        Out << "  r.lo = ~a.lo;\n";
+      } else if (opcode == Instruction::And) {
+        Out << "  r.hi = a.hi & b.hi;\n";
+        Out << "  r.lo = a.lo & b.lo;\n";
+      } else if (opcode == Instruction::Or) {
+        Out << "  r.hi = a.hi | b.hi;\n";
+        Out << "  r.lo = a.lo | b.lo;\n";
+      } else if (opcode == Instruction::Xor) {
+        Out << "  r.hi = a.hi ^ b.hi;\n";
+        Out << "  r.lo = a.lo ^ b.lo;\n";
+      } else if (opcode == Instruction::Shl) { // reminder: undef behavior if b >= 128
+        Out << "  if (b.lo >= 64) {\n";
+        Out << "    r.hi = (a.lo << (b.lo - 64));\n";
+        Out << "    r.lo = 0;\n";
+        Out << "  } else if (b.lo == 0) {\n";
+        Out << "    r.hi = a.hi;\n";
+        Out << "    r.lo = a.lo;\n";
+        Out << "  } else {\n";
+        Out << "    r.hi = (a.hi << b.lo) | (a.lo >> (64 - b.lo));\n";
+        Out << "    r.lo = a.lo << b.lo;\n";
+        Out << "  }\n";
+      } else {
+        // everything that hasn't been manually implemented above
+        Out << "  LLVM";
+        switch (opcode) {
+        //case BinaryNeg: Out << "Neg"; break;
+        //case BinaryNot: Out << "FlipAllBits"; break;
+        case Instruction::Add: Out << "Add"; break;
+        case Instruction::Sub: Out << "Sub"; break;
+        case Instruction::Mul: Out << "Mul"; break;
+        case Instruction::URem: Out << "URem"; break;
+        case Instruction::SRem: Out << "SRem"; break;
+        case Instruction::UDiv: Out << "UDiv"; break;
+        case Instruction::SDiv: Out << "SDiv"; break;
+        //case Instruction::And:  Out << "And"; break;
+        //case Instruction::Or:   Out << "Or"; break;
+        //case Instruction::Xor:  Out << "Xor"; break;
+        //case Instruction::Shl: Out << "Shl"; break;
+        case Instruction::LShr: Out << "LShr"; break;
+        case Instruction::AShr: Out << "AShr"; break;
+        default:
+#ifndef NDEBUG
+           errs() << "Invalid operator type!" << opcode;
+#endif
+           llvm_unreachable(0);
+        }
+        Out << "(16, &a, &b, &r);\n";
+      }
+      Out << "#endif\n";
+
     } else {
       Out << " r = ";
-        if (mask)
-          Out << "(";
-        if (opcode == BinaryNeg) {
-          Out << "-a";
-        } else if (opcode == BinaryNot) {
-          Out << "~a";
-        } else if (opcode == Instruction::FRem) {
-          // Output a call to fmod/fmodf instead of emitting a%b
-          if (ElemTy->isFloatTy())
-            Out << "fmodf(a, b)";
-          else if (ElemTy->isDoubleTy())
-            Out << "fmod(a, b)";
-          else  // all 3 flavors of long double
-            Out << "fmodl(a, b)";
-        } else {
-          Out << "a";
-          switch (opcode) {
-          case Instruction::Add:
-          case Instruction::FAdd: Out << " + "; break;
-          case Instruction::Sub:
-          case Instruction::FSub: Out << " - "; break;
-          case Instruction::Mul:
-          case Instruction::FMul: Out << " * "; break;
-          case Instruction::URem:
-          case Instruction::SRem:
-          case Instruction::FRem: Out << " % "; break;
-          case Instruction::UDiv:
-          case Instruction::SDiv:
-          case Instruction::FDiv: Out << " / "; break;
-          case Instruction::And:  Out << " & "; break;
-          case Instruction::Or:   Out << " | "; break;
-          case Instruction::Xor:  Out << " ^ "; break;
-          case Instruction::Shl : Out << " << "; break;
-          case Instruction::LShr:
-          case Instruction::AShr: Out << " >> "; break;
-          default:
+      if (mask)
+        Out << "(";
+      if (opcode == BinaryNeg) {
+        Out << "-a";
+      } else if (opcode == BinaryNot) {
+        Out << "~a";
+      } else if (opcode == Instruction::FRem) {
+        // Output a call to fmod/fmodf instead of emitting a%b
+        if (ElemTy->isFloatTy())
+          Out << "fmodf(a, b)";
+        else if (ElemTy->isDoubleTy())
+          Out << "fmod(a, b)";
+        else  // all 3 flavors of long double
+          Out << "fmodl(a, b)";
+      } else {
+        Out << "a";
+        switch (opcode) {
+        case Instruction::Add:
+        case Instruction::FAdd: Out << " + "; break;
+        case Instruction::Sub:
+        case Instruction::FSub: Out << " - "; break;
+        case Instruction::Mul:
+        case Instruction::FMul: Out << " * "; break;
+        case Instruction::URem:
+        case Instruction::SRem:
+        case Instruction::FRem: Out << " % "; break;
+        case Instruction::UDiv:
+        case Instruction::SDiv:
+        case Instruction::FDiv: Out << " / "; break;
+        case Instruction::And:  Out << " & "; break;
+        case Instruction::Or:   Out << " | "; break;
+        case Instruction::Xor:  Out << " ^ "; break;
+        case Instruction::Shl : Out << " << "; break;
+        case Instruction::LShr:
+        case Instruction::AShr: Out << " >> "; break;
+        default:
 #ifndef NDEBUG
-             errs() << "Invalid operator type!" << opcode;
+           errs() << "Invalid operator type!" << opcode;
 #endif
-             llvm_unreachable(0);
-          }
-          Out << "b";
-          if (mask)
-            Out << ") & " << mask;
+           llvm_unreachable(0);
         }
-        Out << ";\n";
+        Out << "b";
+        if (mask)
+          Out << ") & " << mask;
+      }
+      Out << ";\n";
     }
     Out << "  return r;\n}\n";
   }
@@ -2968,6 +3134,10 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
   if ((I.getType() == Type::getInt8Ty(I.getContext())) ||
       (I.getType() == Type::getInt16Ty(I.getContext()))
       || (I.getType() == Type::getFloatTy(I.getContext()))) {
+    // types too small to work with directly
+    needsCast = true;
+  } else if (I.getType()->getPrimitiveSizeInBits() > 64) {
+    // types too big to work with directly
     needsCast = true;
   }
   bool shouldCast;
@@ -3079,17 +3249,19 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
 }
 
 void CWriter::visitICmpInst(ICmpInst &I) {
-  if (I.getType()->isVectorTy()) {
-    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
+  if (I.getType()->isVectorTy()
+      || I.getOperand(0)->getType()->getPrimitiveSizeInBits() > 64) {
     Out << "llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
-    printTypeString(Out, VTy, I.isSigned());
+    printTypeString(Out, I.getOperand(0)->getType(), I.isSigned());
     Out << "(";
     writeOperand(I.getOperand(0), ContextCasted);
     Out << ", ";
     writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
-    CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
-    TypedefDeclTypes.insert(I.getType());
+    if (VectorType *VTy = dyn_cast<VectorType>(I.getOperand(0)->getType())) {
+      CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+      TypedefDeclTypes.insert(I.getType()); // insert type not necessarily visible above
+    }
     return;
   }
 
@@ -3127,16 +3299,17 @@ void CWriter::visitICmpInst(ICmpInst &I) {
 
 void CWriter::visitFCmpInst(FCmpInst &I) {
   if (I.getType()->isVectorTy()) {
-    VectorType *VTy = cast<VectorType>(I.getOperand(0)->getType());
     Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "_";
-    printTypeString(Out, VTy, I.isSigned());
+    printTypeString(Out, I.getOperand(0)->getType(), I.isSigned());
     Out << "(";
     writeOperand(I.getOperand(0), ContextCasted);
     Out << ", ";
     writeOperand(I.getOperand(1), ContextCasted);
     Out << ")";
-    CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
-    TypedefDeclTypes.insert(VTy);
+    if (VectorType *VTy = dyn_cast<VectorType>(I.getOperand(0)->getType())) {
+      CmpDeclTypes.insert(std::pair<CmpInst::Predicate, VectorType*>(I.getPredicate(), VTy));
+      TypedefDeclTypes.insert(I.getType()); // insert type not necessarily visible above
+    }
     return;
   }
 
@@ -3168,7 +3341,9 @@ void CWriter::visitCastInst(CastInst &I) {
   Type *DstTy = I.getType();
   Type *SrcTy = I.getOperand(0)->getType();
 
-  if (DstTy->isVectorTy() || SrcTy->isVectorTy()) {
+  if (DstTy->isVectorTy() || SrcTy->isVectorTy()
+      || DstTy->getPrimitiveSizeInBits() > 64
+      || SrcTy->getPrimitiveSizeInBits() > 64) {
     Out << "llvm_" << I.getOpcodeName() << "_";
     printTypeString(Out, SrcTy, false);
     Out << "_";
@@ -3375,19 +3550,38 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
 
     case Intrinsic::ctpop:
       assert(retT == elemT);
-      Out << "  r = LLVMCountPopulation(8 * sizeof(a), &a);\n";
+      Out << "  r = ";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << "llvm_ctor_u128(0, ";
+      Out << "LLVMCountPopulation(8 * sizeof(a), &a)";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << ")";
+      Out << ";\n";
       break;
 
     case Intrinsic::ctlz:
       assert(retT == elemT);
-      Out << "  (void)b;\n  r = LLVMCountLeadingZeros(8 * sizeof(a), &a);\n";
+      Out << "  (void)b;\n  r = ";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << "llvm_ctor_u128(0, ";
+      Out << "LLVMCountLeadingZeros(8 * sizeof(a), &a)";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << ")";
+      Out << ";\n";
       break;
 
     case Intrinsic::cttz:
       assert(retT == elemT);
-      Out << "  (void)b;\n  r = LLVMCountTrailingZeros(8 * sizeof(a), &a);\n";
+      Out << "  (void)b;\n  r = ";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << "llvm_ctor_u128(0, ";
+      Out << "LLVMCountTrailingZeros(8 * sizeof(a), &a)";
+      if (retT->getPrimitiveSizeInBits() > 64)
+        Out << ")";
+      Out << ";\n";
       break;
     }
+
   } else {
     // handle FP ops
     const char *suffix;
