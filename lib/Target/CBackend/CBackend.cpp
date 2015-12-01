@@ -411,29 +411,29 @@ raw_ostream &CWriter::printTypeNameUnaligned(raw_ostream &Out, Type *Ty, bool is
 }
 
 raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) {
-    if (STy->isPacked())
-      Out << "#ifdef _MSC_VER\n#pragma pack(push, 1)\n#endif\n";
-    Out << getStructName(STy) << " {\n";
-    unsigned Idx = 0;
-    for (StructType::element_iterator I = STy->element_begin(),
-           E = STy->element_end(); I != E; ++I, Idx++) {
-      Out << "  ";
-      bool empty = isEmptyType(*I);
-      if (empty)
-          Out << "/* "; // skip zero-sized types
-      printTypeName(Out, *I, false) << " field" << utostr(Idx);
-      if (empty)
-          Out << " */"; // skip zero-sized types
-      else
-          Out << ";\n";
-    }
-    Out << '}';
-    if (STy->isPacked())
-      Out << " __attribute__ ((packed))";
-    Out << ";\n";
-    if (STy->isPacked())
-      Out << "#ifdef _MSC_VER\n#pragma pack(pop)\n#endif\n";
-    return Out;
+  if (STy->isPacked())
+    Out << "#ifdef _MSC_VER\n#pragma pack(push, 1)\n#endif\n";
+  Out << getStructName(STy) << " {\n";
+  unsigned Idx = 0;
+  for (StructType::element_iterator I = STy->element_begin(),
+         E = STy->element_end(); I != E; ++I, Idx++) {
+    Out << "  ";
+    bool empty = isEmptyType(*I);
+    if (empty)
+        Out << "/* "; // skip zero-sized types
+    printTypeName(Out, *I, false) << " field" << utostr(Idx);
+    if (empty)
+        Out << " */"; // skip zero-sized types
+    else
+        Out << ";\n";
+  }
+  Out << '}';
+  if (STy->isPacked())
+    Out << " __attribute__ ((packed))";
+  Out << ";\n";
+  if (STy->isPacked())
+    Out << "#ifdef _MSC_VER\n#pragma pack(pop)\n#endif\n";
+  return Out;
 }
 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
@@ -498,22 +498,22 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 }
 
 raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
-    assert(!isEmptyType(ATy));
-    // Arrays are wrapped in structs to allow them to have normal
-    // value semantics (avoiding the array "decay").
-    Out << getArrayName(ATy) << " {\n  ";
-    printTypeName(Out, ATy->getElementType());
-    Out << " array[" << utostr(ATy->getNumElements()) << "];\n};\n";
-    return Out;
+  assert(!isEmptyType(ATy));
+  // Arrays are wrapped in structs to allow them to have normal
+  // value semantics (avoiding the array "decay").
+  Out << getArrayName(ATy) << " {\n  ";
+  printTypeName(Out, ATy->getElementType());
+  Out << " array[" << utostr(ATy->getNumElements()) << "];\n};\n";
+  return Out;
 }
 
 raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out, VectorType *VTy) {
-    assert(!isEmptyType(VTy));
-    // Vectors are printed like arrays
-    Out << getVectorName(VTy, false) << " {\n  ";
-    printTypeName(Out, VTy->getElementType());
-    Out << " vector[" << utostr(VTy->getNumElements()) << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy) << ")));\n";
-    return Out;
+  assert(!isEmptyType(VTy));
+  // Vectors are printed like arrays
+  Out << getVectorName(VTy, false) << " {\n  ";
+  printTypeName(Out, VTy->getElementType());
+  Out << " vector[" << utostr(VTy->getNumElements()) << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy) << ")));\n";
+  return Out;
 }
 
 void CWriter::printConstantArray(ConstantArray *CPA, enum OperandContext Context) {
@@ -2196,9 +2196,9 @@ void CWriter::generateHeader(Module &M) {
         case CmpInst::ICMP_UGT:
         case CmpInst::ICMP_SGT: Out << " > "; break;
         default:
-  #ifndef NDEBUG
+#ifndef NDEBUG
           errs() << "Invalid icmp predicate!" << (*it).first;
-  #endif
+#endif
           llvm_unreachable(0);
         }
         Out << "r.vector[" << n << "];\n";
@@ -3487,9 +3487,9 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
            "CBackend does not support arbitrary size integers.");
     switch (F.getIntrinsicID()) {
     default:
-  #ifndef NDEBUG
+#ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << F;
-  #endif
+#endif
       llvm_unreachable(0);
 
     case Intrinsic::uadd_with_overflow:
@@ -3591,17 +3591,17 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
     } else if (elemT->isPPC_FP128Ty()) {
         suffix = "l";
     } else {
-  #ifndef NDEBUG
+#ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << F;
-  #endif
+#endif
       llvm_unreachable(0);
     }
 
     switch (F.getIntrinsicID()) {
     default:
-  #ifndef NDEBUG
+#ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << F;
-  #endif
+#endif
       llvm_unreachable(0);
 
     case Intrinsic::ceil:
@@ -3830,8 +3830,10 @@ void CWriter::visitCallInst(CallInst &I) {
 bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   switch (ID) {
   default: {
-    I.dump();
-    assert(0 && "Unknown LLVM intrinsic!");
+#ifndef NDEBUG
+    errs() << "Unknown LLVM intrinsic! " << I;
+#endif
+    llvm_unreachable(0);
     return false;
   }
   case Intrinsic::vastart:
