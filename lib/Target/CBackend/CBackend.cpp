@@ -867,7 +867,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       Out << "/*undef*/llvm_ctor_";
       printTypeString(Out, VT, false);
       Out << "(";
-      Constant *Zero = ConstantInt::get(VT->getElementType(), 0);
+      Constant *Zero = Constant::getNullValue(VT->getElementType());
       unsigned NumElts = VT->getNumElements();
       for (unsigned i = 0; i != NumElts; ++i) {
         if (i) Out << ", ";
@@ -876,7 +876,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       Out << ")";
 
     } else {
-      Constant *Zero = ConstantInt::get(CPV->getType(), 0);
+      Constant *Zero = Constant::getNullValue(CPV->getType());
       Out << "/*UNDEF*/";
       return printConstant(Zero, Context);
     }
@@ -4381,7 +4381,7 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   printTypeString(Out, VT, false);
   Out << "(";
 
-  Constant *Zero = ConstantInt::get(EltTy, 0);
+  Constant *Zero = Constant::getNullValue(EltTy);
   unsigned NumElts = VT->getNumElements();
   unsigned NumInputElts = InputVT->getNumElements(); // n
   for (unsigned i = 0; i != NumElts; ++i) {
