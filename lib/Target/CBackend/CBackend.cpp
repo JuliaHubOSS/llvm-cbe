@@ -867,22 +867,18 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       Out << "/*undef*/llvm_ctor_";
       printTypeString(Out, VT, false);
       Out << "(";
+      Constant *Zero = ConstantInt::get(VT->getElementType(), 0);
       unsigned NumElts = VT->getNumElements();
       for (unsigned i = 0; i != NumElts; ++i) {
         if (i) Out << ", ";
-        Out << " 0";
+        printConstant(Zero, ContextCasted);
       }
       Out << ")";
 
     } else {
-      if (Context != ContextStatic) {
-        Out << "0";
-        return;
-      }
-      Out << "((";
-      printTypeName(Out, CPV->getType()); // sign doesn't matter
-      Out << ")/*UNDEF*/";
-      Out << "0)";
+      Constant *Zero = ConstantInt::get(CPV->getType(), 0);
+      Out << "/*UNDEF*/";
+      return printConstant(Zero, Context);
     }
     return;
   }
@@ -4385,13 +4381,15 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   printTypeString(Out, VT, false);
   Out << "(";
 
+  Constant *Zero = ConstantInt::get(EltTy, 0);
   unsigned NumElts = VT->getNumElements();
   unsigned NumInputElts = InputVT->getNumElements(); // n
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i) Out << ", ";
     int SrcVal = SVI.getMaskValue(i);
     if ((unsigned)SrcVal >= NumInputElts * 2) {
-      Out << " 0/*undef*/ ";
+      Out << "/*undef*/";
+      printConstant(Zero, ContextCasted);
     } else {
       // If SrcVal belongs [0, n - 1], it extracts value from <v1>
       // If SrcVal belongs [n, 2 * n - 1], it extracts value from <v2>
@@ -4405,7 +4403,7 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
         Out << ")(&" << GetValueName(Op)
             << "))[" << ((unsigned)SrcVal >= NumInputElts ? SrcVal - NumInputElts : SrcVal) << "]";
       } else if (isa<ConstantAggregateZero>(Op) || isa<UndefValue>(Op)) {
-        Out << "0";
+        printConstant(Zero, ContextCasted);
       } else {
         printConstant(cast<ConstantVector>(Op)->getOperand(SrcVal &
                                                            (NumElts-1)),
