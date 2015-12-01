@@ -246,8 +246,8 @@ std::string CWriter::getStructName(StructType *ST) {
   return "struct l_unnamed_" + utostr(id);
 }
 
-std::string CWriter::getFunctionName(FunctionType *FT, AttributeSet PAL) {
-  unsigned &id = UnnamedFunctionIDs[std::pair<FunctionType*, AttributeSet>(FT, PAL)];
+std::string CWriter::getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL) {
+  unsigned &id = UnnamedFunctionIDs[std::make_pair(FT, PAL)];
   if (id == 0)
       id = ++NextFunctionNumber;
   return "l_fptr_" + utostr(id);
@@ -357,7 +357,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
 // Pass the Type* and the variable name and this prints out the variable
 // declaration.
 //
-raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, AttributeSet PAL) {
+raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, std::pair<AttributeSet, CallingConv::ID> PAL) {
   if (Ty->isSingleValueType() || Ty->isVoidTy()) {
     if (!Ty->isPointerTy() && !Ty->isVectorTy())
       return printSimpleType(Out, Ty, isSigned);
@@ -437,64 +437,96 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
 }
 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                                AttributeSet PAL, const std::string &Name) {
-    Out << "typedef ";
-    printFunctionProto(Out, Ty, PAL, "(" + Name + ")");
-    return Out << ";\n";
+                                               std::pair<AttributeSet, CallingConv::ID> PAL, const std::string &Name) {
+  Out << "typedef ";
+  printFunctionProto(Out, Ty, PAL, Name, NULL);
+  return Out << ";\n";
 }
 
 raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
-                                AttributeSet PAL, const std::string &Name) {
-    if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
-      Out << "__noreturn ";
-    // Should this function actually return a struct by-value?
-    bool isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
-                          PAL.hasAttribute(2, Attribute::StructRet);
-    // Get the return type for the function.
-    Type *RetTy;
-    if (!isStructReturn)
-      RetTy = FTy->getReturnType();
-    else {
-      // If this is a struct-return function, print the struct-return type.
-      RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
-    }
-    printTypeName(Out, RetTy,
-      /*isSigned=*/PAL.hasAttribute(AttributeSet::ReturnIndex, Attribute::SExt));
+                                         std::pair<AttributeSet, CallingConv::ID> Attrs,
+                                         const std::string &Name,
+                                         Function::ArgumentListType *ArgList) {
+  AttributeSet &PAL = Attrs.first;
 
-    Out << ' ' << Name << '(';
-    unsigned Idx = 1;
-    bool PrintedArg = false;
-    FunctionType::param_iterator I = FTy->param_begin(), E = FTy->param_end();
-    // If this is a struct-return function, don't print the hidden
-    // struct-return argument.
-    if (isStructReturn) {
-      assert(I != E && "Invalid struct return function!");
-      ++I;
-      ++Idx;
-    }
-    for (; I != E; ++I) {
-      Type *ArgTy = *I;
-      if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
-        assert(ArgTy->isPointerTy());
-        ArgTy = cast<PointerType>(ArgTy)->getElementType();
-      }
-      if (PrintedArg)
-        Out << ", ";
-      printTypeName(Out, ArgTy,
-        /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
-      PrintedArg = true;
-      ++Idx;
-    }
+  if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
+    Out << "__noreturn ";
 
-    if (FTy->isVarArg()) {
-      if (!PrintedArg)
-        Out << "int"; //dummy argument for empty vaarg functs
-      Out << ", ...";
-    } else if (!PrintedArg) {
-      Out << "void";
+  // Should this function actually return a struct by-value?
+  bool isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
+                        PAL.hasAttribute(2, Attribute::StructRet);
+  // Get the return type for the function.
+  Type *RetTy;
+  if (!isStructReturn)
+    RetTy = FTy->getReturnType();
+  else {
+    // If this is a struct-return function, print the struct-return type.
+    RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
+  }
+  printTypeName(Out, RetTy,
+    /*isSigned=*/PAL.hasAttribute(AttributeSet::ReturnIndex, Attribute::SExt));
+
+  switch (Attrs.second) {
+   case CallingConv::C:
+    break;
+   case CallingConv::X86_StdCall:
+    Out << " __stdcall";
+    break;
+   case CallingConv::X86_FastCall:
+    Out << " __fastcall";
+    break;
+   case CallingConv::X86_ThisCall:
+    Out << " __thiscall";
+    break;
+   default:
+    assert(0 && "Encountered Unhandled Calling Convention");
+    break;
+  }
+  Out << ' ' << Name << '(';
+
+  unsigned Idx = 1;
+  bool PrintedArg = false;
+  FunctionType::param_iterator I = FTy->param_begin(), E = FTy->param_end();
+  Function::arg_iterator ArgName = ArgList ? ArgList->begin() : Function::arg_iterator();
+
+  // If this is a struct-return function, don't print the hidden
+  // struct-return argument.
+  if (isStructReturn) {
+    assert(I != E && "Invalid struct return function!");
+    ++I;
+    ++Idx;
+    if (ArgList) ++ArgName;
+  }
+
+  for (; I != E; ++I) {
+    Type *ArgTy = *I;
+    if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
+      assert(ArgTy->isPointerTy());
+      ArgTy = cast<PointerType>(ArgTy)->getElementType();
     }
-    Out << ")";
-    return Out;
+    if (PrintedArg)
+      Out << ", ";
+    printTypeNameUnaligned(Out, ArgTy,
+      /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
+    PrintedArg = true;
+    ++Idx;
+    if (ArgList) {
+      Out << ' ' << GetValueName(ArgName);
+      ++ArgName;
+    }
+  }
+
+  if (FTy->isVarArg()) {
+    if (!PrintedArg) {
+      Out << "int"; //dummy argument for empty vaarg functs
+      if (ArgList) Out << " vararg_dummy_arg";
+    }
+    Out << ", ...";
+  } else if (!PrintedArg) {
+    Out << "void";
+  }
+  Out << ")";
+  return Out;
 }
 
 raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
@@ -2717,11 +2749,11 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   }
 
   // Loop over all function prototypes
-  for (DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned>::iterator
+  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> >, unsigned>::iterator
        I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
        I != E; ++I) {
     Out << '\n';
-    std::pair<FunctionType*, AttributeSet> F = I->first;
+    std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> > F = I->first;
     printFunctionDeclaration(Out, F.first, F.second, getFunctionName(F.first, F.second));
   }
 }
@@ -2758,85 +2790,6 @@ void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
   }
 }
 
-void CWriter::printFunctionSignature(raw_ostream &Out, Function *F) {
-  assert(!F->isDeclaration());
-  /// isStructReturn - Should this function actually return a struct by-value?
-  bool isStructReturn = F->hasStructRetAttr();
-
-  if (F->hasDLLImportStorageClass()) Out << "__declspec(dllimport) ";
-  if (F->hasDLLExportStorageClass()) Out << "__declspec(dllexport) ";
-  if (F->hasLocalLinkage()) Out << "static ";
-
-  switch (F->getCallingConv()) {
-   case CallingConv::X86_StdCall:
-    Out << "__stdcall ";
-    break;
-   case CallingConv::X86_FastCall:
-    Out << "__fastcall ";
-    break;
-   case CallingConv::X86_ThisCall:
-    Out << "__thiscall ";
-    break;
-   default:
-    break;
-  }
-
-  FunctionType *FTy = F->getFunctionType();
-  const AttributeSet &PAL = F->getAttributes();
-
-  if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
-    Out << "__noreturn ";
-
-  // Get the return type for the function.
-  Type *RetTy;
-  if (!isStructReturn)
-    RetTy = FTy->getReturnType();
-  else {
-    // If this is a struct-return function, print the struct-return type.
-    RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
-  }
-  printTypeName(Out, RetTy,
-    /*isSigned=*/PAL.hasAttribute(AttributeSet::ReturnIndex, Attribute::SExt));
-
-  // Print out the name...
-  Out << ' ' << GetValueName(F) << '(';
-
-  // Loop over the arguments, printing them...
-  bool PrintedArg = false;
-  Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
-  unsigned Idx = 1;
-
-  // If this is a struct-return function, don't print the hidden
-  // struct-return argument.
-  if (isStructReturn) {
-    assert(I != E && "Invalid struct return function!");
-    ++I;
-    ++Idx;
-  }
-
-  for (; I != E; ++I) {
-    Type *ArgTy = I->getType();
-    if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
-      ArgTy = cast<PointerType>(ArgTy)->getElementType();
-      ByValParams.insert(I);
-    }
-    if (PrintedArg)
-        Out << ", ";
-    printTypeNameUnaligned(Out, ArgTy, /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
-    Out << ' ' << GetValueName(I);
-    PrintedArg = true;
-    ++Idx;
-  }
-  if (FTy->isVarArg()) {
-    if (!PrintedArg)
-      Out << "int vararg_dummy_arg";
-    Out << ", ...";
-  } else if (!PrintedArg) {
-    Out << "void";
-  }
-  Out << ")";
-}
-
 static inline bool isFPIntBitCast(Instruction &I) {
   if (!isa<BitCastInst>(I))
     return false;
@@ -2850,7 +2803,12 @@ void CWriter::printFunction(Function &F) {
   /// isStructReturn - Should this function actually return a struct by-value?
   bool isStructReturn = F.hasStructRetAttr();
 
-  printFunctionSignature(Out, &F);
+  assert(!F.isDeclaration());
+  if (F.hasDLLImportStorageClass()) Out << "__declspec(dllimport) ";
+  if (F.hasDLLExportStorageClass()) Out << "__declspec(dllexport) ";
+  if (F.hasLocalLinkage()) Out << "static ";
+  printFunctionProto(Out, F.getFunctionType(), std::make_pair(F.getAttributes(), F.getCallingConv()), GetValueName(&F), &F.getArgumentList());
+
   Out << " {\n";
 
   // If this is a struct return function, handle the result with magic.
@@ -3747,7 +3705,7 @@ void CWriter::visitCallInst(CallInst &I) {
 
   // If this is an indirect call to a struct return function, we need to cast
   // the pointer. Ditto for indirect calls with byval arguments.
-  bool NeedsCast = (hasByVal || isStructRet) && !isa<Function>(Callee);
+  bool NeedsCast = (hasByVal || isStructRet || I.getCallingConv() != CallingConv::C) && !isa<Function>(Callee);
 
   // GCC is a real PITA.  It does not permit codegening casts of functions to
   // function pointers if they are in a call (it generates a trap instruction
@@ -3771,7 +3729,7 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((";
-      printTypeName(Out, I.getCalledValue()->getType()->getPointerElementType(), false, PAL);
+    printTypeName(Out, I.getCalledValue()->getType()->getPointerElementType(), false, std::make_pair(PAL, I.getCallingConv()));
     Out << "*)(void*)";
   }
   writeOperand(Callee, ContextCasted);

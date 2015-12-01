@@ -77,7 +77,7 @@ namespace {
     std::set<std::pair<unsigned, Type*>> InlineOpDeclTypes;
     std::set<Type*> CtorDeclTypes;
 
-    DenseMap<std::pair<FunctionType*, AttributeSet>, unsigned> UnnamedFunctionIDs;
+    DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID>>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;
 
     // This is used to keep track of intrinsics that get generated to a lowered
@@ -111,24 +111,26 @@ namespace {
     void generateHeader(Module &M);
 
     raw_ostream &printFunctionProto(raw_ostream &Out, FunctionType *Ty,
-                           AttributeSet PAL, const std::string &Name);
+                           std::pair<AttributeSet, CallingConv::ID> Attrs,
+                           const std::string &Name,
+                           Function::ArgumentListType *ArgList);
     raw_ostream &printFunctionProto(raw_ostream &Out, Function *F) {
-      return printFunctionProto(Out, F->getFunctionType(), F->getAttributes(), GetValueName(F));
+      return printFunctionProto(Out, F->getFunctionType(), std::make_pair(F->getAttributes(), F->getCallingConv()), GetValueName(F), NULL);
     }
 
     raw_ostream &printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                           AttributeSet PAL, const std::string &Name);
+                           std::pair<AttributeSet, CallingConv::ID> PAL, const std::string &Name);
     raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
     raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
     raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
 
-    raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, AttributeSet PAL = AttributeSet());
+    raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
     raw_ostream &printTypeNameUnaligned(raw_ostream &Out, Type *Ty, bool isSigned = false);
     raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
     raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
     std::string getStructName(StructType *ST);
-    std::string getFunctionName(FunctionType *FT, AttributeSet PAL);
+    std::string getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL);
     std::string getArrayName(ArrayType *AT);
     std::string getVectorName(VectorType *VT, bool Aligned);
 
@@ -164,7 +166,6 @@ namespace {
 
     void printModuleTypes(raw_ostream &Out);
     void printContainedStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &);
-    void printFunctionSignature(raw_ostream &Out, Function *F);
 
     void printFloatingPointConstants(Function &F);
     void printFloatingPointConstants(const Constant *C);
