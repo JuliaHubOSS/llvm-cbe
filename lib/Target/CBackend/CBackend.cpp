@@ -105,8 +105,7 @@ bool CWriter::isInlinableInst(Instruction &I) const {
   // Must not be used in inline asm, extractelement, or shufflevector.
   if (I.hasOneUse()) {
     Instruction &User = cast<Instruction>(*I.user_back());
-    if (isInlineAsm(User) || isa<ExtractElementInst>(User) ||
-        isa<ShuffleVectorInst>(User))
+    if (isInlineAsm(User))
       return false;
   }
 
@@ -4201,6 +4200,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   // If the last index is into a vector, we can't print it as &a[i][j] because
   // we can't index into a vector with j in GCC.  Instead, emit this as
   // (((float*)&a[i])+j)
+  // TODO: this is no longer true now that we don't represent vectors using gcc-extentions
   if (LastIndexIsVector) {
     Out << "((";
     printTypeName(Out, PointerType::getUnqual(LastIndexIsVector->getElementType()));
@@ -4344,25 +4344,25 @@ void CWriter::visitInsertElementInst(InsertElementInst &I) {
 
   // Then do the insert to update the field.
   Out << ";\n  ";
-  Out << "((";
-  printTypeName(Out, PointerType::getUnqual(EltTy));
-  Out << ")(&" << GetValueName(&I) << "))[";
+  Out << GetValueName(&I) << ".vector[";
   writeOperand(I.getOperand(2));
-  Out << "] = (";
+  Out << "] = ";
   writeOperand(I.getOperand(1), ContextCasted);
-  Out << ")";
 }
 
 void CWriter::visitExtractElementInst(ExtractElementInst &I) {
-  // We know that our operand is not inlined.
-  Type *EltTy =
-    cast<VectorType>(I.getOperand(0)->getType())->getElementType();
-  assert (!isEmptyType(EltTy));
-  Out << "((";
-  printTypeName(Out, PointerType::getUnqual(EltTy));
-  Out << ")(&" << GetValueName(I.getOperand(0)) << "))[";
-  writeOperand(I.getOperand(1));
-  Out << "]";
+  assert(!isEmptyType(I.getType()));
+  if (isa<UndefValue>(I.getOperand(0))) {
+    Out << "(";
+    printTypeName(Out, I.getType());
+    Out << ") 0/*UNDEF*/";
+  } else {
+    Out << "(";
+    writeOperand(I.getOperand(0));
+    Out << ").vector[";
+    writeOperand(I.getOperand(1));
+    Out << "]";
+  }
 }
 
 // <result> = shufflevector <n x <ty>> <v1>, <n x <ty>> <v2>, <m x i32> <mask>
@@ -4396,10 +4396,11 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
       Value *Op = SVI.getOperand((unsigned)SrcVal >= NumInputElts);
       if (isa<Instruction>(Op)) {
         // Do an extractelement of this value from the appropriate input.
-        Out << "((";
-        printTypeName(Out, PointerType::getUnqual(EltTy));
-        Out << ")(&" << GetValueName(Op)
-            << "))[" << ((unsigned)SrcVal >= NumInputElts ? SrcVal - NumInputElts : SrcVal) << "]";
+        Out << "(";
+        writeOperand(Op);
+        Out << ").vector[";
+        Out << ((unsigned)SrcVal >= NumInputElts ? SrcVal - NumInputElts : SrcVal);
+        Out << "]";
       } else if (isa<ConstantAggregateZero>(Op) || isa<UndefValue>(Op)) {
         printConstant(Zero, ContextCasted);
       } else {
