@@ -1929,6 +1929,7 @@ void CWriter::generateHeader(Module &M) {
         case Intrinsic::fma:
         case Intrinsic::fmuladd:
         case Intrinsic::pow:
+        case Intrinsic::powi:
         case Intrinsic::rint:
         case Intrinsic::sqrt:
         case Intrinsic::trunc:
@@ -3440,6 +3441,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
     case Intrinsic::ctlz:
     case Intrinsic::cttz:
+    case Intrinsic::powi:
       break;
     }
     printTypeNameUnaligned(Out, funT->getParamType(i), isSigned);
@@ -3606,6 +3608,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
 
     case Intrinsic::pow:
+    case Intrinsic::powi:
       Out << "  r = pow" << suffix << "(a, b);\n";
       break;
 
