@@ -3391,14 +3391,14 @@ static bool isSupportedIntegerSize(IntegerType &T) {
 }
 #endif
 
-void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
-  FunctionType *funT = F.getFunctionType();
-  Type *retT = F.getReturnType();
+void CWriter::printIntrinsicDefinition(FunctionType *funT,
+        unsigned Opcode, std::string OpName, raw_ostream &Out) {
+  Type *retT = funT->getReturnType();
   Type *elemT = funT->getParamType(0);
-  IntegerType *elemIntT = dyn_cast<IntegerType>(funT->getParamType(0));
+  IntegerType *elemIntT = dyn_cast<IntegerType>(elemT);
   char i, numParams = funT->getNumParams();
   bool isSigned;
-  switch (F.getIntrinsicID()) {
+  switch (Opcode) {
   default:
     isSigned = false;
     break;
@@ -3410,6 +3410,17 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   }
   assert(numParams > 0 && numParams < 26);
 
+  if (isa<VectorType>(retT)) {
+    // this looks general, but is only actually used for ctpop, ctlz, cttz
+    Type* *devecFunParams = (Type**)alloca(sizeof(Type*) * numParams);
+    for (i = 0; i < numParams; i++) {
+      devecFunParams[(int)i] = funT->params()[(int)i]->getScalarType();
+    }
+    FunctionType *devecFunT = FunctionType::get(funT->getReturnType()->getScalarType(),
+            makeArrayRef(devecFunParams, numParams), funT->isVarArg());
+    printIntrinsicDefinition(devecFunT, Opcode, OpName + "_devec", Out);
+  }
+
   // static __inline Rty _llvm_op_ixx(unsigned ixx a, unsigned ixx b) {
   //   Rty r;
   //   <opcode here>
@@ -3418,10 +3429,10 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   Out << "static __inline ";
   printTypeName(Out, retT);
   Out << " ";
-  Out << GetValueName(&F);
+  Out << OpName;
   Out << "(";
   for (i = 0; i < numParams; i++) {
-    switch (F.getIntrinsicID()) {
+    switch (Opcode) {
     // optional intrinsic validity assertion checks
     default:
       // default case: assume all parameters must have the same type
@@ -3439,14 +3450,26 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   printTypeName(Out, retT);
   Out << " r;\n";
 
-  if (elemIntT) {
+  if (isa<VectorType>(retT)) {
+    for (i = 0; i < numParams; i++) {
+      Out << "  r.vector[" << (int)i << "] = " << OpName << "_devec(";
+      for (char j = 0; j < numParams; j++) {
+        Out << (char)('a' + j);
+        if (isa<VectorType>(funT->params()[j]))
+          Out << ".vector[" << (int)i << "]";
+        if (j != numParams - 1) Out << ", ";
+      }
+      Out << ");\n";
+    }
+  }
+  else if (elemIntT) {
     // handle integer ops
     assert(isSupportedIntegerSize(*elemIntT) &&
            "CBackend does not support arbitrary size integers.");
-    switch (F.getIntrinsicID()) {
+    switch (Opcode) {
     default:
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << F;
+      errs() << "Unsupported Intrinsic!" << Opcode;
 #endif
       llvm_unreachable(0);
 
@@ -3550,15 +3573,15 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
         suffix = "l";
     } else {
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << F;
+      errs() << "Unsupported Intrinsic!" << Opcode;
 #endif
       llvm_unreachable(0);
     }
 
-    switch (F.getIntrinsicID()) {
+    switch (Opcode) {
     default:
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << F;
+      errs() << "Unsupported Intrinsic!" << Opcode;
 #endif
       llvm_unreachable(0);
 
@@ -3602,6 +3625,13 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   }
 
   Out << "  return r;\n}\n";
+}
+
+void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
+  FunctionType *funT = F.getFunctionType();
+  unsigned Opcode = F.getIntrinsicID();
+  std::string OpName = GetValueName(&F);
+  printIntrinsicDefinition(funT, Opcode, OpName, Out);
 }
 
 void CWriter::lowerIntrinsics(Function &F) {

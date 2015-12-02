@@ -163,6 +163,9 @@ namespace {
     /// Prints the definition of the intrinsic function F. Supports the
     /// intrinsics which need to be explicitly defined in the CBackend.
     void printIntrinsicDefinition(Function &F, raw_ostream &Out);
+    void printIntrinsicDefinition(FunctionType *funT,
+            unsigned Opcode, std::string OpName,
+            raw_ostream &Out);
 
     void printModuleTypes(raw_ostream &Out);
     void printContainedStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &);
