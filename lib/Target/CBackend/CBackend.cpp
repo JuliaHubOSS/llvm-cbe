@@ -3650,6 +3650,8 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::trunc:
           case Intrinsic::trap:
           case Intrinsic::stackprotector:
+          case Intrinsic::dbg_value:
+          case Intrinsic::dbg_declare:
               // We directly implement these intrinsics
             break;
           default:
@@ -3794,6 +3796,9 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     llvm_unreachable(0);
     return false;
   }
+  case Intrinsic::dbg_value:
+  case Intrinsic::dbg_declare:
+    return true; // ignore these intrinsics
   case Intrinsic::vastart:
     Out << "0; ";
 
