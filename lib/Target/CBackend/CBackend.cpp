@@ -436,9 +436,9 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
 }
 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                                               std::pair<AttributeSet, CallingConv::ID> PAL, const std::string &Name) {
+                                               std::pair<AttributeSet, CallingConv::ID> PAL) {
   Out << "typedef ";
-  printFunctionProto(Out, Ty, PAL, Name, NULL);
+  printFunctionProto(Out, Ty, PAL, getFunctionName(Ty, PAL), NULL);
   return Out << ";\n";
 }
 
@@ -2726,15 +2726,28 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   Out << "  double Double;\n";
   Out << "} llvmBitCastUnion;\n";
 
-  // Keep track of which structures have been printed so far.
-  std::set<Type*> StructPrinted;
+  // Keep track of which types have been printed so far.
+  std::set<Type*> TypesPrinted;
 
   // Loop over all structures then push them into the stack so they are
   // printed in the correct order.
-  Out << "\n/* Structure and Array contents */\n";
+  Out << "\n/* Types Declarations */\n";
+
+  // TODO: it might be more robust to forward-declare all structs here first
+
   for (std::set<Type*>::iterator it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
        it != end; ++it) {
-    printContainedStructs(Out, *it, StructPrinted);
+    printContainedTypes(Out, *it, TypesPrinted);
+  }
+
+  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> >, unsigned>::iterator
+       I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
+       I != E; ++I) {
+    Out << '\n';
+    std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> > F = I->first;
+    if (F.second.first == AttributeSet() && F.second.second == CallingConv::C)
+        if (!TypesPrinted.insert(F.first).second) continue; // already printed this above
+    printFunctionDeclaration(Out, F.first, F.second);
   }
 
   // We may have collected some intrinsic prototypes to emit.
@@ -2747,36 +2760,22 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     printFunctionProto(Out, F);
     Out << ";\n";
   }
-
-  // Loop over all function prototypes
-  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> >, unsigned>::iterator
-       I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
-       I != E; ++I) {
-    Out << '\n';
-    std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> > F = I->first;
-    printFunctionDeclaration(Out, F.first, F.second, getFunctionName(F.first, F.second));
-  }
 }
 
 // Push the struct onto the stack and recursively push all structs
 // this one depends on.
 //
-// TODO:  Make this work properly with vector types
-//
-void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
-                                    std::set<Type*> &StructPrinted) {
-  // Don't walk through simple primitive types (including pointers)
-  if (Ty->isPointerTy())
-    return;
+void CWriter::printContainedTypes(raw_ostream &Out, Type *Ty,
+                                    std::set<Type*> &TypesPrinted) {
   // Check to see if we have already printed this struct.
-  if (!StructPrinted.insert(Ty).second) return;
+  if (!TypesPrinted.insert(Ty).second) return;
   // Skip empty structs
   if (isEmptyType(Ty)) return;
 
   // Print all contained types first.
   for (Type::subtype_iterator I = Ty->subtype_begin(),
        E = Ty->subtype_end(); I != E; ++I)
-    printContainedStructs(Out, *I, StructPrinted);
+    printContainedTypes(Out, *I, TypesPrinted);
 
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
     // Print structure type out.
@@ -2787,6 +2786,9 @@ void CWriter::printContainedStructs(raw_ostream &Out, Type *Ty,
   } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
     // Print vector type out.
     printVectorDeclaration(Out, VT);
+  } else if (FunctionType *FT = dyn_cast<FunctionType>(Ty)) {
+    // Print function type out.
+    printFunctionDeclaration(Out, FT);
   }
 }
 

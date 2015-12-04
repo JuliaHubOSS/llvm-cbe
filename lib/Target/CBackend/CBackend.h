@@ -119,7 +119,7 @@ namespace {
     }
 
     raw_ostream &printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                           std::pair<AttributeSet, CallingConv::ID> PAL, const std::string &Name);
+                           std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
     raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
     raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
     raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
@@ -130,7 +130,7 @@ namespace {
     raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
     std::string getStructName(StructType *ST);
-    std::string getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL);
+    std::string getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
     std::string getArrayName(ArrayType *AT);
     std::string getVectorName(VectorType *VT, bool Aligned);
 
@@ -168,7 +168,7 @@ namespace {
             raw_ostream &Out);
 
     void printModuleTypes(raw_ostream &Out);
-    void printContainedStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &);
+    void printContainedTypes(raw_ostream &Out, Type *Ty, std::set<Type*> &);
 
     void printFloatingPointConstants(Function &F);
     void printFloatingPointConstants(const Constant *C);
