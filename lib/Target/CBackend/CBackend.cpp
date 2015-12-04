@@ -2960,31 +2960,56 @@ void CWriter::visitReturnInst(ReturnInst &I) {
 }
 
 void CWriter::visitSwitchInst(SwitchInst &SI) {
-
   Value* Cond = SI.getCondition();
+  unsigned NumBits = cast<IntegerType>(Cond->getType())->getBitWidth();
 
-  Out << "  switch (";
-  writeOperand(Cond);
-  Out << ") {\n  default:\n";
-  printPHICopiesForSuccessor (SI.getParent(), SI.getDefaultDest(), 2);
-  printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
-  Out << ";\n";
+  if (SI.getNumCases() == 0) { // unconditional branch
+    printPHICopiesForSuccessor (SI.getParent(), SI.getDefaultDest(), 2);
+    printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
+    Out << "\n";
 
-  // Skip the first item since that's the default case.
-  for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
-    ConstantInt* CaseVal = i.getCaseValue();
-    BasicBlock* Succ = i.getCaseSuccessor();
-    Out << "  case ";
-    writeOperand(CaseVal);
-    Out << ":\n";
-    printPHICopiesForSuccessor (SI.getParent(), Succ, 2);
-    printBranchToBlock(SI.getParent(), Succ, 2);
-    if (Function::iterator(Succ) ==
-        std::next(Function::iterator(SI.getParent())))
-      Out << "    break;\n";
+  } else if (NumBits <= 64) { // model as a switch statement
+    Out << "  switch (";
+    writeOperand(Cond);
+    Out << ") {\n  default:\n";
+    printPHICopiesForSuccessor (SI.getParent(), SI.getDefaultDest(), 2);
+    printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
+
+    // Skip the first item since that's the default case.
+    for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
+      ConstantInt* CaseVal = i.getCaseValue();
+      BasicBlock* Succ = i.getCaseSuccessor();
+      Out << "  case ";
+      writeOperand(CaseVal);
+      Out << ":\n";
+      printPHICopiesForSuccessor (SI.getParent(), Succ, 2);
+      if (isGotoCodeNecessary(SI.getParent(), Succ))
+        printBranchToBlock(SI.getParent(), Succ, 2);
+      else
+        Out << "    break;\n";
+    }
+    Out << "  }\n";
+
+  } else { // model as a series of if statements
+    Out << "  ";
+    for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
+      Out << "if (";
+      ConstantInt* CaseVal = i.getCaseValue();
+      BasicBlock* Succ = i.getCaseSuccessor();
+      ICmpInst *icmp = new ICmpInst(CmpInst::ICMP_EQ, Cond, CaseVal);
+      visitICmpInst(*icmp);
+      delete icmp;
+      Out << ") {\n";
+      printPHICopiesForSuccessor (SI.getParent(), Succ, 2);
+      printBranchToBlock(SI.getParent(), Succ, 2);
+      Out << "  } else ";
+    }
+    Out << "{\n";
+    printPHICopiesForSuccessor (SI.getParent(), SI.getDefaultDest(), 2);
+    printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
+    Out << "  }\n";
   }
-
-  Out << "  }\n";
+  Out << "\n";
 }
 
 void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
@@ -2994,7 +3019,7 @@ void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
 }
 
 void CWriter::visitUnreachableInst(UnreachableInst &I) {
-  Out << "  __builtin_unreachable();\n";
+  Out << "  __builtin_unreachable();\n\n";
 }
 
 bool CWriter::isGotoCodeNecessary(BasicBlock *From, BasicBlock *To) {
