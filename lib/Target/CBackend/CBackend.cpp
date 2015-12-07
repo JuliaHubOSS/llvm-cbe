@@ -3540,12 +3540,12 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
 
     case Intrinsic::umul_with_overflow:
       assert(cast<StructType>(retT)->getElementType(0) == elemT);
-      Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
+      Out << "  r.field1 = LLVMMul_uov(8 * sizeof(a), &a, &b, &r.field0);\n";
       break;
 
     case Intrinsic::smul_with_overflow:
       assert(cast<StructType>(retT)->getElementType(0) == elemT);
-      Out << "  r.field1 = LLVMMul_uov(8 * sizeof(a), &a, &b, &r.field0);\n";
+      Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
       break;
 
     case Intrinsic::bswap:
