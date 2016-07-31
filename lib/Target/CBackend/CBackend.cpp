@@ -2734,12 +2734,32 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   // printed in the correct order.
   Out << "\n/* Types Declarations */\n";
 
-  // TODO: it might be more robust to forward-declare all structs here first
+  // forward-declare all structs here first
 
-  for (std::set<Type*>::iterator it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
-       it != end; ++it) {
+  {
+    std::set<Type*> TypesPrinted;
+    for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end(); it != end; ++it) {
+      forwardDeclareStructs(Out, *it, TypesPrinted);
+    }
+  }
+
+  // forward-declare all function pointer typedefs (Issue #2)
+
+  {
+    std::set<Type*> TypesPrinted;
+    for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end(); it != end; ++it) {
+      forwardDeclareFunctionTypedefs(Out, *it, TypesPrinted);
+    }
+  }
+
+
+  Out << "\n/* Types Definitions */\n";
+
+  for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end(); it != end; ++it) {
     printContainedTypes(Out, *it, TypesPrinted);
   }
+
+  Out << "\n/* Function definitions */\n";
 
   for (DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> >, unsigned>::iterator
        I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
@@ -2760,6 +2780,32 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     Function *F = *I;
     printFunctionProto(Out, F);
     Out << ";\n";
+  }
+}
+
+void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted) {
+  if (!TypesPrinted.insert(Ty).second) return;
+  if (isEmptyType(Ty)) return;
+
+  for (auto I = Ty->subtype_begin(); I != Ty->subtype_end(); ++I) {
+    forwardDeclareStructs(Out, *I, TypesPrinted);
+  }
+
+  if (StructType *ST = dyn_cast<StructType>(Ty)) {
+    Out << getStructName(ST) << ";\n";
+  }
+}
+
+void CWriter::forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted) {
+  if (!TypesPrinted.insert(Ty).second) return;
+  if (isEmptyType(Ty)) return;
+
+  for (auto I = Ty->subtype_begin(); I != Ty->subtype_end(); ++I) {
+    forwardDeclareFunctionTypedefs(Out, *I, TypesPrinted);
+  }
+
+  if (FunctionType *FT = dyn_cast<FunctionType>(Ty)) {
+    printFunctionDeclaration(Out, FT);
   }
 }
 
@@ -2787,9 +2833,6 @@ void CWriter::printContainedTypes(raw_ostream &Out, Type *Ty,
   } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
     // Print vector type out.
     printVectorDeclaration(Out, VT);
-  } else if (FunctionType *FT = dyn_cast<FunctionType>(Ty)) {
-    // Print function type out.
-    printFunctionDeclaration(Out, FT);
   }
 }
 
