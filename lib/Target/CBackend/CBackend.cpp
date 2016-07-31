@@ -1946,6 +1946,7 @@ void CWriter::generateHeader(Module &M) {
         I->getName() == "sigsetjmp" ||
         I->getName() == "memcmp" ||
         I->getName() == "memcpy" ||
+        I->getName() == "memset" ||
         I->getName() == "pow" ||
         I->getName() == "powf" ||
         I->getName() == "sqrt" ||
