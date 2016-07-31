@@ -1805,7 +1805,6 @@ void CWriter::generateHeader(Module &M) {
   Out << "#include <setjmp.h>\n";      // Unwind support
   Out << "#include <limits.h>\n";      // With overflow intrinsics support.
   Out << "#include <stdint.h>\n";      // Sized integer support
-  Out << "#include <string.h>\n";      // built-in definitions of many c library functions
   Out << "#include <math.h>\n";        // definitions for some math functions and numeric constants
   Out << "#include <APInt-C.h>\n";     // Implementations of many llvm intrinsics
   // Provide a definition for `bool' if not compiling with a C++ compiler.
@@ -1944,9 +1943,6 @@ void CWriter::generateHeader(Module &M) {
         I->getName() == "_setjmp" ||
         I->getName() == "siglongjmp" ||
         I->getName() == "sigsetjmp" ||
-        I->getName() == "memcmp" ||
-        I->getName() == "memcpy" ||
-        I->getName() == "memset" ||
         I->getName() == "pow" ||
         I->getName() == "powf" ||
         I->getName() == "sqrt" ||
