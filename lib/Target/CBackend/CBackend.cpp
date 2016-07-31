@@ -1997,72 +1997,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n\n/* Global Variable Definitions and Initialization */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (I->isDeclaration() || isEmptyType(I->getType()->getPointerElementType()))
-          continue;
-
-      // Ignore special globals, such as debug info.
-      if (getGlobalVariableClass(I))
-        continue;
-
-      if (I->hasDLLImportStorageClass())
-        Out << "__declspec(dllimport) ";
-      else if (I->hasDLLExportStorageClass())
-        Out << "__declspec(dllexport) ";
-
-      if (I->hasLocalLinkage())
-        Out << "static ";
-
-      // Thread Local Storage
-      if (I->isThreadLocal())
-        Out << "__thread ";
-
-      Type *ElTy = I->getType()->getElementType();
-      unsigned Alignment = I->getAlignment();
-      bool IsOveraligned = Alignment &&
-        Alignment > TD->getABITypeAlignment(ElTy);
-      if (IsOveraligned)
-        Out << "__MSALIGN__(" << Alignment << ") ";
-      printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
-      if (IsOveraligned)
-        Out << " __attribute__((aligned(" << Alignment << ")))";
-
-      if (I->hasLinkOnceLinkage())
-        Out << " __attribute__((common))";
-      else if (I->hasWeakLinkage())
-        Out << " __ATTRIBUTE_WEAK__";
-      else if (I->hasCommonLinkage())
-        Out << " __ATTRIBUTE_WEAK__";
-
-      if (I->hasHiddenVisibility())
-        Out << " __HIDDEN__";
-
-      // If the initializer is not null, emit the initializer.  If it is null,
-      // we try to avoid emitting large amounts of zeros.  The problem with
-      // this, however, occurs when the variable has weak linkage.  In this
-      // case, the assembler will complain about the variable being both weak
-      // and common, so we disable this optimization.
-      // FIXME common linkage should avoid this problem.
-      if (!I->getInitializer()->isNullValue()) {
-        Out << " = " ;
-        writeOperand(I->getInitializer(), ContextStatic);
-      } else if (I->hasWeakLinkage()) {
-        // We have to specify an initializer, but it doesn't have to be
-        // complete.  If the value is an aggregate, print out { 0 }, and let
-        // the compiler figure out the rest of the zeros.
-        Out << " = " ;
-        if (I->getInitializer()->getType()->isStructTy() ||
-            I->getInitializer()->getType()->isVectorTy()) {
-          Out << "{ 0 }";
-        } else if (I->getInitializer()->getType()->isArrayTy()) {
-          // As with structs and vectors, but with an extra set of braces
-          // because arrays are wrapped in structs.
-          Out << "{ { 0 } }";
-        } else {
-          // Just print it out normally.
-          writeOperand(I->getInitializer(), ContextStatic);
-        }
-      }
-      Out << ";\n";
+      declareOneGlobalVariable(I);
     }
   }
 
@@ -2645,6 +2580,74 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n\n/* Function Bodies */\n";
 }
 
+void CWriter::declareOneGlobalVariable(GlobalVariable* I) {
+  if (I->isDeclaration() || isEmptyType(I->getType()->getPointerElementType()))
+    return;
+
+  // Ignore special globals, such as debug info.
+  if (getGlobalVariableClass(I))
+    return;
+
+  if (I->hasDLLImportStorageClass())
+    Out << "__declspec(dllimport) ";
+  else if (I->hasDLLExportStorageClass())
+    Out << "__declspec(dllexport) ";
+
+  if (I->hasLocalLinkage())
+    Out << "static ";
+
+  // Thread Local Storage
+  if (I->isThreadLocal())
+    Out << "__thread ";
+
+  Type *ElTy = I->getType()->getElementType();
+  unsigned Alignment = I->getAlignment();
+  bool IsOveraligned = Alignment &&
+    Alignment > TD->getABITypeAlignment(ElTy);
+  if (IsOveraligned)
+    Out << "__MSALIGN__(" << Alignment << ") ";
+  printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+  if (IsOveraligned)
+    Out << " __attribute__((aligned(" << Alignment << ")))";
+
+  if (I->hasLinkOnceLinkage())
+    Out << " __attribute__((common))";
+  else if (I->hasWeakLinkage())
+    Out << " __ATTRIBUTE_WEAK__";
+  else if (I->hasCommonLinkage())
+    Out << " __ATTRIBUTE_WEAK__";
+
+  if (I->hasHiddenVisibility())
+    Out << " __HIDDEN__";
+
+  // If the initializer is not null, emit the initializer.  If it is null,
+  // we try to avoid emitting large amounts of zeros.  The problem with
+  // this, however, occurs when the variable has weak linkage.  In this
+  // case, the assembler will complain about the variable being both weak
+  // and common, so we disable this optimization.
+  // FIXME common linkage should avoid this problem.
+  if (!I->getInitializer()->isNullValue()) {
+    Out << " = " ;
+    writeOperand(I->getInitializer(), ContextStatic);
+  } else if (I->hasWeakLinkage()) {
+    // We have to specify an initializer, but it doesn't have to be
+    // complete.  If the value is an aggregate, print out { 0 }, and let
+    // the compiler figure out the rest of the zeros.
+    Out << " = " ;
+    if (I->getInitializer()->getType()->isStructTy() ||
+        I->getInitializer()->getType()->isVectorTy()) {
+      Out << "{ 0 }";
+    } else if (I->getInitializer()->getType()->isArrayTy()) {
+      // As with structs and vectors, but with an extra set of braces
+      // because arrays are wrapped in structs.
+      Out << "{ { 0 } }";
+    } else {
+      // Just print it out normally.
+      writeOperand(I->getInitializer(), ContextStatic);
+    }
+  }
+  Out << ";\n";
+}
 
 /// Output all floating point constants that cannot be printed accurately...
 void CWriter::printFloatingPointConstants(Function &F) {

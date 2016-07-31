@@ -109,6 +109,7 @@ namespace {
   private:
 
     void generateHeader(Module &M);
+    void declareOneGlobalVariable(GlobalVariable* I);
 
     void forwardDeclareStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted);
     void forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted);
