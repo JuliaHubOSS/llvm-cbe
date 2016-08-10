@@ -109,6 +109,10 @@ namespace {
   private:
 
     void generateHeader(Module &M);
+    void declareOneGlobalVariable(GlobalVariable* I);
+
+    void forwardDeclareStructs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted);
+    void forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted);
 
     raw_ostream &printFunctionProto(raw_ostream &Out, FunctionType *Ty,
                            std::pair<AttributeSet, CallingConv::ID> Attrs,
