@@ -1,0 +1,1 @@
+add_llvm_tool_subdirectory(llvm-cbe)
