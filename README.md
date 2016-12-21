@@ -1,7 +1,7 @@
 llvm-cbe
 ========
 
-LLVM "C Backend", with improvements
+LLVM 3.9 "C Backend", with improvements
 
 
 INSTALLATION INSTRUCTIONS
