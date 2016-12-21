@@ -1,7 +1,7 @@
 llvm-cbe
 ========
 
-resurrected LLVM "C Backend", with improvements
+LLVM "C Backend", with improvements
 
 
 INSTALLATION INSTRUCTIONS
