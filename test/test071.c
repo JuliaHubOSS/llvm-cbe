@@ -16,4 +16,5 @@ int main() {
    int x = 6;
    if (x == 6)
       return x;
+	return 0;
 }

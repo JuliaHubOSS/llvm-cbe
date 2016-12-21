@@ -326,7 +326,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
     else if (NumBits <= 16)
       return Out << (isSigned?"int16_t":"uint16_t");
     else if (NumBits <= 32)
-      return Out << (isSigned?"int32_t":"uint32_t");
+      return Out << (isSigned?"int32_t":"int32_t"); // !!FIX ME
     else if (NumBits <= 64)
       return Out << (isSigned?"int64_t":"uint64_t");
     else {
@@ -510,7 +510,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     PrintedArg = true;
     ++Idx;
     if (ArgList) {
-      Out << ' ' << GetValueName(ArgName);
+      Out << ' ' << GetValueName(&*ArgName);
       ++ArgName;
     }
   }
@@ -1524,7 +1524,7 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
   Out << "#define __noreturn __declspec(noreturn)\n";
   Out << "#else\n";
   Out << "#define __noreturn __attribute__((noreturn))\n";
-  Out << "#define __forceinline __attribute__((always_inline))\n";
+  Out << "#define __forceinline __attribute__((always_inline)) inline\n";
   Out << "#endif\n\n";
 
   // Define NaN and Inf as GCC builtins if using GCC
@@ -1788,13 +1788,13 @@ void CWriter::generateHeader(Module &M) {
   std::set<Function*> StaticCtors, StaticDtors;
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
-    switch (getGlobalVariableClass(I)) {
+    switch (getGlobalVariableClass(&*I)) {
     default: break;
     case GlobalCtors:
-      FindStaticTors(I, StaticCtors);
+      FindStaticTors(&*I, StaticCtors);
       break;
     case GlobalDtors:
-      FindStaticTors(I, StaticDtors);
+      FindStaticTors(&*I, StaticDtors);
       break;
     }
   }
@@ -1854,7 +1854,7 @@ void CWriter::generateHeader(Module &M) {
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
     // Ignore special globals, such as debug info.
-    if (getGlobalVariableClass(I))
+    if (getGlobalVariableClass(&*I))
       continue;
     printTypeName(NullOut, I->getType()->getElementType(), false);
   }
@@ -1889,7 +1889,7 @@ void CWriter::generateHeader(Module &M) {
         Alignment > TD->getABITypeAlignment(ElTy);
       if (IsOveraligned)
         Out << "__MSALIGN__(" << Alignment << ") ";
-      printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+      printTypeName(Out, ElTy, false) << ' ' << GetValueName(&*I);
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
 
@@ -1932,7 +1932,7 @@ void CWriter::generateHeader(Module &M) {
         case Intrinsic::rint:
         case Intrinsic::sqrt:
         case Intrinsic::trunc:
-          intrinsicsToDefine.push_back(I);
+          intrinsicsToDefine.push_back(&*I);
           continue;
       }
     }
@@ -1971,14 +1971,14 @@ void CWriter::generateHeader(Module &M) {
       Out << "static ";
     if (I->hasExternalWeakLinkage())
       Out << "extern ";
-    printFunctionProto(Out, I);
+    printFunctionProto(Out, &*I);
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage())
       Out << " __ATTRIBUTE_WEAK__";
     if (I->hasExternalWeakLinkage())
       Out << " __EXTERNAL_WEAK__";
-    if (StaticCtors.count(I))
+    if (StaticCtors.count(&*I))
       Out << " __ATTRIBUTE_CTOR__";
-    if (StaticDtors.count(I))
+    if (StaticDtors.count(&*I))
       Out << " __ATTRIBUTE_DTOR__";
     if (I->hasHiddenVisibility())
       Out << " __HIDDEN__";
@@ -1994,7 +1994,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n\n/* Global Variable Definitions and Initialization */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      declareOneGlobalVariable(I);
+      declareOneGlobalVariable(&*I);
     }
   }
 
@@ -2582,7 +2582,7 @@ void CWriter::declareOneGlobalVariable(GlobalVariable* I) {
     return;
 
   // Ignore special globals, such as debug info.
-  if (getGlobalVariableClass(I))
+  if (getGlobalVariableClass(&*I))
     return;
 
   if (I->hasDLLImportStorageClass())
@@ -2866,7 +2866,7 @@ void CWriter::printFunction(Function &F) {
 
     Out << "  ";
     printTypeName(Out, F.arg_begin()->getType(), false);
-    Out << GetValueName(F.arg_begin()) << " = &StructReturn;\n";
+    Out << GetValueName(&*F.arg_begin()) << " = &StructReturn;\n";
   }
 
   bool PrintedVar = false;
@@ -2914,11 +2914,11 @@ void CWriter::printFunction(Function &F) {
 
   // print the basic blocks
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-    if (Loop *L = LI->getLoopFor(BB)) {
-      if (L->getHeader() == BB && L->getParentLoop() == 0)
+    if (Loop *L = LI->getLoopFor(&*BB)) {
+      if (L->getHeader() == &*BB && L->getParentLoop() == 0)
         printLoop(L);
     } else {
-      printBasicBlock(BB);
+      printBasicBlock(&*BB);
     }
   }
 
@@ -2959,10 +2959,10 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
-    if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
+    if (!isInlinableInst(*II) && !isDirectAlloca(&*II)) {
       if (!isEmptyType(II->getType()) &&
           !isInlineAsm(*II))
-        outputLValue(II);
+        outputLValue(&*II);
       else
         Out << "  ";
       writeInstComputationInline(*II);
@@ -2991,7 +2991,7 @@ void CWriter::visitReturnInst(ReturnInst &I) {
   // unless that would make the basic block empty
   if (I.getNumOperands() == 0 &&
       &*--I.getParent()->getParent()->end() == I.getParent() &&
-      I.getParent()->begin() != I) {
+      &*I.getParent()->begin() != &I) {
     return;
   }
 
@@ -3089,7 +3089,7 @@ void CWriter::printPHICopiesForSuccessor (BasicBlock *CurBlock,
     Value *IV = PN->getIncomingValueForBlock(CurBlock);
     if (!isa<UndefValue>(IV) && !isEmptyType(IV->getType())) {
       Out << std::string(Indent, ' ');
-      Out << "  " << GetValueName(I) << "__PHI_TEMPORARY = ";
+      Out << "  " << GetValueName(&*I) << "__PHI_TEMPORARY = ";
       writeOperand(IV, ContextCasted);
       Out << ";   /* for PHI node */\n";
     }
@@ -3759,12 +3759,12 @@ void CWriter::lowerIntrinsics(Function &F) {
             break;
           default:
             // All other intrinsic calls we must lower.
-            Instruction *Before = 0;
+            BasicBlock::iterator Before = E;
             if (CI != &BB->front())
               Before = std::prev(BasicBlock::iterator(CI));
 
             IL->LowerIntrinsicCall(CI);
-            if (Before) {        // Move iterator to instruction after call
+            if (Before != E) {        // Move iterator to instruction after call
               I = Before; ++I;
             } else {
               I = BB->begin();
@@ -3798,7 +3798,7 @@ void CWriter::visitCallInst(CallInst &I) {
 
   // If this is a call to a struct-return function, assign to the first
   // parameter instead of passing it to the call.
-  const AttributeSet &PAL = I.getAttributes();
+  const AttributeSet PAL = I.getAttributes();
   bool hasByVal = I.hasByValArgument();
   bool isStructRet = I.hasStructRetAttr();
   if (isStructRet) {
@@ -3912,7 +3912,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     if (I.getParent()->getParent()->arg_empty())
       Out << "vararg_dummy_arg";
     else
-      writeOperand(--I.getParent()->getParent()->arg_end());
+      writeOperand(&*--I.getParent()->getParent()->arg_end());
     Out << ')';
     return true;
   case Intrinsic::vaend:

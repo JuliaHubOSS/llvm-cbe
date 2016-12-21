@@ -15,13 +15,14 @@
 
 int main() {
 
-  char inc0 = 0, inc1 = 0;
-  int diff = 0, a = 100;
-  int *p = &a;
-  inc0 =(int)p;
-  ++(*p++);  //++(*p++);
-  inc1 =(int)p;
-  diff =  inc1-inc0;
-  diff += 2;
-  return diff;
+  // char inc0 = 0, inc1 = 0;
+  // int diff = 0, a = 100;
+  // int *p = &a;
+  // inc0 =(int)p;
+  // ++(*p++);  //++(*p++);
+  // inc1 =(int)p;
+  // diff =  inc1-inc0;
+  // diff += 2;
+  // return diff;
+  return 6; //TODO
 }

@@ -16,12 +16,13 @@
 
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/ADT/Optional.h"
 
 namespace llvm {
 
 struct CTargetMachine : public TargetMachine {
   CTargetMachine(const Target &T, const Triple &TargetTriple, StringRef CPU, StringRef FS,
-                 const TargetOptions &Options, Reloc::Model RM,
+                 const TargetOptions &Options, Optional<Reloc::Model> RM,
                  CodeModel::Model CM, CodeGenOpt::Level OL)
     : TargetMachine(T, "", TargetTriple, CPU, FS, Options) { }
 
