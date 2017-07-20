@@ -88,6 +88,8 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   // will only be expanded on first use
   std::vector<Function *> prototypesToGen;
 
+  unsigned LastAnnotatedSourceLine = 0;
+
   struct {
     bool BuiltinAlloca : 1;
     bool Unreachable : 1;
