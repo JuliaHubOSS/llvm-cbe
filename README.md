@@ -7,8 +7,8 @@ resurrected LLVM "C Backend", with improvements
 INSTALLATION INSTRUCTIONS
 =========================
 
-This version of the LLVM-CBE library works with LLVM 3.7. You will have to
-compile this version of LLVM before you try to use LLVM-CBE. This
+This version of the LLVM-CBE library works with LLVM 6.0 and 7.0. You will have
+to compile this version of LLVM before you try to use LLVM-CBE. This
 guide will walk you through the compilation and installation of both
 tools and show usage statements to verify that the LLVM-CBE library is
 compiled correctly.
@@ -21,7 +21,7 @@ Step 1: Installing LLVM
 
 LLVM-CBE relies on specific LLVM internals, and so it is best to use
 it with a specific revision of the LLVM development tree. Currently,
-llvm-cbe works with the LLVM 3.7 release versions and autotools.
+llvm-cbe works with the LLVM 6.0 and 7.0 release versions and autotools.
 
 Note: to convert C to LLVM IR to run the tests, you will also need a C compiler such as clang.
 
