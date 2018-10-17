@@ -2205,15 +2205,19 @@ void CWriter::generateHeader(Module &M) {
     default:
       SrcSigned = false;
       DstSigned = false;
+      break;
     case Instruction::SIToFP:
       SrcSigned = true;
       DstSigned = false;
+      break;
     case Instruction::FPToSI:
       SrcSigned = false;
       DstSigned = true;
+      break;
     case Instruction::SExt:
       SrcSigned = true;
       DstSigned = true;
+      break;
     }
 
     Out << "static __forceinline ";
