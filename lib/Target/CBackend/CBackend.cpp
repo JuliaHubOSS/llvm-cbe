@@ -4290,8 +4290,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
   Out << '&';
 
-  int IsArray = I.getIndexedType()->isArrayTy();
-  int IsVector = I.getIndexedType()->isVectorTy();
+  Type *IntoT = I.getIndexedType();
 
   // If the first index is 0 (very typical) we can do a number of
   // simplifications to clean up the code.
@@ -4325,11 +4324,11 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     assert(I.getOperand()->getType()->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid, but we don't support it here
     if (I.isStruct()) {
       Out << ".field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
-    } else if (IsArray) {
+    } else if (IntoT->isArrayTy()) {
       Out << ".array[";
       writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
       Out << ']';
-    } else if (!IsVector) {
+    } else if (!IntoT->isVectorTy()) {
       Out << '[';
       writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
       Out << ']';
@@ -4346,8 +4345,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
       }
     }
 
-    IsArray = I.getIndexedType()->isArrayTy();
-    IsVector = I.getIndexedType()->isVectorTy();
+    IntoT = I.getIndexedType();
   }
   Out << ")";
 }
