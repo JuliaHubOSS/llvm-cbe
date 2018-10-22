@@ -32,7 +32,9 @@ The first step is to compile LLVM on your machine
      git clone https://github.com/llvm-mirror/llvm
      cd llvm
      git checkout release_37
-     ./configure
+     mkdir build
+     cd build
+     ../configure
      make
 
 Step 2: Compiling LLVM-CBE
@@ -41,8 +43,8 @@ Step 2: Compiling LLVM-CBE
 Next, download and compile llvm-cbe from the same folder:
 
     cd $HOME/llvm/projects
-    git clone https://github.com/JuliaComputing/llvm-cbe.git llvm-cbe
-    cd ..
+    git clone https://github.com/JuliaComputing/llvm-cbe
+    cd ../build
     make
 
 Step 3: Usage Examples
@@ -50,17 +52,18 @@ Step 3: Usage Examples
 
 If llvm-cbe compiles, you should be able to run it with the following commands.
 ```
-$ cd llvm/lib/test/selectionsort
+$ cd $HOME/llvm/projects/llvm-cbe/test/selectionsort
 $ ls
 main.c
 $ clang -S -emit-llvm main.c
 $ ls
 main.c main.ll
-$ $(HOME)/llvm/Release/bin/llvm-cbe main.ll
-
+$ $(HOME)/llvm/build/Debug+Asserts/bin/llvm-cbe main.ll
 ```
+
 Compile Generated C-Code and Run
 ================================
+
 ```
 $ gcc -o main.cbe main.cbe.c
 $ ls
