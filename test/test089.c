@@ -24,3 +24,5 @@ int main(){
     struct DataSize example;
     return sizeof(example);
 }
+
+#pragma pack(pop)

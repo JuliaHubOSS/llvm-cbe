@@ -20,8 +20,13 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/Host.h"
-#include "llvm/Target/TargetLowering.h"
+#include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Config/config.h"
+
+#if LLVM_VERSION_MAJOR == 7
+#include "llvm/Transforms/Utils.h"
+#endif
+
 #include <algorithm>
 #include <cstdio>
 
@@ -245,7 +250,7 @@ std::string CWriter::getStructName(StructType *ST) {
   return "struct l_unnamed_" + utostr(id);
 }
 
-std::string CWriter::getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL) {
+std::string CWriter::getFunctionName(FunctionType *FT, std::pair<AttributeList, CallingConv::ID> PAL) {
   unsigned &id = UnnamedFunctionIDs[std::make_pair(FT, PAL)];
   if (id == 0)
       id = ++NextFunctionNumber;
@@ -356,7 +361,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
 // Pass the Type* and the variable name and this prints out the variable
 // declaration.
 //
-raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, std::pair<AttributeSet, CallingConv::ID> PAL) {
+raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, std::pair<AttributeList, CallingConv::ID> PAL) {
   if (Ty->isSingleValueType() || Ty->isVoidTy()) {
     if (!Ty->isPointerTy() && !Ty->isVectorTy())
       return printSimpleType(Out, Ty, isSigned);
@@ -436,19 +441,19 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
 }
 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                                               std::pair<AttributeSet, CallingConv::ID> PAL) {
+                                               std::pair<AttributeList, CallingConv::ID> PAL) {
   Out << "typedef ";
   printFunctionProto(Out, Ty, PAL, getFunctionName(Ty, PAL), NULL);
   return Out << ";\n";
 }
 
 raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
-                                         std::pair<AttributeSet, CallingConv::ID> Attrs,
+                                         std::pair<AttributeList, CallingConv::ID> Attrs,
                                          const std::string &Name,
-                                         Function::ArgumentListType *ArgList) {
-  AttributeSet &PAL = Attrs.first;
+                                         iterator_range<Function::arg_iterator> *ArgList) {
+  AttributeList &PAL = Attrs.first;
 
-  if (PAL.hasAttribute(AttributeSet::FunctionIndex, Attribute::NoReturn))
+  if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn))
     Out << "__noreturn ";
 
   // Should this function actually return a struct by-value?
@@ -463,7 +468,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
   }
   printTypeName(Out, RetTy,
-    /*isSigned=*/PAL.hasAttribute(AttributeSet::ReturnIndex, Attribute::SExt));
+    /*isSigned=*/PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
 
   switch (Attrs.second) {
    case CallingConv::C:
@@ -636,10 +641,10 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
 // TODO copied from CppBackend, new code should use raw_ostream
 static inline std::string ftostr(const APFloat& V) {
   std::string Buf;
-  if (&V.getSemantics() == &APFloat::IEEEdouble) {
+  if (&V.getSemantics() == &APFloat::IEEEdouble()) {
     raw_string_ostream(Buf) << V.convertToDouble();
     return Buf;
-  } else if (&V.getSemantics() == &APFloat::IEEEsingle) {
+  } else if (&V.getSemantics() == &APFloat::IEEEsingle()) {
     raw_string_ostream(Buf) << (double)V.convertToFloat();
     return Buf;
   }
@@ -654,7 +659,7 @@ static bool isFPCSafeToPrint(const ConstantFP *CFP) {
     return false;
   APFloat APF = APFloat(CFP->getValueAPF());  // copy
   if (CFP->getType() == Type::getFloatTy(CFP->getContext()))
-    APF.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven, &ignored);
+    APF.convert(APFloat::IEEEdouble(), APFloat::rmNearestTiesToEven, &ignored);
 #if HAVE_PRINTF_A && ENABLE_CBE_PRINTF_A
   char Buffer[100];
   sprintf(Buffer, "%a", APF.convertToDouble());
@@ -979,7 +984,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         // useful.
         APFloat Tmp = FPC->getValueAPF();
         bool LosesInfo;
-        Tmp.convert(APFloat::IEEEdouble, APFloat::rmTowardZero, &LosesInfo);
+        Tmp.convert(APFloat::IEEEdouble(), APFloat::rmTowardZero, &LosesInfo);
         V = Tmp.convertToDouble();
       }
 
@@ -1788,13 +1793,13 @@ void CWriter::generateHeader(Module &M) {
   std::set<Function*> StaticCtors, StaticDtors;
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
-    switch (getGlobalVariableClass(I)) {
+    switch (getGlobalVariableClass(&*I)) {
     default: break;
     case GlobalCtors:
-      FindStaticTors(I, StaticCtors);
+      FindStaticTors(&*I, StaticCtors);
       break;
     case GlobalDtors:
-      FindStaticTors(I, StaticDtors);
+      FindStaticTors(&*I, StaticDtors);
       break;
     }
   }
@@ -1854,7 +1859,7 @@ void CWriter::generateHeader(Module &M) {
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
     // Ignore special globals, such as debug info.
-    if (getGlobalVariableClass(I))
+    if (getGlobalVariableClass(&*I))
       continue;
     printTypeName(NullOut, I->getType()->getElementType(), false);
   }
@@ -1889,7 +1894,7 @@ void CWriter::generateHeader(Module &M) {
         Alignment > TD->getABITypeAlignment(ElTy);
       if (IsOveraligned)
         Out << "__MSALIGN__(" << Alignment << ") ";
-      printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+      printTypeName(Out, ElTy, false) << ' ' << GetValueName(&*I);
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
 
@@ -1932,7 +1937,7 @@ void CWriter::generateHeader(Module &M) {
         case Intrinsic::rint:
         case Intrinsic::sqrt:
         case Intrinsic::trunc:
-          intrinsicsToDefine.push_back(I);
+          intrinsicsToDefine.push_back(&*I);
           continue;
       }
     }
@@ -1971,14 +1976,14 @@ void CWriter::generateHeader(Module &M) {
       Out << "static ";
     if (I->hasExternalWeakLinkage())
       Out << "extern ";
-    printFunctionProto(Out, I);
+    printFunctionProto(Out, &*I);
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage())
       Out << " __ATTRIBUTE_WEAK__";
     if (I->hasExternalWeakLinkage())
       Out << " __EXTERNAL_WEAK__";
-    if (StaticCtors.count(I))
+    if (StaticCtors.count(&*I))
       Out << " __ATTRIBUTE_CTOR__";
-    if (StaticDtors.count(I))
+    if (StaticDtors.count(&*I))
       Out << " __ATTRIBUTE_DTOR__";
     if (I->hasHiddenVisibility())
       Out << " __HIDDEN__";
@@ -1994,7 +1999,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n\n/* Global Variable Definitions and Initialization */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      declareOneGlobalVariable(I);
+      declareOneGlobalVariable(&*I);
     }
   }
 
@@ -2582,7 +2587,7 @@ void CWriter::declareOneGlobalVariable(GlobalVariable* I) {
     return;
 
   // Ignore special globals, such as debug info.
-  if (getGlobalVariableClass(I))
+  if (getGlobalVariableClass(&*I))
     return;
 
   if (I->hasDLLImportStorageClass())
@@ -2761,12 +2766,12 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   Out << "\n/* Function definitions */\n";
 
-  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> >, unsigned>::iterator
+  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID> >, unsigned>::iterator
        I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
        I != E; ++I) {
     Out << '\n';
-    std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID> > F = I->first;
-    if (F.second.first == AttributeSet() && F.second.second == CallingConv::C)
+    std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID> > F = I->first;
+    if (F.second.first == AttributeList() && F.second.second == CallingConv::C)
         if (!TypesPrinted.insert(F.first).second) continue; // already printed this above
     printFunctionDeclaration(Out, F.first, F.second);
   }
@@ -2853,7 +2858,9 @@ void CWriter::printFunction(Function &F) {
   if (F.hasDLLImportStorageClass()) Out << "__declspec(dllimport) ";
   if (F.hasDLLExportStorageClass()) Out << "__declspec(dllexport) ";
   if (F.hasLocalLinkage()) Out << "static ";
-  printFunctionProto(Out, F.getFunctionType(), std::make_pair(F.getAttributes(), F.getCallingConv()), GetValueName(&F), &F.getArgumentList());
+
+  iterator_range<Function::arg_iterator> args = F.args();
+  printFunctionProto(Out, F.getFunctionType(), std::make_pair(F.getAttributes(), F.getCallingConv()), GetValueName(&F), &args);
 
   Out << " {\n";
 
@@ -2914,11 +2921,11 @@ void CWriter::printFunction(Function &F) {
 
   // print the basic blocks
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-    if (Loop *L = LI->getLoopFor(BB)) {
-      if (L->getHeader() == BB && L->getParentLoop() == 0)
+    if (Loop *L = LI->getLoopFor(&*BB)) {
+      if (L->getHeader() == &*BB && L->getParentLoop() == 0)
         printLoop(L);
     } else {
-      printBasicBlock(BB);
+      printBasicBlock(&*BB);
     }
   }
 
@@ -2959,10 +2966,11 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E;
        ++II) {
-    if (!isInlinableInst(*II) && !isDirectAlloca(II)) {
+    if (!isInlinableInst(*II) && !isDirectAlloca(&*II)) {
       if (!isEmptyType(II->getType()) &&
           !isInlineAsm(*II))
-        outputLValue(II);
+        outputLValue(&*II);
+
       else
         Out << "  ";
       writeInstComputationInline(*II);
@@ -2991,7 +2999,7 @@ void CWriter::visitReturnInst(ReturnInst &I) {
   // unless that would make the basic block empty
   if (I.getNumOperands() == 0 &&
       &*--I.getParent()->getParent()->end() == I.getParent() &&
-      I.getParent()->begin() != I) {
+      &*I.getParent()->begin() != &I) {
     return;
   }
 
@@ -3021,8 +3029,8 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
 
     // Skip the first item since that's the default case.
     for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
-      ConstantInt* CaseVal = i.getCaseValue();
-      BasicBlock* Succ = i.getCaseSuccessor();
+      ConstantInt* CaseVal = i->getCaseValue();
+      BasicBlock* Succ = i->getCaseSuccessor();
       Out << "  case ";
       writeOperand(CaseVal);
       Out << ":\n";
@@ -3038,8 +3046,8 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
     Out << "  ";
     for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e; ++i) {
       Out << "if (";
-      ConstantInt* CaseVal = i.getCaseValue();
-      BasicBlock* Succ = i.getCaseSuccessor();
+      ConstantInt* CaseVal = i->getCaseValue();
+      BasicBlock* Succ = i->getCaseSuccessor();
       ICmpInst *icmp = new ICmpInst(CmpInst::ICMP_EQ, Cond, CaseVal);
       visitICmpInst(*icmp);
       delete icmp;
@@ -3089,7 +3097,7 @@ void CWriter::printPHICopiesForSuccessor (BasicBlock *CurBlock,
     Value *IV = PN->getIncomingValueForBlock(CurBlock);
     if (!isa<UndefValue>(IV) && !isEmptyType(IV->getType())) {
       Out << std::string(Indent, ' ');
-      Out << "  " << GetValueName(I) << "__PHI_TEMPORARY = ";
+      Out << "  " << GetValueName(&*I) << "__PHI_TEMPORARY = ";
       writeOperand(IV, ContextCasted);
       Out << ";   /* for PHI node */\n";
     }
@@ -3761,11 +3769,11 @@ void CWriter::lowerIntrinsics(Function &F) {
             // All other intrinsic calls we must lower.
             Instruction *Before = 0;
             if (CI != &BB->front())
-              Before = std::prev(BasicBlock::iterator(CI));
+              Before = &*std::prev(BasicBlock::iterator(CI));
 
             IL->LowerIntrinsicCall(CI);
             if (Before) {        // Move iterator to instruction after call
-              I = Before; ++I;
+              I = BasicBlock::iterator(Before); ++I;
             } else {
               I = BB->begin();
             }
@@ -3798,7 +3806,7 @@ void CWriter::visitCallInst(CallInst &I) {
 
   // If this is a call to a struct-return function, assign to the first
   // parameter instead of passing it to the call.
-  const AttributeSet &PAL = I.getAttributes();
+  const AttributeList &PAL = I.getAttributes();
   bool hasByVal = I.hasByValArgument();
   bool isStructRet = I.hasStructRetAttr();
   if (isStructRet) {
@@ -3911,8 +3919,10 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     // Output the last argument to the enclosing function.
     if (I.getParent()->getParent()->arg_empty())
       Out << "vararg_dummy_arg";
-    else
-      writeOperand(--I.getParent()->getParent()->arg_end());
+    else {
+      Function::arg_iterator arg_end = I.getParent()->getParent()->arg_end();
+      writeOperand(--arg_end);
+    }
     Out << ')';
     return true;
   case Intrinsic::vaend:
@@ -4263,7 +4273,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   VectorType *LastIndexIsVector = 0;
   {
     for (gep_type_iterator TmpI = I; TmpI != E; ++TmpI)
-      LastIndexIsVector = dyn_cast<VectorType>(*TmpI);
+      LastIndexIsVector = dyn_cast<VectorType>(TmpI.getIndexedType());
   }
 
   Out << "(";
@@ -4280,6 +4290,8 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
   Out << '&';
 
+  Type *IntoT = I.getIndexedType();
+
   // If the first index is 0 (very typical) we can do a number of
   // simplifications to clean up the code.
   Value *FirstOp = I.getOperand();
@@ -4293,7 +4305,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     // exposed, like a global, avoid emitting (&foo)[0], just emit foo instead.
     if (isAddressExposed(Ptr)) {
       writeOperandInternal(Ptr);
-    } else if (I != E && (*I)->isStructTy()) {
+    } else if (I != E && I.isStruct()) {
       // If we didn't already emit the first operand, see if we can print it as
       // P->f instead of "P[0].f"
       writeOperand(Ptr);
@@ -4307,15 +4319,16 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     }
   }
 
+
   for (; I != E; ++I) {
     assert(I.getOperand()->getType()->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid, but we don't support it here
-    if ((*I)->isStructTy()) {
+    if (I.isStruct()) {
       Out << ".field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
-    } else if ((*I)->isArrayTy()) {
+    } else if (IntoT->isArrayTy()) {
       Out << ".array[";
       writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
       Out << ']';
-    } else if (!(*I)->isVectorTy()) {
+    } else if (!IntoT->isVectorTy()) {
       Out << '[';
       writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
       Out << ']';
@@ -4331,6 +4344,8 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
         Out << "))";
       }
     }
+
+    IntoT = I.getIndexedType();
   }
   Out << ")";
 }
@@ -4535,10 +4550,11 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
 //===----------------------------------------------------------------------===//
 
 bool CTargetMachine::addPassesToEmitFile(
-    PassManagerBase &PM, raw_pwrite_stream &Out, CodeGenFileType FileType,
-    bool DisableVerify, AnalysisID StartBefore,
-    AnalysisID StartAfter, AnalysisID StopAfter,
-    MachineFunctionInitializer *MFInitializer) {
+    PassManagerBase &PM, raw_pwrite_stream &Out,
+#if LLVM_VERSION_MAJOR == 7
+    raw_pwrite_stream *DwoOut,
+#endif
+    CodeGenFileType FileType, bool DisableVerify, MachineModuleInfo *MMI) {
 
   if (FileType != TargetMachine::CGFT_AssemblyFile) return true;
 

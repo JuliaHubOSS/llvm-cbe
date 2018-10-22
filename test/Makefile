@@ -11,11 +11,14 @@
 #
 #===----------------------------------------------------------------------===//
 
-LLVMToolDir ?= .
+LLVMToolDir ?= ../../../build/bin
 
-PYTHON = python
-CC = gcc
-CPPFLAGS = -Wall -Wno-unused-function -Wno-parentheses-equality -Wno-unused-variable -Wno-incompatible-library-redeclaration -Werror
+PYTHON ?= python
+GCC ?= gcc
+CLANG ?= clang
+CPPFLAGS = -Iinclude/ -Wall -Wno-unused-function -Wno-unused-variable -Wno-error=attributes -Wno-attributes -Wno-main -Wno-error=main -Werror
+GCCFLAGS = $(CPPFLAGS) -Wno-error=unused-but-set-variable -Wno-unused-but-set-variable
+CLANGFLAGS= $(CPPFLAGS) -Wno-error=unused-variable -Wno-unused-variable
 FILES := $(patsubst %.c,%,$(filter-out %.cbe.c,$(wildcard *.c)))
 
 all: cexec buildcbe
@@ -30,13 +33,13 @@ tollvmO1: $(addsuffix _O1.ll,$(FILES))
 tollvmO2: $(addsuffix _O2.ll,$(FILES))
 tollvmO3: $(addsuffix _O3.ll,$(FILES))
 %_O0.ll: %.c
-	clang $(CPPFLAGS) $< -emit-llvm -S -O0 -o $@
+	$(CLANG) $(CLANGFLAGS) $< -emit-llvm -S -O0 -o $@
 %_O1.ll: %.c
-	clang $(CPPFLAGS) $< -emit-llvm -S -O1 -o $@
+	$(CLANG) $(CLANGFLAGS) $< -emit-llvm -S -O1 -o $@
 %_O2.ll: %.c
-	clang $(CPPFLAGS) $< -emit-llvm -S -O2 -o $@
+	$(CLANG) $(CLANGFLAGS) $< -emit-llvm -S -O2 -o $@
 %_O3.ll: %.c
-	clang $(CPPFLAGS) $< -emit-llvm -S -O3 -o $@
+	$(CLANG) $(CLANGFLAGS) $< -emit-llvm -S -O3 -o $@
 
 tocbe: tocbeO0 tocbeO1 tocbeO2 tocbeO3
 tocbeO%: tollvmO%
@@ -60,12 +63,12 @@ buildcbeO1 : $(addsuffix _O1.cbe,$(FILES))
 buildcbeO2 : $(addsuffix _O2.cbe,$(FILES))
 buildcbeO3 : $(addsuffix _O3.cbe,$(FILES))
 %.cbe : %.cbe.c
-	$(CC) $(CPPFLAGS) -o $@ -O$(shell echo $* | sed 's/^.*_O\([0-9]\)$$/\1/') $<
+	$(GCC) $(GCCFLAGS) -o $@ -O$(shell echo $* | sed 's/^.*_O\([0-9]\)$$/\1/') $<
 
 #Make C-Based Executables
 cexec: $(addsuffix .cexe,$(FILES))
 %.cexe: %.c
-	$(CC) $(CPPFLAGS) -o $@ $<
+	$(GCC) $(GCCFLAGS) -o $@ $<
 
 test: all
 	LLVMToolDir=$(LLVMToolDir) $(PYTHON) testFile.py

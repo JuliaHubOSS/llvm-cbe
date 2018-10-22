@@ -32,6 +32,8 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Transforms/Scalar.h"
 
+#include <set>
+
 namespace {
   using namespace llvm;
 
@@ -77,7 +79,7 @@ namespace {
     std::set<std::pair<unsigned, Type*>> InlineOpDeclTypes;
     std::set<Type*> CtorDeclTypes;
 
-    DenseMap<std::pair<FunctionType*, std::pair<AttributeSet, CallingConv::ID>>, unsigned> UnnamedFunctionIDs;
+    DenseMap<std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID>>, unsigned> UnnamedFunctionIDs;
     unsigned NextFunctionNumber;
 
     // This is used to keep track of intrinsics that get generated to a lowered
@@ -95,7 +97,7 @@ namespace {
       FPCounter = 0;
     }
 
-    virtual const char *getPassName() const { return "C backend"; }
+    virtual StringRef getPassName() const { return "C backend"; }
 
     void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<LoopInfoWrapperPass>();
@@ -115,26 +117,26 @@ namespace {
     void forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty, std::set<Type*> &TypesPrinted);
 
     raw_ostream &printFunctionProto(raw_ostream &Out, FunctionType *Ty,
-                           std::pair<AttributeSet, CallingConv::ID> Attrs,
+                           std::pair<AttributeList, CallingConv::ID> Attrs,
                            const std::string &Name,
-                           Function::ArgumentListType *ArgList);
+                           iterator_range<Function::arg_iterator> *ArgList);
     raw_ostream &printFunctionProto(raw_ostream &Out, Function *F) {
       return printFunctionProto(Out, F->getFunctionType(), std::make_pair(F->getAttributes(), F->getCallingConv()), GetValueName(F), NULL);
     }
 
     raw_ostream &printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                           std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
+                           std::pair<AttributeList, CallingConv::ID> PAL = std::make_pair(AttributeList(), CallingConv::C));
     raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
     raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
     raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
 
-    raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
+    raw_ostream &printTypeName(raw_ostream &Out, Type *Ty, bool isSigned = false, std::pair<AttributeList, CallingConv::ID> PAL = std::make_pair(AttributeList(), CallingConv::C));
     raw_ostream &printTypeNameUnaligned(raw_ostream &Out, Type *Ty, bool isSigned = false);
     raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
     raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
     std::string getStructName(StructType *ST);
-    std::string getFunctionName(FunctionType *FT, std::pair<AttributeSet, CallingConv::ID> PAL = std::make_pair(AttributeSet(), CallingConv::C));
+    std::string getFunctionName(FunctionType *FT, std::pair<AttributeList, CallingConv::ID> PAL = std::make_pair(AttributeList(), CallingConv::C));
     std::string getArrayName(ArrayType *AT);
     std::string getVectorName(VectorType *VT, bool Aligned);
 
