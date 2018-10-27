@@ -483,6 +483,9 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     Out << " __thiscall";
     break;
    default:
+#ifndef NDEBUG
+    errs() << "Unhandled calling convention " << Attrs.second << "\n";
+#endif
     assert(0 && "Encountered Unhandled Calling Convention");
     break;
   }
