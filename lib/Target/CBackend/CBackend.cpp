@@ -1529,7 +1529,7 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
   Out << "#define __noreturn __declspec(noreturn)\n";
   Out << "#else\n";
   Out << "#define __noreturn __attribute__((noreturn))\n";
-  Out << "#define __forceinline __attribute__((always_inline))\n";
+  Out << "#define __forceinline __attribute__((always_inline)) inline\n";
   Out << "#endif\n\n";
 
   // Define NaN and Inf as GCC builtins if using GCC
