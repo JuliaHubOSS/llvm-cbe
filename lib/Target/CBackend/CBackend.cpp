@@ -309,7 +309,7 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   case ICmpInst::ICMP_SGT: return "sgt";
   default:
 #ifndef NDEBUG
-    errs() << "Invalid icmp predicate!" << P;
+    errs() << "Invalid icmp predicate!" << P << "\n";
 #endif
     llvm_unreachable(0);
   }
@@ -2166,7 +2166,7 @@ void CWriter::generateHeader(Module &M) {
         case CmpInst::ICMP_SGT: Out << " > "; break;
         default:
 #ifndef NDEBUG
-          errs() << "Invalid icmp predicate!" << (*it).first;
+          errs() << "Invalid icmp predicate!" << (*it).first << "\n";
 #endif
           llvm_unreachable(0);
         }
@@ -2369,7 +2369,7 @@ void CWriter::generateHeader(Module &M) {
           case Instruction::AShr: Out << " >> "; break;
           default:
 #ifndef NDEBUG
-             errs() << "Invalid operator type!" << opcode;
+             errs() << "Invalid operator type!" << opcode << "\n";
 #endif
              llvm_unreachable(0);
           }
@@ -2407,7 +2407,7 @@ void CWriter::generateHeader(Module &M) {
         case Instruction::AShr: Out << " >> "; break;
         default:
 #ifndef NDEBUG
-           errs() << "Invalid operator type!" << opcode;
+           errs() << "Invalid operator type!" << opcode << "\n";
 #endif
            llvm_unreachable(0);
         }
@@ -2463,7 +2463,7 @@ void CWriter::generateHeader(Module &M) {
         case Instruction::AShr: Out << "AShr"; break;
         default:
 #ifndef NDEBUG
-           errs() << "Invalid operator type!" << opcode;
+           errs() << "Invalid operator type!" << opcode << "\n";
 #endif
            llvm_unreachable(0);
         }
@@ -2510,7 +2510,7 @@ void CWriter::generateHeader(Module &M) {
         case Instruction::AShr: Out << " >> "; break;
         default:
 #ifndef NDEBUG
-           errs() << "Invalid operator type!" << opcode;
+           errs() << "Invalid operator type!" << opcode << "\n";
 #endif
            llvm_unreachable(0);
         }
@@ -3273,7 +3273,7 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
     case Instruction::AShr: Out << " >> "; break;
     default:
 #ifndef NDEBUG
-       errs() << "Invalid operator type!" << I;
+       errs() << "Invalid operator type!" << I << "\n";
 #endif
        llvm_unreachable(0);
     }
@@ -3323,7 +3323,7 @@ void CWriter::visitICmpInst(ICmpInst &I) {
   case ICmpInst::ICMP_SGT: Out << " > "; break;
   default:
 #ifndef NDEBUG
-    errs() << "Invalid icmp predicate!" << I;
+    errs() << "Invalid icmp predicate!" << I << "\n";
 #endif
     llvm_unreachable(0);
   }
@@ -3552,7 +3552,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
     switch (Opcode) {
     default:
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode;
+      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
       llvm_unreachable(0);
 
@@ -3656,7 +3656,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
         suffix = "l";
     } else {
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode;
+      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
       llvm_unreachable(0);
     }
@@ -3664,7 +3664,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
     switch (Opcode) {
     default:
 #ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode;
+      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
       llvm_unreachable(0);
 
@@ -3905,7 +3905,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   switch (ID) {
   default: {
 #ifndef NDEBUG
-    errs() << "Unknown LLVM intrinsic! " << I;
+    errs() << "Unknown LLVM intrinsic! " << I << "\n";
 #endif
     llvm_unreachable(0);
     return false;

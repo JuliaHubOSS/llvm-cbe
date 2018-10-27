@@ -249,7 +249,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   const Target *TheTarget = TargetRegistry::lookupTarget(MArch, TheTriple,
                                                          Error);
   if (!TheTarget) {
-    errs() << argv[0] << ": " << Error;
+    errs() << argv[0] << ": " << Error << "\n";
     return 1;
   }
 
@@ -325,7 +325,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   if (RelaxAll) {
     if (FileType != TargetMachine::CGFT_ObjectFile)
       errs() << argv[0]
-             << ": warning: ignoring -mc-relax-all because filetype != obj";
+             << ": warning: ignoring -mc-relax-all because filetype != obj\n";
   }
 
   // Ask the target to add backend passes as necessary.

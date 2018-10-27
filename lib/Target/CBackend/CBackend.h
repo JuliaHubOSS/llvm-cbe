@@ -239,9 +239,9 @@ namespace {
 
     void visitInstruction(Instruction &I) {
 #ifndef NDEBUG
-      errs() << "C Writer does not know about " << I;
+      errs() << "C Writer does not know about " << I << "\n";
 #endif
-      llvm_unreachable(0);
+      llvm_unreachable("unsupported LLVM instruction");
     }
 
     void outputLValue(Instruction *I) {
