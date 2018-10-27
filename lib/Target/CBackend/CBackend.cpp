@@ -753,7 +753,16 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
 // printConstant - The LLVM Constant to C Constant converter.
 void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(CPV)) {
-    assert(CE->getType()->isIntegerTy() || CE->getType()->isFloatingPointTy() || CE->getType()->isPointerTy()); // TODO: VectorType are valid here, but not supported
+    // TODO: VectorType are valid here, but not supported
+    if (!CE->getType()->isIntegerTy()
+        && !CE->getType()->isFloatingPointTy()
+        && !CE->getType()->isPointerTy())
+    {
+#ifndef NDEBUG
+      errs() << "Unsupported constant type " << *CE->getType() << " in: " << *CE << "\n";
+#endif
+      llvm_unreachable("Unsupported constant type");
+    }
     switch (CE->getOpcode()) {
     case Instruction::Trunc:
     case Instruction::ZExt:
@@ -1207,7 +1216,15 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
 
   // Extract the operand's type, we'll need it.
   Type* OpTy = CPV->getType();
-  assert(OpTy->isIntegerTy() || OpTy->isFloatingPointTy()); // TODO: VectorType are valid here, but not supported
+  // TODO: VectorType are valid here, but not supported
+  if (!OpTy->isIntegerTy()
+      && !OpTy->isFloatingPointTy())
+  {
+#ifndef NDEBUG
+    errs() << "Unsupported 'constant with cast' type " << *OpTy << " in: " << *CPV << "\n";
+#endif
+    llvm_unreachable("Unsupported 'constant with cast' type");
+  }
 
   // Indicate whether to do the cast or not.
   bool shouldCast;
