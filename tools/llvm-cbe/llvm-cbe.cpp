@@ -16,7 +16,7 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
 #include "llvm/CodeGen/CommandFlags.inc"
 #else
 #include "llvm/CodeGen/CommandFlags.def"
@@ -330,7 +330,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   // Ask the target to add backend passes as necessary.
   if (Target.addPassesToEmitFile(PM, Out->os(),
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
       nullptr,
 #endif
       FileType, NoVerify)) {

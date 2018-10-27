@@ -23,7 +23,7 @@
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Config/config.h"
 
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
 #include "llvm/Transforms/Utils.h"
 #endif
 
@@ -4555,7 +4555,7 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
 
 bool CTargetMachine::addPassesToEmitFile(
     PassManagerBase &PM, raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
     raw_pwrite_stream *DwoOut,
 #endif
     CodeGenFileType FileType, bool DisableVerify, MachineModuleInfo *MMI) {
