@@ -164,7 +164,7 @@ bool CWriter::runOnFunction(Function &F) {
 
   printFunction(F);
 
-  LI = NULL;
+  LI = nullptr;
 
   return true; // may have lowered an IntrinsicCall
 }
@@ -453,7 +453,7 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out, StructType *STy) 
 raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
                                                std::pair<AttributeList, CallingConv::ID> PAL) {
   Out << "typedef ";
-  printFunctionProto(Out, Ty, PAL, getFunctionName(Ty, PAL), NULL);
+  printFunctionProto(Out, Ty, PAL, getFunctionName(Ty, PAL), nullptr);
   return Out << ";\n";
 }
 
@@ -1779,7 +1779,7 @@ bool CWriter::doInitialization(Module &M) {
 #endif
   TAsm = new CBEMCAsmInfo();
   MRI  = new MCRegisterInfo();
-  TCtx = new MCContext(TAsm, MRI, NULL);
+  TCtx = new MCContext(TAsm, MRI, nullptr);
   return false;
 }
 

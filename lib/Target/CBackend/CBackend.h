@@ -123,7 +123,7 @@ namespace {
                            const std::string &Name,
                            iterator_range<Function::arg_iterator> *ArgList);
     raw_ostream &printFunctionProto(raw_ostream &Out, Function *F) {
-      return printFunctionProto(Out, F->getFunctionType(), std::make_pair(F->getAttributes(), F->getCallingConv()), GetValueName(F), NULL);
+      return printFunctionProto(Out, F->getFunctionType(), std::make_pair(F->getAttributes(), F->getCallingConv()), GetValueName(F), nullptr);
     }
 
     raw_ostream &printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
