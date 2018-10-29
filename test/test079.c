@@ -1,4 +1,4 @@
-//===-- CBackend.cpp - Library for converting LLVM code to C --------------===//
+//===-- test079.c - LLVM C Backend test file ------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
