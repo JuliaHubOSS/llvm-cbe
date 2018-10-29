@@ -7,15 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This code tests to see that the CBE will execute an if/else statement correctly.
-// *TW
+// This code tests to see that the CBE will execute an if/else statement
+// correctly. *TW
+//
 //===----------------------------------------------------------------------===//
 
 int main() {
-    int x = 3;
-    x += 3;
-    if (x == 6)
-        return x;
-    else
-        return 0;
+  int x = 3;
+  x += 3;
+  if (x == 6)
+    return x;
+  else
+    return 0;
 }

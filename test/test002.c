@@ -8,14 +8,13 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute a for loop correctly.
-// *TW 
+// *TW
 //
 //===----------------------------------------------------------------------===//
 
-int main()
-{
-    int i, x = 0;
-    for (i = 0; i < 6; i++)
-        ++x;
-    return x;
+int main() {
+  int i, x = 0;
+  for (i = 0; i < 6; i++)
+    ++x;
+  return x;
 }

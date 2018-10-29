@@ -9,13 +9,14 @@
 //
 // This code tests to see that the CBE will execute an array correctly.
 // *TW
+//
 //===----------------------------------------------------------------------===//
 
 int main() {
-    int example[10];
-    int i;
-       for (i = 0;i < 10; ++i) {
-        example[i] = i;
-       }
-       return example[6];
+  int example[10];
+  int i;
+  for (i = 0; i < 10; ++i) {
+    example[i] = i;
+  }
+  return example[6];
 }

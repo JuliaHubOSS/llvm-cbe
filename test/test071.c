@@ -8,12 +8,12 @@
 //===----------------------------------------------------------------------===//
 //
 // This code tests to see that the CBE will execute an if statement correctly.
-// *TW 
+// *TW
 //
 //===----------------------------------------------------------------------===//
 
 int main() {
-   int x = 6;
-   if (x == 6)
-      return x;
+  int x = 6;
+  if (x == 6)
+    return x;
 }

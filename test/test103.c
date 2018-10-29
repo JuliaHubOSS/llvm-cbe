@@ -15,9 +15,7 @@
 #define B 3
 #define C A + B
 
-int main(){
-
-   int x = C;
-   return x;
+int main() {
+  int x = C;
+  return x;
 }
-

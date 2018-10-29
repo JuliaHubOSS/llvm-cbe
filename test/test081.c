@@ -7,17 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This code tests to see that the CBE will properly use the address-of value (&)
-// variable and and return the value-at address (*) variable from integer 'num'.
-// *TW
+// This code tests to see that the CBE will properly use the address-of value
+// (&) variable and and return the value-at address (*) variable from integer
+// 'num'. *TW
 //
 //===----------------------------------------------------------------------===//
 
-int main(){
-   int *ptr;
-   int num = 6;
-   ptr = &num;
-   int deref = *ptr;
-   return deref;
-
+int main() {
+  int *ptr;
+  int num = 6;
+  ptr = &num;
+  int deref = *ptr;
+  return deref;
 }

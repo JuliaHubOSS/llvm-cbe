@@ -12,13 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-int head(int n){
-  if(n == 6)
+int head(int n) {
+  if (n == 6)
     return n;
   else
-    return head(n+1);
+    return head(n + 1);
 }
 
-int main(){
-  return head(0);
-}
+int main() { return head(0); }

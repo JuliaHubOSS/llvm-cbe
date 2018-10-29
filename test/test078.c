@@ -15,9 +15,9 @@
 #include <stddef.h>
 
 int main() {
-   int *ptr = NULL;
-    if (ptr == 0){
-        return 6;
-    }
-    return 1;
+  int *ptr = NULL;
+  if (ptr == 0) {
+    return 6;
+  }
+  return 1;
 }

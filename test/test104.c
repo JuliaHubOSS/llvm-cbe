@@ -12,13 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-int tail (int n) {
+int tail(int n) {
   if (n == 6)
     return n;
   else
-    return tail(n+1);
+    return tail(n + 1);
 }
 
-int main(){
-  return tail(0);
-}
+int main() { return tail(0); }

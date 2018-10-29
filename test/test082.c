@@ -13,13 +13,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-struct Number{
-   int price;
+struct Number {
+  int price;
 };
 
-int main(){
-   struct Number a;
-   struct Number* ptr = &a;
-   ptr->price = 6;
-   return ptr->price;
+int main() {
+  struct Number a;
+  struct Number *ptr = &a;
+  ptr->price = 6;
+  return ptr->price;
 }

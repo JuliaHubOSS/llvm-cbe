@@ -1,25 +1,24 @@
-//===-- CBackend.cpp - Library for converting LLVM code to C ----------------------===//
+//===-- CBackend.cpp - Library for converting LLVM code to C --------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
-//===------------------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
-// This code tests to see that the CBE will access and return union members correctly.
-// *TW
-//===------------------------------------------------------------------------------===//
+// This code tests to see that the CBE will access and return union members
+// correctly. *TW
+//
+//===----------------------------------------------------------------------===//
 
-union Data{
-   char unit1[6];
-   char unit2;
-   char unit3;
+union Data {
+  char unit1[6];
+  char unit2;
+  char unit3;
 };
 
-int main(){
-   union Data data;
-   return sizeof(data);
+int main() {
+  union Data data;
+  return sizeof(data);
 }
-
-

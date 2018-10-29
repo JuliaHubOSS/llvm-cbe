@@ -7,18 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This code tests to see that the CBE will execute a nested while loop correctly.
-// *TW
+// This code tests to see that the CBE will execute a nested while loop
+// correctly. *TW
+//
 //===----------------------------------------------------------------------===//
 
 int main() {
-    int i = 0, j = 0, x = 0;
-    while (i < 6) {
-        while (j < 6) {
-            ++x;
-            ++j;
-        }
-      ++i;
+  int i = 0, j = 0, x = 0;
+  while (i < 6) {
+    while (j < 6) {
+      ++x;
+      ++j;
     }
-    return x;
+    ++i;
+  }
+  return x;
 }
