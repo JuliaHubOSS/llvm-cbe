@@ -127,6 +127,14 @@ def get_test_name_from_filename(test_path):
     ids=get_test_name_from_filename,
 )
 def test_consistent_return_value(test_filename, tmpdir, cflags):
+    """
+    Compile and execute a C or C++ file with clang, and compare its exit code
+    with the exit code when compiled with llvm-cbe followed by gcc.
+
+    Also, the exit code must be TEST_SUCCESS_EXIT_CODE for success or
+    TEST_XFAIL_EXIT_CODE or expected failures.
+    """
+
     cplusplus = test_filename.endswith('.cpp')
 
     # make sure CBE doesn't have any errors before trying to compile
