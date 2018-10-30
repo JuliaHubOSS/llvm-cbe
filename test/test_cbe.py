@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import os
+import io
 from glob import glob
-from subprocess import call, check_output, STDOUT
+from subprocess import call, Popen, PIPE
 import pytest
 
 
@@ -46,8 +47,30 @@ TEST_XFAIL_EXIT_CODE = 25
 
 
 def check_no_output(args):
-    output = check_output(args, stderr=STDOUT)
-    assert not output
+    proc = Popen(args, stdout=PIPE, stderr=PIPE)
+    out, err = proc.communicate()
+
+    if out or err:
+        out = out.decode("utf-8")
+        err = err.decode("utf-8")
+
+        msg_stream = io.StringIO()
+        print(f"Got unexpected output from process", file=msg_stream)
+
+        print(f"args: {args}", file=msg_stream)
+        print(file=msg_stream)
+
+        print(f"stdout:", file=msg_stream)
+        print(out, file=msg_stream)
+        print(file=msg_stream)
+
+        print(f"stderr:", file=msg_stream)
+        print(err, file=msg_stream)
+        print(file=msg_stream)
+
+        raise Exception(msg_stream.getvalue())
+
+    assert not proc.returncode, f"process exit code {proc.returncode}"
 
 
 def _compile_c(compiler, flags, c_filename, output_filename):
