@@ -75,8 +75,15 @@ def run_llvm_cbe(ir_filename, c_filename):
     return c_filename
 
 
-def get_c_test_desc(c_file):
-    return os.path.splitext(os.path.basename(c_file))[0]
+def collect_tests(base_dir, extensions):
+    for dirname, _, filenames in os.walk(base_dir):
+        for fn in filenames:
+            if fn.startswith('test_') and fn.endswith(extensions):
+                yield os.path.join(dirname, fn)
+
+
+def get_test_name_from_filename(test_path):
+    return os.path.splitext(os.path.basename(test_path))[0]
 
 
 @pytest.mark.parametrize(
@@ -86,8 +93,8 @@ def get_c_test_desc(c_file):
 )
 @pytest.mark.parametrize(
     'c_file',
-    glob(os.path.join(TEST_DIR, 'test*.c')),
-    ids=get_c_test_desc,
+    collect_tests(TEST_DIR, ('.c', )),
+    ids=get_test_name_from_filename,
 )
 def test_consistent_return_value(c_file, tmpdir, cflags):
     regular_exe = compile_clang(c_file, tmpdir / 'regular.exe', flags=cflags)
