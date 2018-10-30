@@ -33,6 +33,7 @@ GCCFLAGS = COMMON_CFLAGS + [
 ]
 
 CLANG = 'clang'
+CLANGPP = 'clang++'
 CLANGFLAGS = COMMON_CFLAGS + [
     '-Wno-error=unused-variable',
     '-Wno-unused-variable',
@@ -59,15 +60,20 @@ def compile_gcc(c_filename, output_filename, flags=None):
     return _compile_c(GCC, GCCFLAGS + flags, c_filename, output_filename)
 
 
-def compile_clang(c_filename, output_filename, flags=None):
+def compile_clang(c_filename, output_filename, flags=None, cplusplus=False):
     flags = flags or []
-    return _compile_c(CLANG, CLANGFLAGS + flags, c_filename, output_filename)
+    return _compile_c(
+        CLANGPP if cplusplus else CLANG,
+        CLANGFLAGS + flags,
+        c_filename,
+        output_filename)
 
 
-def compile_to_ir(c_filename, ir_filename, flags=None):
+def compile_to_ir(c_filename, ir_filename, flags=None, cplusplus=False):
     flags = list(flags or [])
     flags += ['-S', '-emit-llvm']
-    return compile_clang(c_filename, ir_filename, flags=flags)
+    return compile_clang(
+        c_filename, ir_filename, flags=flags, cplusplus=cplusplus)
 
 
 def run_llvm_cbe(ir_filename, c_filename):
@@ -92,17 +98,24 @@ def get_test_name_from_filename(test_path):
     ids=lambda flags: ' '.join(flags)
 )
 @pytest.mark.parametrize(
-    'c_file',
-    collect_tests(TEST_DIR, ('.c', )),
+    'test_filename',
+    collect_tests(TEST_DIR, ('.c', '.cpp')),
     ids=get_test_name_from_filename,
 )
-def test_consistent_return_value(c_file, tmpdir, cflags):
-    regular_exe = compile_clang(c_file, tmpdir / 'regular.exe', flags=cflags)
+def test_consistent_return_value(test_filename, tmpdir, cflags):
+    cplusplus = test_filename.endswith('.cpp')
+
+    regular_exe = compile_clang(
+        test_filename,
+        tmpdir / 'regular.exe',
+        flags=cflags,
+        cplusplus=cplusplus)
     regular_retval = call([regular_exe])
     print('regular executable returned', regular_retval)
     assert regular_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
-    ir = compile_to_ir(c_file, tmpdir / 'ir.ll', flags=cflags)
+    ir = compile_to_ir(
+        test_filename, tmpdir / 'ir.ll', flags=cflags, cplusplus=cplusplus)
     cbe_c = run_llvm_cbe(ir, tmpdir / 'cbe.c')
     cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     cbe_retval = call([cbe_exe])
