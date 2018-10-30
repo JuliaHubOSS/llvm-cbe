@@ -1,4 +1,4 @@
-//===-- test_greater_than.c - LLVM C Backend test file --------------------===//
+//===---------------------- LLVM C Backend test file ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

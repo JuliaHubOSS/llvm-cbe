@@ -1,4 +1,4 @@
-//===-- test_two_dim_array.c - LLVM C Backend test file -------------------===//
+//===---------------------- LLVM C Backend test file ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

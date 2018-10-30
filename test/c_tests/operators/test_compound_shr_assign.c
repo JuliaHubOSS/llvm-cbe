@@ -1,4 +1,4 @@
-//===-- test_compound_shr_assign.c - LLVM C Backend test file -------------===//
+//===---------------------- LLVM C Backend test file ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

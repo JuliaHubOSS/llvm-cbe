@@ -1,4 +1,4 @@
-//===-- test_declare_unsigned_short.c - LLVM C Backend test file ----------===//
+//===---------------------- LLVM C Backend test file ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

@@ -1,4 +1,4 @@
-//===-- test_get_union_member.c - LLVM C Backend test file ----------------===//
+//===---------------------- LLVM C Backend test file ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
