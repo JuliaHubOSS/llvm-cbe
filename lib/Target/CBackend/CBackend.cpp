@@ -61,6 +61,15 @@ enum UnaryOps {
   BinaryNot,
 };
 
+
+#ifdef NDEBUG
+#define cwriter_assert(expr) do { } while (0)
+#else
+#define cwriter_assert(expr) \
+  if (!(expr)) { this->errorWithMessage(#expr); }
+#endif
+
+
 static bool isEmptyType(Type *Ty) {
     if (StructType *STy = dyn_cast<StructType>(Ty))
         return STy->getNumElements() == 0 ||
@@ -178,7 +187,7 @@ static std::string CBEMangle(const std::string &S) {
 raw_ostream &
 CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
-    assert(!isEmptyType(ST));
+    cwriter_assert(!isEmptyType(ST));
     TypedefDeclTypes.insert(Ty);
 
     if (!ST->isLiteral() && !ST->getName().empty())
@@ -202,7 +211,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
     if (NumBits == 1)
       return Out << "bool";
     else {
-      assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
+      cwriter_assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
       return Out << (isSigned?"i":"u") << NumBits;
     }
   }
@@ -218,7 +227,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::VectorTyID: {
     TypedefDeclTypes.insert(Ty);
     VectorType *VTy = cast<VectorType>(Ty);
-    assert(VTy->getNumElements() != 0);
+    cwriter_assert(VTy->getNumElements() != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
     return Out << "x" << VTy->getNumElements();
   }
@@ -226,7 +235,7 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
   case Type::ArrayTyID: {
     TypedefDeclTypes.insert(Ty);
     ArrayType *ATy = cast<ArrayType>(Ty);
-    assert(ATy->getNumElements() != 0);
+    cwriter_assert(ATy->getNumElements() != 0);
     printTypeString(Out, ATy->getElementType(), isSigned);
     return Out << "a" << ATy->getNumElements();
   }
@@ -235,12 +244,12 @@ CWriter::printTypeString(raw_ostream &Out, Type *Ty, bool isSigned) {
 #ifndef NDEBUG
     errs() << "Unknown primitive type: " << *Ty << "\n";
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("unknown primitive type");
   }
 }
 
 std::string CWriter::getStructName(StructType *ST) {
-  assert(ST->getNumElements() != 0);
+  cwriter_assert(ST->getNumElements() != 0);
   if (!ST->isLiteral() && !ST->getName().empty())
     return "struct l_struct_" + CBEMangle(ST->getName().str());
 
@@ -262,7 +271,7 @@ std::string CWriter::getArrayName(ArrayType *AT) {
     raw_string_ostream ArrayInnards(astr);
     // Arrays are wrapped in structs to allow them to have normal
     // value semantics (avoiding the array "decay").
-    assert(!isEmptyType(AT));
+    cwriter_assert(!isEmptyType(AT));
     printTypeName(ArrayInnards, AT->getElementType(), false);
     return "struct l_array_" + utostr(AT->getNumElements()) + '_' + CBEMangle(ArrayInnards.str());
 }
@@ -271,7 +280,7 @@ std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
     std::string astr;
     raw_string_ostream VectorInnards(astr);
     // Vectors are handled like arrays
-    assert(!isEmptyType(VT));
+    cwriter_assert(!isEmptyType(VT));
     if (Aligned)
       Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
     printTypeName(VectorInnards, VT->getElementType(), false);
@@ -311,6 +320,7 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
 #ifndef NDEBUG
     errs() << "Invalid icmp predicate!" << P << "\n";
 #endif
+    // TODO: cwriter_assert
     llvm_unreachable(0);
   }
 }
@@ -318,7 +328,7 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
 
 raw_ostream &
 CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
-  assert((Ty->isSingleValueType() || Ty->isVoidTy()) &&
+  cwriter_assert((Ty->isSingleValueType() || Ty->isVoidTy()) &&
          "Invalid type for printSimpleType");
   switch (Ty->getTypeID()) {
   case Type::VoidTyID:   return Out << "void";
@@ -335,7 +345,7 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
     else if (NumBits <= 64)
       return Out << (isSigned?"int64_t":"uint64_t");
     else {
-      assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
+      cwriter_assert(NumBits <= 128 && "Bit widths > 128 not implemented yet");
       return Out << (isSigned?"int128_t":"uint128_t");
     }
   }
@@ -352,9 +362,9 @@ CWriter::printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned) {
 
   default:
 #ifndef NDEBUG
-    errs() << "Unknown primitive type: " << *Ty << "\n";
+    errs() << "Unknown primitive type: " << *Ty;
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("unknown primitive type");
   }
 }
 
@@ -399,7 +409,7 @@ raw_ostream &CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned, s
 #ifndef NDEBUG
     errs() << "Unexpected type: " << *Ty << "\n";
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("unexpected type");
   }
 }
 
@@ -486,7 +496,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 #ifndef NDEBUG
     errs() << "Unhandled calling convention " << Attrs.second << "\n";
 #endif
-    assert(0 && "Encountered Unhandled Calling Convention");
+    errorWithMessage("Encountered Unhandled Calling Convention");
     break;
   }
   Out << ' ' << Name << '(';
@@ -499,7 +509,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
   // If this is a struct-return function, don't print the hidden
   // struct-return argument.
   if (isStructReturn) {
-    assert(I != E && "Invalid struct return function!");
+    cwriter_assert(I != E && "Invalid struct return function!");
     ++I;
     ++Idx;
     if (ArgList) ++ArgName;
@@ -508,7 +518,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
   for (; I != E; ++I) {
     Type *ArgTy = *I;
     if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
-      assert(ArgTy->isPointerTy());
+      cwriter_assert(ArgTy->isPointerTy());
       ArgTy = cast<PointerType>(ArgTy)->getElementType();
     }
     if (PrintedArg)
@@ -537,7 +547,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 }
 
 raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
-  assert(!isEmptyType(ATy));
+  cwriter_assert(!isEmptyType(ATy));
   // Arrays are wrapped in structs to allow them to have normal
   // value semantics (avoiding the array "decay").
   Out << getArrayName(ATy) << " {\n  ";
@@ -547,7 +557,7 @@ raw_ostream &CWriter::printArrayDeclaration(raw_ostream &Out, ArrayType *ATy) {
 }
 
 raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out, VectorType *VTy) {
-  assert(!isEmptyType(VTy));
+  cwriter_assert(!isEmptyType(VTy));
   // Vectors are printed like arrays
   Out << getVectorName(VTy, false) << " {\n  ";
   printTypeName(Out, VTy->getElementType());
@@ -719,7 +729,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
       Out << ')';
       break;
     default:
-      llvm_unreachable("Invalid cast opcode");
+      errorWithMessage("Invalid cast opcode");
   }
 
   // Print the source type cast
@@ -749,7 +759,7 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
     case Instruction::FPToUI:
       break; // These don't need a source cast.
     default:
-      llvm_unreachable("Invalid cast opcode");
+      errorWithMessage("Invalid cast opcode");
   }
 }
 
@@ -762,9 +772,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         && !CE->getType()->isPointerTy())
     {
 #ifndef NDEBUG
-      errs() << "Unsupported constant type " << *CE->getType() << " in: " << *CE << "\n";
+      errs() << "Unsupported constant type " << *CE->getType()
+        << " in: " << *CE
+        << "\n";
 #endif
-      llvm_unreachable("Unsupported constant type");
+      errorWithMessage("Unsupported constant type");
     }
     switch (CE->getOpcode()) {
     case Instruction::Trunc:
@@ -866,10 +878,10 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
           case ICmpInst::ICMP_UGT: Out << " > "; break;
           case ICmpInst::ICMP_SGE:
           case ICmpInst::ICMP_UGE: Out << " >= "; break;
-          default: llvm_unreachable("Illegal ICmp predicate");
+          default: errorWithMessage("Illegal ICmp predicate");
         }
         break;
-      default: llvm_unreachable("Illegal opcode here!");
+      default: errorWithMessage("Illegal opcode here!");
       }
       printConstantWithCast(CE->getOperand(1), CE->getOpcode());
       if (NeedsClosingParens)
@@ -901,7 +913,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       errs() << "CWriter Error: Unhandled constant expression: "
            << *CE << "\n";
 #endif
-      llvm_unreachable(0);
+      errorWithMessage("unhandled constant expression");
     }
   } else if (isa<UndefValue>(CPV) && CPV->getType()->isSingleValueType()) {
     if (CPV->getType()->isVectorTy()) {
@@ -910,7 +922,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         return;
       }
       VectorType *VT = cast<VectorType>(CPV->getType());
-      assert(!isEmptyType(VT));
+      cwriter_assert(!isEmptyType(VT));
       CtorDeclTypes.insert(VT);
       Out << "/*undef*/llvm_ctor_";
       printTypeString(Out, VT, false);
@@ -1049,7 +1061,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   case Type::ArrayTyID: {
     if (printConstantString(CPV, Context)) break;
     ArrayType *AT = cast<ArrayType>(CPV->getType());
-    assert(AT->getNumElements() != 0 && !isEmptyType(AT));
+    cwriter_assert(AT->getNumElements() != 0 && !isEmptyType(AT));
     if (Context != ContextStatic) {
       CtorDeclTypes.insert(AT);
       Out << "llvm_ctor_";
@@ -1065,7 +1077,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
                  dyn_cast<ConstantDataSequential>(CPV)) {
       printConstantDataSequential(CDS, Context);
     } else {
-      assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
+      cwriter_assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       Constant *CZ = Constant::getNullValue(AT->getElementType());
       printConstant(CZ, Context);
       for (unsigned i = 1, e = AT->getNumElements(); i != e; ++i) {
@@ -1079,7 +1091,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 
   case Type::VectorTyID: {
     VectorType *VT = cast<VectorType>(CPV->getType());
-    assert(VT->getNumElements() != 0 && !isEmptyType(VT));
+    cwriter_assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (Context != ContextStatic) {
       CtorDeclTypes.insert(VT);
       Out << "llvm_ctor_";
@@ -1095,7 +1107,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
                dyn_cast<ConstantDataSequential>(CPV)) {
       printConstantDataSequential(CDS, Context);
     } else {
-      assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
+      cwriter_assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       Constant *CZ = Constant::getNullValue(VT->getElementType());
       printConstant(CZ, Context);
       for (unsigned i = 1, e = VT->getNumElements(); i != e; ++i) {
@@ -1109,7 +1121,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 
   case Type::StructTyID: {
     StructType *ST = cast<StructType>(CPV->getType());
-    assert(!isEmptyType(ST));
+    cwriter_assert(!isEmptyType(ST));
     if (Context != ContextStatic) {
       CtorDeclTypes.insert(ST);
       Out << "llvm_ctor_";
@@ -1129,7 +1141,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         printConstant(Constant::getNullValue(ElTy), Context);
         printed = true;
       }
-      assert(printed);
+      cwriter_assert(printed);
     } else {
       bool printed = false;
       for (unsigned i = 0, e = CPV->getNumOperands(); i != e; ++i) {
@@ -1139,7 +1151,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         printConstant(C, Context);
         printed = true;
       }
-      assert(printed);
+      cwriter_assert(printed);
     }
     Out << (Context == ContextStatic ? " }" : ")");
     break;
@@ -1160,7 +1172,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 #ifndef NDEBUG
     errs() << "Unknown constant type: " << *CPV << "\n";
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("unknown constant type");
   }
 }
 
@@ -1224,9 +1236,11 @@ void CWriter::printConstantWithCast(Constant* CPV, unsigned Opcode) {
       && !OpTy->isFloatingPointTy())
   {
 #ifndef NDEBUG
-    errs() << "Unsupported 'constant with cast' type " << *OpTy << " in: " << *CPV << "\n";
+    errs() << "Unsupported 'constant with cast' type " << *OpTy
+      << " in: " << *CPV << "\n"
+      << "\n";
 #endif
-    llvm_unreachable("Unsupported 'constant with cast' type");
+    errorWithMessage("Unsupported 'constant with cast' type");
   }
 
   // Indicate whether to do the cast or not.
@@ -2027,7 +2041,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Alias Declarations */\n";
     for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
          I != E; ++I) {
-      assert(!I->isDeclaration() && !isEmptyType(I->getType()->getPointerElementType()));
+      cwriter_assert(!I->isDeclaration() && !isEmptyType(I->getType()->getPointerElementType()));
       if (I->hasLocalLinkage())
         continue; // Internal Global
 
@@ -2188,7 +2202,7 @@ void CWriter::generateHeader(Module &M) {
 #ifndef NDEBUG
           errs() << "Invalid icmp predicate!" << (*it).first << "\n";
 #endif
-          llvm_unreachable(0);
+          errorWithMessage("invalid icmp predicate");
         }
         Out << "r.vector[" << n << "];\n";
       }
@@ -2260,7 +2274,7 @@ void CWriter::generateHeader(Module &M) {
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
       unsigned n, l = DstTy->getVectorNumElements();
-      assert(SrcTy->getVectorNumElements() == l);
+      cwriter_assert(SrcTy->getVectorNumElements() == l);
       for (n = 0; n < l; n++) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
@@ -2285,7 +2299,7 @@ void CWriter::generateHeader(Module &M) {
       case Instruction::SExt: Out << "SExt"; break;
       case Instruction::FPToSI: Out << "FPtoSI"; break;
       default:
-        llvm_unreachable("Invalid cast opcode for i128");
+        errorWithMessage("Invalid cast opcode for i128");
       }
       Out << "(" << SrcTy->getPrimitiveSizeInBits() << ", &in, "
                  << DstTy->getPrimitiveSizeInBits() << ", &out);\n";
@@ -2391,7 +2405,7 @@ void CWriter::generateHeader(Module &M) {
 #ifndef NDEBUG
              errs() << "Invalid operator type!" << opcode << "\n";
 #endif
-             llvm_unreachable(0);
+             errorWithMessage("invalid operator type");
           }
           Out << "b.vector[" << n << "]";
         }
@@ -2429,7 +2443,7 @@ void CWriter::generateHeader(Module &M) {
 #ifndef NDEBUG
            errs() << "Invalid operator type!" << opcode << "\n";
 #endif
-           llvm_unreachable(0);
+           errorWithMessage("invalid operator type");
         }
         Out << "b;\n";
       }
@@ -2485,7 +2499,7 @@ void CWriter::generateHeader(Module &M) {
 #ifndef NDEBUG
            errs() << "Invalid operator type!" << opcode << "\n";
 #endif
-           llvm_unreachable(0);
+           errorWithMessage("invalid operator type");
         }
         Out << "(16, &a, &b, &r);\n";
       }
@@ -2532,7 +2546,7 @@ void CWriter::generateHeader(Module &M) {
 #ifndef NDEBUG
            errs() << "Invalid operator type!" << opcode << "\n";
 #endif
-           llvm_unreachable(0);
+           errorWithMessage("invalid operator type");
         }
         Out << "b";
         if (mask)
@@ -2589,7 +2603,7 @@ void CWriter::generateHeader(Module &M) {
         else if (VTy)
           Out << "\n  r.vector[" << i << "] = x" << i << ";";
         else
-          assert(0);
+          cwriter_assert(0);
     }
     Out << "\n  return r;\n}\n";
   }
@@ -2738,7 +2752,7 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
     << "}; /* Long double constant */\n";
 
   } else {
-    llvm_unreachable("Unknown float type!");
+    errorWithMessage("Unknown float type!");
   }
 }
 
@@ -2877,7 +2891,7 @@ void CWriter::printFunction(Function &F) {
   /// isStructReturn - Should this function actually return a struct by-value?
   bool isStructReturn = F.hasStructRetAttr();
 
-  assert(!F.isDeclaration());
+  cwriter_assert(!F.isDeclaration());
   if (F.hasDLLImportStorageClass()) Out << "__declspec(dllimport) ";
   if (F.hasDLLExportStorageClass()) Out << "__declspec(dllexport) ";
   if (F.hasLocalLinkage()) Out << "static ";
@@ -3010,6 +3024,8 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
 // necessary because we use the instruction classes as opaque types...
 //
 void CWriter::visitReturnInst(ReturnInst &I) {
+  CurInstr = &I;
+
   // If this is a struct return function, return the temporary struct.
   bool isStructReturn = I.getParent()->getParent()->hasStructRetAttr();
 
@@ -3035,6 +3051,8 @@ void CWriter::visitReturnInst(ReturnInst &I) {
 }
 
 void CWriter::visitSwitchInst(SwitchInst &SI) {
+  CurInstr = &SI;
+
   Value* Cond = SI.getCondition();
   unsigned NumBits = cast<IntegerType>(Cond->getType())->getBitWidth();
 
@@ -3088,12 +3106,16 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
 }
 
 void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
+  CurInstr = &IBI;
+
   Out << "  goto *(void*)(";
   writeOperand(IBI.getOperand(0));
   Out << ");\n";
 }
 
 void CWriter::visitUnreachableInst(UnreachableInst &I) {
+  CurInstr = &I;
+
   Out << "  __builtin_unreachable();\n\n";
 }
 
@@ -3140,6 +3162,7 @@ void CWriter::printBranchToBlock(BasicBlock *CurBB, BasicBlock *Succ,
 // that immediately succeeds the current one.
 //
 void CWriter::visitBranchInst(BranchInst &I) {
+  CurInstr = &I;
 
   if (I.isConditional()) {
     if (isGotoCodeNecessary(I.getParent(), I.getSuccessor(0))) {
@@ -3177,13 +3200,17 @@ void CWriter::visitBranchInst(BranchInst &I) {
 // blocks.  We now need to copy these temporary values into the REAL value for
 // the PHI.
 void CWriter::visitPHINode(PHINode &I) {
+  CurInstr = &I;
+
   writeOperand(&I);
   Out << "__PHI_TEMPORARY";
 }
 
 void CWriter::visitBinaryOperator(BinaryOperator &I) {
+  CurInstr = &I;
+
   // binary instructions, shift instructions, setCond instructions.
-  assert(!I.getType()->isPointerTy());
+  cwriter_assert(!I.getType()->isPointerTy());
 
   // We must cast the results of binary operations which might be promoted.
   bool needsCast = false;
@@ -3295,7 +3322,7 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
 #ifndef NDEBUG
        errs() << "Invalid operator type!" << I << "\n";
 #endif
-       llvm_unreachable(0);
+       errorWithMessage("invalid operator type");
     }
 
     writeOperandWithCast(I.getOperand(1), I.getOpcode());
@@ -3305,6 +3332,8 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
 }
 
 void CWriter::visitICmpInst(ICmpInst &I) {
+  CurInstr = &I;
+
   if (I.getType()->isVectorTy()
       || I.getOperand(0)->getType()->getPrimitiveSizeInBits() > 64) {
     Out << "llvm_icmp_" << getCmpPredicateName(I.getPredicate()) << "_";
@@ -3345,7 +3374,7 @@ void CWriter::visitICmpInst(ICmpInst &I) {
 #ifndef NDEBUG
     errs() << "Invalid icmp predicate!" << I << "\n";
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("invalid icmp predicate");
   }
 
   writeOperandWithCast(I.getOperand(1), I);
@@ -3354,6 +3383,8 @@ void CWriter::visitICmpInst(ICmpInst &I) {
 }
 
 void CWriter::visitFCmpInst(FCmpInst &I) {
+  CurInstr = &I;
+
   if (I.getType()->isVectorTy()) {
     Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "_";
     printTypeString(Out, I.getOperand(0)->getType(), I.isSigned());
@@ -3394,6 +3425,8 @@ static const char * getFloatBitCastField(Type *Ty) {
 }
 
 void CWriter::visitCastInst(CastInst &I) {
+  CurInstr = &I;
+
   Type *DstTy = I.getType();
   Type *SrcTy = I.getOperand(0)->getType();
 
@@ -3445,6 +3478,8 @@ void CWriter::visitCastInst(CastInst &I) {
 }
 
 void CWriter::visitSelectInst(SelectInst &I) {
+  CurInstr = &I;
+
   Out << "llvm_select_";
   printTypeString(Out, I.getType(), false);
   Out << "(";
@@ -3455,7 +3490,7 @@ void CWriter::visitSelectInst(SelectInst &I) {
   writeOperand(I.getFalseValue(), ContextCasted);
   Out << ")";
   SelectDeclTypes.insert(I.getType());
-  assert(I.getCondition()->getType()->isVectorTy() == I.getType()->isVectorTy()); // TODO: might be scalarty == vectorty
+  cwriter_assert(I.getCondition()->getType()->isVectorTy() == I.getType()->isVectorTy()); // TODO: might be scalarty == vectorty
 }
 
 // Returns the macro name or value of the max or min of an integer type
@@ -3510,7 +3545,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
     isSigned = true;
     break;
   }
-  assert(numParams > 0 && numParams < 26);
+  cwriter_assert(numParams > 0 && numParams < 26);
 
   if (isa<VectorType>(retT)) {
     // this looks general, but is only actually used for ctpop, ctlz, cttz
@@ -3535,10 +3570,10 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
   Out << "(";
   for (i = 0; i < numParams; i++) {
     switch (Opcode) {
-    // optional intrinsic validity assertion checks
+    // optional intrinsic validity cwriter_assertion checks
     default:
       // default case: assume all parameters must have the same type
-      assert(elemT == funT->getParamType(i));
+      cwriter_assert(elemT == funT->getParamType(i));
       break;
     case Intrinsic::ctlz:
     case Intrinsic::cttz:
@@ -3567,19 +3602,19 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
   }
   else if (elemIntT) {
     // handle integer ops
-    assert(isSupportedIntegerSize(*elemIntT) &&
+    cwriter_assert(isSupportedIntegerSize(*elemIntT) &&
            "CBackend does not support arbitrary size integers.");
     switch (Opcode) {
     default:
 #ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
-      llvm_unreachable(0);
+      errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::uadd_with_overflow:
       //   r.field0 = a + b;
       //   r.field1 = (r.field0 < a);
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a + b;\n";
       Out << "  r.field1 = (a >= -b);\n";
       break;
@@ -3588,7 +3623,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       //   r.field0 = a + b;
       //   r.field1 = (b > 0 && a > XX_MAX - b) ||
       //              (b < 0 && a < XX_MIN - b);
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a + b;\n";
       Out << "  r.field1 = (b >= 0 ? a > ";
       printLimitValue(*elemIntT, true, true, Out);
@@ -3598,13 +3633,13 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
 
     case Intrinsic::usub_with_overflow:
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a - b;\n";
       Out << "  r.field1 = (a < b);\n";
       break;
 
     case Intrinsic::ssub_with_overflow:
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a - b;\n";
       Out << "  r.field1 = (b <= 0 ? a > ";
       printLimitValue(*elemIntT, true, true, Out);
@@ -3614,22 +3649,22 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
 
     case Intrinsic::umul_with_overflow:
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field1 = LLVMMul_uov(8 * sizeof(a), &a, &b, &r.field0);\n";
       break;
 
     case Intrinsic::smul_with_overflow:
-      assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
       break;
 
     case Intrinsic::bswap:
-      assert(retT == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  LLVMFlipAllBits(8 * sizeof(a), &a, &r);\n";
       break;
 
     case Intrinsic::ctpop:
-      assert(retT == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = ";
       if (retT->getPrimitiveSizeInBits() > 64)
         Out << "llvm_ctor_u128(0, ";
@@ -3640,7 +3675,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
 
     case Intrinsic::ctlz:
-      assert(retT == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  (void)b;\n  r = ";
       if (retT->getPrimitiveSizeInBits() > 64)
         Out << "llvm_ctor_u128(0, ";
@@ -3651,7 +3686,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
       break;
 
     case Intrinsic::cttz:
-      assert(retT == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  (void)b;\n  r = ";
       if (retT->getPrimitiveSizeInBits() > 64)
         Out << "llvm_ctor_u128(0, ";
@@ -3665,7 +3700,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
   } else {
     // handle FP ops
     const char *suffix;
-    assert(retT == elemT);
+    cwriter_assert(retT == elemT);
     if (elemT->isFloatTy() || elemT->isHalfTy()) {
         suffix = "f";
     } else if (elemT->isDoubleTy()) {
@@ -3678,7 +3713,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
 #ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
-      llvm_unreachable(0);
+      errorWithMessage("unsupported instrinsic");
     }
 
     switch (Opcode) {
@@ -3686,7 +3721,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT,
 #ifndef NDEBUG
       errs() << "Unsupported Intrinsic!" << Opcode << "\n";
 #endif
-      llvm_unreachable(0);
+      errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::ceil:
       Out << "  r = ceil" << suffix << "(a);\n";
@@ -3813,6 +3848,8 @@ void CWriter::lowerIntrinsics(Function &F) {
 }
 
 void CWriter::visitCallInst(CallInst &I) {
+  CurInstr = &I;
+
   if (isa<InlineAsm>(I.getCalledValue()))
     return visitInlineAsm(I);
 
@@ -3922,12 +3959,14 @@ void CWriter::visitCallInst(CallInst &I) {
 /// visitBuiltinCall - Handle the call to the specified builtin.  Returns true
 /// if the entire call is handled, return false if it wasn't handled
 bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
+  CurInstr = &I;
+
   switch (ID) {
   default: {
 #ifndef NDEBUG
     errs() << "Unknown LLVM intrinsic! " << I << "\n";
 #endif
-    llvm_unreachable(0);
+    errorWithMessage("unknown llvm instrinsic");
     return false;
   }
   case Intrinsic::dbg_value:
@@ -4025,7 +4064,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << ')';
     // Multiple GCC builtins multiplex onto this intrinsic.
     switch (cast<ConstantInt>(I.getArgOperand(2))->getZExtValue()) {
-    default: llvm_unreachable("Invalid llvm.x86.sse.cmp!");
+    default: errorWithMessage("Invalid llvm.x86.sse.cmp!");
     case 0: Out << "__builtin_ia32_cmpeq"; break;
     case 1: Out << "__builtin_ia32_cmplt"; break;
     case 2: Out << "__builtin_ia32_cmple"; break;
@@ -4095,7 +4134,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
 std::string CWriter::InterpretASMConstraint(InlineAsm::ConstraintInfo& c) {
     return TargetLowering::AsmOperandInfo(c).ConstraintCode;
 #if 0
-  assert(c.Codes.size() == 1 && "Too many asm constraint codes to handle");
+  cwriter_assert(c.Codes.size() == 1 && "Too many asm constraint codes to handle");
 
   // Grab the translation table from MCAsmInfo if it exists.
   const MCRegisterInfo *MRI;
@@ -4157,6 +4196,8 @@ static std::string gccifyAsm(std::string asmstr) {
 //TODO: assumptions about what consume arguments from the call are likely wrong
 //      handle communitivity
 void CWriter::visitInlineAsm(CallInst &CI) {
+  CurInstr = &CI;
+
   InlineAsm* as = cast<InlineAsm>(CI.getCalledValue());
   InlineAsm::ConstraintInfoVector Constraints = as->ParseConstraints();
 
@@ -4186,7 +4227,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
       continue;  // Ignore non-output constraints.
     }
 
-    assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
+    cwriter_assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
     std::string C = InterpretASMConstraint(*I);
     if (C.empty()) continue;
 
@@ -4227,7 +4268,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
       continue;  // Ignore non-input constraints.
     }
 
-    assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
+    cwriter_assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
     std::string C = InterpretASMConstraint(*I);
     if (C.empty()) continue;
 
@@ -4236,7 +4277,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
       IsFirst = false;
     }
 
-    assert(ValueCount >= ResultVals.size() && "Input can't refer to result");
+    cwriter_assert(ValueCount >= ResultVals.size() && "Input can't refer to result");
     Value *SrcVal = CI.getArgOperand(ValueCount-ResultVals.size());
 
     Out << "\"" << C << "\"(";
@@ -4254,7 +4295,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
     if (I->Type != InlineAsm::isClobber)
       continue;  // Ignore non-input constraints.
 
-    assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
+    cwriter_assert(I->Codes.size() == 1 && "Too many asm constraint codes to handle");
     std::string C = InterpretASMConstraint(*I);
     if (C.empty()) continue;
 
@@ -4270,6 +4311,8 @@ void CWriter::visitInlineAsm(CallInst &CI) {
 }
 
 void CWriter::visitAllocaInst(AllocaInst &I) {
+  CurInstr = &I;
+
   Out << '(';
   printTypeName(Out, I.getType());
   Out << ") alloca(sizeof(";
@@ -4344,7 +4387,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
 
   for (; I != E; ++I) {
-    assert(I.getOperand()->getType()->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid, but we don't support it here
+    cwriter_assert(I.getOperand()->getType()->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid, but we don't support it here
     if (I.isStruct()) {
       Out << ".field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
     } else if (IntoT->isArrayTy()) {
@@ -4408,12 +4451,16 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
 }
 
 void CWriter::visitLoadInst(LoadInst &I) {
+  CurInstr = &I;
+
   writeMemoryAccess(I.getOperand(0), I.getType(), I.isVolatile(),
                     I.getAlignment());
 
 }
 
 void CWriter::visitStoreInst(StoreInst &I) {
+  CurInstr = &I;
+
   writeMemoryAccess(I.getPointerOperand(), I.getOperand(0)->getType(),
                     I.isVolatile(), I.getAlignment());
   Out << " = ";
@@ -4432,11 +4479,15 @@ void CWriter::visitStoreInst(StoreInst &I) {
 }
 
 void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
+  CurInstr = &I;
+
   printGEPExpression(I.getPointerOperand(), gep_type_begin(I),
                      gep_type_end(I));
 }
 
 void CWriter::visitVAArgInst(VAArgInst &I) {
+  CurInstr = &I;
+
   Out << "va_arg(*(va_list*)";
   writeOperand(I.getOperand(0), ContextCasted);
   Out << ", ";
@@ -4445,10 +4496,12 @@ void CWriter::visitVAArgInst(VAArgInst &I) {
 }
 
 void CWriter::visitInsertElementInst(InsertElementInst &I) {
+  CurInstr = &I;
+
   // Start by copying the entire aggregate value into the result variable.
   writeOperand(I.getOperand(0));
   Type *EltTy = I.getType()->getElementType();
-  assert(I.getOperand(1)->getType() == EltTy);
+  cwriter_assert(I.getOperand(1)->getType() == EltTy);
   if (isEmptyType(EltTy)) return;
 
   // Then do the insert to update the field.
@@ -4460,7 +4513,9 @@ void CWriter::visitInsertElementInst(InsertElementInst &I) {
 }
 
 void CWriter::visitExtractElementInst(ExtractElementInst &I) {
-  assert(!isEmptyType(I.getType()));
+  CurInstr = &I;
+
+  cwriter_assert(!isEmptyType(I.getType()));
   if (isa<UndefValue>(I.getOperand(0))) {
     Out << "(";
     printTypeName(Out, I.getType());
@@ -4477,11 +4532,13 @@ void CWriter::visitExtractElementInst(ExtractElementInst &I) {
 // <result> = shufflevector <n x <ty>> <v1>, <n x <ty>> <v2>, <m x i32> <mask>
 // ; yields <m x <ty>>
 void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
+  CurInstr = &SVI;
+
   VectorType *VT = SVI.getType();
   Type *EltTy = VT->getElementType();
   VectorType *InputVT = cast<VectorType>(SVI.getOperand(0)->getType());
-  assert(!isEmptyType(VT));
-  assert(InputVT->getElementType() == VT->getElementType());
+  cwriter_assert(!isEmptyType(VT));
+  cwriter_assert(InputVT->getElementType() == VT->getElementType());
 
   CtorDeclTypes.insert(VT);
   Out << "llvm_ctor_";
@@ -4523,6 +4580,8 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
 }
 
 void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
+  CurInstr = &IVI;
+
   // Start by copying the entire aggregate value into the result variable.
   writeOperand(IVI.getOperand(0));
   Type *EltTy = IVI.getOperand(1)->getType();
@@ -4536,7 +4595,7 @@ void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
     Type *IndexedTy =
       ExtractValueInst::getIndexedType(IVI.getOperand(0)->getType(),
                                        makeArrayRef(b, i));
-    assert(IndexedTy);
+    cwriter_assert(IndexedTy);
     if (IndexedTy->isArrayTy())
       Out << ".array[" << *i << "]";
     else
@@ -4547,6 +4606,8 @@ void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
 }
 
 void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
+  CurInstr = &EVI;
+
   Out << "(";
   if (isa<UndefValue>(EVI.getOperand(0))) {
     Out << "(";
@@ -4566,6 +4627,22 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
     }
   }
   Out << ")";
+}
+
+LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
+#ifndef NDEBUG
+  errs() << message;
+  errs() << " in: ";
+  if (CurInstr != nullptr) {
+    errs() << *CurInstr << " @ ";
+    CurInstr->getDebugLoc().print(errs());
+  } else {
+    errs() << "<unknown instruction>";
+  }
+  errs() << "\n";
+#endif
+
+  llvm_unreachable(message);
 }
 
 //===----------------------------------------------------------------------===//

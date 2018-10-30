@@ -58,6 +58,7 @@ namespace {
     const MCObjectFileInfo *MOFI;
     MCContext *TCtx;
     const DataLayout* TD;
+    const Instruction *CurInstr;
 
     std::map<const ConstantFP *, unsigned> FPConstantMap;
     std::set<const Argument*> ByValParams;
@@ -92,6 +93,7 @@ namespace {
     explicit CWriter(raw_pwrite_stream &o)
       : FunctionPass(ID), Out(_Out), FileOut(o), IL(0), LI(0),
         TheModule(0), TAsm(0), MRI(0), MOFI(0), TCtx(0), TD(0),
+        CurInstr(nullptr),
         OpaqueCounter(0), NextAnonValueNumber(0),
         NextAnonStructNumber(0), NextFunctionNumber(0) {
       FPCounter = 0;
@@ -238,15 +240,15 @@ namespace {
     void visitExtractValueInst(ExtractValueInst &I);
 
     void visitInstruction(Instruction &I) {
-#ifndef NDEBUG
-      errs() << "C Writer does not know about " << I << "\n";
-#endif
-      llvm_unreachable("unsupported LLVM instruction");
+      CurInstr = &I;
+      errorWithMessage("unsupported LLVM instruction");
     }
 
     void outputLValue(Instruction *I) {
       Out << "  " << GetValueName(I) << " = ";
     }
+
+    LLVM_ATTRIBUTE_NORETURN void errorWithMessage(const char *message);
 
     bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
     void printPHICopiesForSuccessor(BasicBlock *CurBlock,
