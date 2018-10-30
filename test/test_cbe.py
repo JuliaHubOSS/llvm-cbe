@@ -108,3 +108,7 @@ def test_consistent_return_value(c_file, tmpdir, cflags):
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
     assert cbe_retval == regular_retval
+
+
+if __name__ == '__main__':
+    raise SystemExit("run me using pytest")
