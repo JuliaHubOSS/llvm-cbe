@@ -128,6 +128,12 @@ def get_test_name_from_filename(test_path):
 def test_consistent_return_value(test_filename, tmpdir, cflags):
     cplusplus = test_filename.endswith('.cpp')
 
+    # make sure CBE doesn't have any errors before trying to compile
+    # executables
+    ir = compile_to_ir(
+        test_filename, tmpdir / 'ir.ll', flags=cflags, cplusplus=cplusplus)
+    cbe_c = run_llvm_cbe(ir, tmpdir / 'cbe.c')
+
     regular_exe = compile_clang(
         test_filename,
         tmpdir / 'regular.exe',
@@ -137,9 +143,6 @@ def test_consistent_return_value(test_filename, tmpdir, cflags):
     print('regular executable returned', regular_retval)
     assert regular_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
-    ir = compile_to_ir(
-        test_filename, tmpdir / 'ir.ll', flags=cflags, cplusplus=cplusplus)
-    cbe_c = run_llvm_cbe(ir, tmpdir / 'cbe.c')
     cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
