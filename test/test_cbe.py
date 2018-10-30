@@ -17,6 +17,7 @@ LLVM_CBE_PATH = os.path.join(LLVM_TOOL_DIR, 'llvm-cbe')
 
 COMMON_CFLAGS = [
     '-Iinclude/',
+    '-g',
     '-Wall',
     '-Wno-unused-function',
     '-Wno-unused-variable',
