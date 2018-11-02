@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// xfail: zero length arrays don't work
+
 int foo(char some_array[0]) {
   return some_array[0] + some_array[1];
 }

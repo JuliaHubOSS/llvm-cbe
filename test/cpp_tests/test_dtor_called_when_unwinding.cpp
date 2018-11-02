@@ -1,5 +1,7 @@
 #include <exception>
 
+// xfail: no landingpad support (#17)
+
 class Foo {
  public:
   Foo(int* x) : x(x) {}

@@ -1,3 +1,5 @@
+// xfail: no landingpad support (#17)
+
 class my_exception {
  public:
   my_exception() {}

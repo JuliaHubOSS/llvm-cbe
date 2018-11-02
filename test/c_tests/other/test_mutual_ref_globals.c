@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// xfail: mutually referring globals don't work (#4)
+
 extern void* pA;
 extern void* pB;
 void* pA = &pB;

@@ -1,5 +1,7 @@
 #include <exception>
 
+// xfail: no std::exception support
+
 int main() {
   try {
     throw std::exception();

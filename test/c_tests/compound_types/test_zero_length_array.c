@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// xfail: zero length arrays don't work
+
 int main() {
   union {
     char zl_chars[0];

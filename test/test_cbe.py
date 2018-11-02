@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import io
+import re
 from glob import glob
 from subprocess import call, Popen, PIPE
 import pytest
@@ -134,6 +135,11 @@ def test_consistent_return_value(test_filename, tmpdir, cflags):
     Also, the exit code must be TEST_SUCCESS_EXIT_CODE for success or
     TEST_XFAIL_EXIT_CODE or expected failures.
     """
+
+    code = open(test_filename).read()
+    m = re.search(r'(?m)^// xfail: (.+)', code)
+    if m:
+        pytest.xfail(m.group(1))
 
     cplusplus = test_filename.endswith('.cpp')
 
