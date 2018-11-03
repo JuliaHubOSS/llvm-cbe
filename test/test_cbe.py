@@ -14,6 +14,7 @@ LLVM_TOOL_DIR = os.environ.get(
     os.path.join(TEST_DIR, '..', '..', '..', 'build', 'bin'))
 
 LLVM_CBE_PATH = os.path.join(LLVM_TOOL_DIR, 'llvm-cbe')
+LLI_PATH = os.path.join(LLVM_TOOL_DIR, 'lli')
 
 
 COMMON_CFLAGS = [
@@ -117,6 +118,13 @@ def get_test_name_from_filename(test_path):
     return os.path.splitext(os.path.basename(test_path))[0]
 
 
+def check_xfail(test_path):
+    code = open(test_path).read()
+    m = re.search(r'(?m)^// xfail: (.+)', code)
+    if m:
+        pytest.xfail(m.group(1))
+
+
 @pytest.mark.parametrize(
     'cflags',
     [['-O0'], ['-O1'], ['-O2'], ['-O3']],
@@ -127,7 +135,7 @@ def get_test_name_from_filename(test_path):
     collect_tests(TEST_DIR, ('.c', '.cpp')),
     ids=get_test_name_from_filename,
 )
-def test_consistent_return_value(test_filename, tmpdir, cflags):
+def test_consistent_return_value_c(test_filename, tmpdir, cflags):
     """
     Compile and execute a C or C++ file with clang, and compare its exit code
     with the exit code when compiled with llvm-cbe followed by gcc.
@@ -136,10 +144,7 @@ def test_consistent_return_value(test_filename, tmpdir, cflags):
     TEST_XFAIL_EXIT_CODE or expected failures.
     """
 
-    code = open(test_filename).read()
-    m = re.search(r'(?m)^// xfail: (.+)', code)
-    if m:
-        pytest.xfail(m.group(1))
+    check_xfail(test_filename)
 
     cplusplus = test_filename.endswith('.cpp')
 
@@ -162,6 +167,33 @@ def test_consistent_return_value(test_filename, tmpdir, cflags):
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
     assert cbe_retval == regular_retval
+
+
+@pytest.mark.parametrize(
+    'test_filename',
+    collect_tests(TEST_DIR, ('.ll', )),
+    ids=get_test_name_from_filename,
+)
+def test_consistent_return_value_ll(test_filename, tmpdir):
+    """
+    Execute an LLVM IR file with lli, and compare its exit code with the exit
+    code when compiled with llvm-cbe followed by gcc.
+
+    Also, the exit code must be TEST_SUCCESS_EXIT_CODE for success or
+    TEST_XFAIL_EXIT_CODE or expected failures.
+    """
+
+    check_xfail(test_filename)
+
+    lli_retval = call([LLI_PATH, test_filename])
+    print('lli exit code was', lli_retval)
+    assert lli_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
+
+    cbe_c = run_llvm_cbe(test_filename, tmpdir / 'cbe.c')
+    cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe')
+    cbe_retval = call([cbe_exe])
+    print('cbe output returned', cbe_retval)
+    assert cbe_retval == lli_retval
 
 
 if __name__ == '__main__':
