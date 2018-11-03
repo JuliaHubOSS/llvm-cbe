@@ -2803,23 +2803,18 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   Out << "\n/* Function definitions */\n";
 
-  for (DenseMap<std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID> >, unsigned>::iterator
-       I = UnnamedFunctionIDs.begin(), E = UnnamedFunctionIDs.end();
-       I != E; ++I) {
+  for (auto I: UnnamedFunctionIDs) {
     Out << '\n';
-    std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID> > F = I->first;
-    if (F.second.first == AttributeList() && F.second.second == CallingConv::C)
+    std::pair<FunctionType*, std::pair<AttributeList, CallingConv::ID> > F = I.first;
+    if (F.second.first.isEmpty() && F.second.second == CallingConv::C)
         if (!TypesPrinted.insert(F.first).second) continue; // already printed this above
     printFunctionDeclaration(Out, F.first, F.second);
   }
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
-  for (std::vector<Function*>::iterator
-       I = prototypesToGen.begin(), E = prototypesToGen.end();
-       I != E; ++I) {
+  for (auto F: prototypesToGen) {
     Out << '\n';
-    Function *F = *I;
     printFunctionProto(Out, F);
     Out << ";\n";
   }
