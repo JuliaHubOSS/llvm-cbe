@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// xfail: function pointer typedefs are sometimes in the wrong order
+// xfail: function pointer typedefs are sometimes in the wrong order (fails inconsistently)
 
 static int return_arg(int x) {
     return x;
