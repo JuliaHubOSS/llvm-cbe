@@ -11,15 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-static int do_op(int(*op)(int, int), int x, int y) {
-    return op(x, y);
-}
+static int do_op(int (*op)(int, int), int x, int y) { return op(x, y); }
 
 static int subtract(int x, int y) {
   int z = x - y;
   return z;
 }
 
-int main() {
-  return do_op(subtract, 10, 4);
-}
+int main() { return do_op(subtract, 10, 4); }

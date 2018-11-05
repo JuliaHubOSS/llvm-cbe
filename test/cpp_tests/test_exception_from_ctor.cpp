@@ -3,14 +3,14 @@
 // xfail: no landingpad support (#17)
 
 class Foo {
- public:
+public:
   Foo() { throw std::exception(); }
 };
 
 int main() {
   try {
     Foo f;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     return 6;
   }
 

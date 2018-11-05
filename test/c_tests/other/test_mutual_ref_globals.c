@@ -14,16 +14,16 @@
 
 // xfail: mutually referring globals don't work (#4)
 
-extern void* pA;
-extern void* pB;
-void* pA = &pB;
-void* pB = &pA;
+extern void *pA;
+extern void *pB;
+void *pA = &pB;
+void *pB = &pA;
 
 int main() {
-  if (**(void***)pA != pA) {
+  if (**(void ***)pA != pA) {
     return 1;
   }
-  if (**(void***)pB != pB) {
+  if (**(void ***)pB != pB) {
     return 2;
   }
   return 6;

@@ -13,10 +13,6 @@
 
 static int foo(int x);
 
-int main() {
-  return foo(4);
-}
+int main() { return foo(4); }
 
-static int foo(int x) {
-  return x + 2;
-}
+static int foo(int x) { return x + 2; }

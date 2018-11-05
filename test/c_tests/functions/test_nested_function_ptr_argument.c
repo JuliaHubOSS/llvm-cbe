@@ -12,18 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-static int return_arg(int x) {
-    return x;
-}
+static int return_arg(int x) { return x; }
 
-static int call1(int(*f)(int), int x) {
-    return f(x);
-}
+static int call1(int (*f)(int), int x) { return f(x); }
 
 static int call2(int (*f2)(int (*)(int), int), int (*f)(int), int x) {
-    return f2(f, x);
+  return f2(f, x);
 }
 
-int main() {
-  return call2(call1, return_arg, 6);
-}
+int main() { return call2(call1, return_arg, 6); }

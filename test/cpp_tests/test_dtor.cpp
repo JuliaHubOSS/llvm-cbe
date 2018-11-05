@@ -1,8 +1,8 @@
 class Foo {
- public:
-  Foo(int* x) : x(x) {}
+public:
+  Foo(int *x) : x(x) {}
   ~Foo() { *x = 6; }
-  int* x;
+  int *x;
 };
 
 int main() {

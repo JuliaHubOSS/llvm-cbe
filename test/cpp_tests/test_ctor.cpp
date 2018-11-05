@@ -1,5 +1,5 @@
 class Foo {
- public:
+public:
   Foo(int x) : x(x) {}
   int x;
 };

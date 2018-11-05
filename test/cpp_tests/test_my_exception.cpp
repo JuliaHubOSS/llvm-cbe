@@ -1,7 +1,7 @@
 // xfail: no landingpad support (#17)
 
 class my_exception {
- public:
+public:
   my_exception() {}
   virtual ~my_exception() {}
 };
@@ -9,7 +9,7 @@ class my_exception {
 int main() {
   try {
     throw my_exception();
-  } catch (const my_exception& e) {
+  } catch (const my_exception &e) {
     return 6;
   }
 

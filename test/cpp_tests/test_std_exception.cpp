@@ -5,7 +5,7 @@
 int main() {
   try {
     throw std::exception();
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     return 6;
   }
 
