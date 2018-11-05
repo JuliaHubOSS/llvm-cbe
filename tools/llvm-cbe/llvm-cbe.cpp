@@ -26,14 +26,15 @@
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -44,11 +45,9 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
 using namespace llvm;
-
 
 extern "C" void LLVMInitializeCBackendTarget();
 extern "C" void LLVMInitializeCBackendTargetInfo();
@@ -59,44 +58,40 @@ extern "C" void LLVMInitializeCBackendTargetMC();
 // and back-end code generation options are specified with the target machine.
 //
 static cl::opt<std::string>
-InputFilename(cl::Positional, cl::desc("<input bitcode>"), cl::init("-"));
+    InputFilename(cl::Positional, cl::desc("<input bitcode>"), cl::init("-"));
 
-static cl::opt<std::string>
-OutputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"));
+static cl::opt<std::string> OutputFilename("o", cl::desc("Output filename"),
+                                           cl::value_desc("filename"));
 
 static cl::opt<unsigned>
-TimeCompilations("time-compilations", cl::Hidden, cl::init(1u),
-                 cl::value_desc("N"),
-                 cl::desc("Repeat compilation N times for timing"));
+    TimeCompilations("time-compilations", cl::Hidden, cl::init(1u),
+                     cl::value_desc("N"),
+                     cl::desc("Repeat compilation N times for timing"));
 
 // Determine optimization level.
 static cl::opt<char>
-OptLevel("O",
-         cl::desc("Optimization level. [-O0, -O1, -O2, or -O3] "
-                  "(default = '-O2')"),
-         cl::Prefix,
-         cl::ZeroOrMore,
-         cl::init(' '));
+    OptLevel("O",
+             cl::desc("Optimization level. [-O0, -O1, -O2, or -O3] "
+                      "(default = '-O2')"),
+             cl::Prefix, cl::ZeroOrMore, cl::init(' '));
 
 static cl::opt<std::string>
-TargetTriple("mtriple", cl::desc("Override target triple for module"));
+    TargetTriple("mtriple", cl::desc("Override target triple for module"));
 
 cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
                        cl::desc("Do not verify input module"));
 
-static int compileModule(char**, LLVMContext&);
+static int compileModule(char **, LLVMContext &);
 
 // GetFileNameRoot - Helper function to get the basename of a filename.
-static inline std::string
-GetFileNameRoot(const std::string &InputFilename) {
+static inline std::string GetFileNameRoot(const std::string &InputFilename) {
   std::string IFN = InputFilename;
   std::string outputFilename;
   int Len = IFN.length();
-  if ((Len > 2) &&
-      IFN[Len-3] == '.' &&
-      ((IFN[Len-2] == 'b' && IFN[Len-1] == 'c') ||
-       (IFN[Len-2] == 'l' && IFN[Len-1] == 'l'))) {
-    outputFilename = std::string(IFN.begin(), IFN.end()-3); // s/.bc/.s/
+  if ((Len > 2) && IFN[Len - 3] == '.' &&
+      ((IFN[Len - 2] == 'b' && IFN[Len - 1] == 'c') ||
+       (IFN[Len - 2] == 'l' && IFN[Len - 1] == 'l'))) {
+    outputFilename = std::string(IFN.begin(), IFN.end() - 3); // s/.bc/.s/
   } else {
     outputFilename = IFN;
   }
@@ -154,8 +149,8 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
   sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
   if (Binary)
     OpenFlags |= sys::fs::F_Text;
-  ToolOutputFile *FDOut = new ToolOutputFile(OutputFilename.c_str(), error,
-                                             OpenFlags);
+  ToolOutputFile *FDOut =
+      new ToolOutputFile(OutputFilename.c_str(), error, OpenFlags);
   if (error) {
     errs() << error.message() << '\n';
     delete FDOut;
@@ -176,7 +171,7 @@ int main(int argc, char **argv) {
   // Enable debug stream buffering.
   EnableDebugBuffering = true;
 
-  llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
+  llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
 
   // Initialize targets first, so that --version shows registered targets.
   InitializeAllTargets();
@@ -213,14 +208,14 @@ int main(int argc, char **argv) {
 static int compileModule(char **argv, LLVMContext &Context) {
   // Load the module to be compiled...
   SMDiagnostic Err;
-  
+
   std::unique_ptr<Module> M;
-  
+
   Module *mod = 0;
   Triple TheTriple;
 
-  bool SkipModule = MCPU == "help" ||
-                    (!MAttrs.empty() && MAttrs.front() == "help");
+  bool SkipModule =
+      MCPU == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
 
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
@@ -246,8 +241,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
   std::string Error;
   // Override MArch
   MArch = "c";
-  const Target *TheTarget = TargetRegistry::lookupTarget(MArch, TheTriple,
-                                                         Error);
+  const Target *TheTarget =
+      TargetRegistry::lookupTarget(MArch, TheTriple, Error);
   if (!TheTarget) {
     errs() << argv[0] << ": " << Error << "\n";
     return 1;
@@ -262,17 +257,26 @@ static int compileModule(char **argv, LLVMContext &Context) {
     FeaturesStr = Features.getString();
   }
 
-  CodeGenOpt::Level OLvl = CodeGenOpt::Default; 
+  CodeGenOpt::Level OLvl = CodeGenOpt::Default;
 
   switch (OptLevel) {
   default:
     errs() << argv[0] << ": invalid optimization level.\n";
     return 1;
-  case ' ': break;
-  case '0': OLvl = CodeGenOpt::None; break;
-  case '1': OLvl = CodeGenOpt::Less; break;
-  case '2': OLvl = CodeGenOpt::Default; break;
-  case '3': OLvl = CodeGenOpt::Aggressive; break;
+  case ' ':
+    break;
+  case '0':
+    OLvl = CodeGenOpt::None;
+    break;
+  case '1':
+    OLvl = CodeGenOpt::Less;
+    break;
+  case '2':
+    OLvl = CodeGenOpt::Default;
+    break;
+  case '3':
+    OLvl = CodeGenOpt::Aggressive;
+    break;
   }
 
   TargetOptions Options;
@@ -288,35 +292,36 @@ static int compileModule(char **argv, LLVMContext &Context) {
   Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
   Options.StackAlignmentOverride = OverrideStackAlignment;
 
-  //Jackson Korba 9/30/14
-  //OwningPtr<targetMachine>
-  std::unique_ptr<TargetMachine>
-    target(TheTarget->createTargetMachine(TheTriple.getTriple(),
-                                          MCPU, FeaturesStr, Options,
-                                          getRelocModel(), getCodeModel(), OLvl));
+  // Jackson Korba 9/30/14
+  // OwningPtr<targetMachine>
+  std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
+      TheTriple.getTriple(), MCPU, FeaturesStr, Options, getRelocModel(),
+      getCodeModel(), OLvl));
   assert(target.get() && "Could not allocate target machine!");
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
 
   // Disable .loc support for older OS X versions.
-  if (TheTriple.isMacOSX() &&
-      TheTriple.isMacOSXVersionLT(10, 6)){}
-    //TODO: Find a replacement to this function
-    /* Greg Simpson 6-09-13
-    no member named setMCUseLoc
-    removed statement
-    Target.setMCUseLoc(false);  */
+  if (TheTriple.isMacOSX() && TheTriple.isMacOSXVersionLT(10, 6)) {
+  }
+  // TODO: Find a replacement to this function
+  /* Greg Simpson 6-09-13
+  no member named setMCUseLoc
+  removed statement
+  Target.setMCUseLoc(false);  */
 
-  //Jackson Korba 9/30/14 
-  std::unique_ptr<ToolOutputFile> Out
-    (GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
-  if (!Out) return 1;
+  // Jackson Korba 9/30/14
+  std::unique_ptr<ToolOutputFile> Out(
+      GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
+  if (!Out)
+    return 1;
 
   // Build up all of the passes that we want to do to the module.
   legacy::PassManager PM;
 
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
-  TargetLibraryInfoWrapperPass *TLI = new TargetLibraryInfoWrapperPass(TheTriple);
+  TargetLibraryInfoWrapperPass *TLI =
+      new TargetLibraryInfoWrapperPass(TheTriple);
   PM.add(TLI);
 
   // Add intenal analysis passes from the target machine.
@@ -331,9 +336,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Ask the target to add backend passes as necessary.
   if (Target.addPassesToEmitFile(PM, Out->os(),
 #if LLVM_VERSION_MAJOR >= 7
-      nullptr,
+                                 nullptr,
 #endif
-      FileType, NoVerify)) {
+                                 FileType, NoVerify)) {
     errs() << argv[0] << ": target does not support generation of this"
            << " file type!\n";
     return 1;
