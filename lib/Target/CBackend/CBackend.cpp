@@ -93,7 +93,8 @@ bool CWriter::isEmptyType(Type *Ty) const { return ::isEmptyType(Ty); }
 bool CWriter::isAddressExposed(Value *V) const {
   if (Argument *A = dyn_cast<Argument>(V))
     return ByValParams.count(A) > 0;
-  return isa<GlobalVariable>(V) || isDirectAlloca(V);
+  else
+    return isa<GlobalVariable>(V) || isDirectAlloca(V);
 }
 
 // isInlinableInst - Attempt to inline instructions into their uses to build
@@ -143,7 +144,8 @@ AllocaInst *CWriter::isDirectAlloca(Value *V) const {
 bool CWriter::isInlineAsm(Instruction &I) const {
   if (CallInst *CI = dyn_cast<CallInst>(&I))
     return isa<InlineAsm>(CI->getCalledValue());
-  return false;
+  else
+    return false;
 }
 
 bool CWriter::runOnFunction(Function &F) {
