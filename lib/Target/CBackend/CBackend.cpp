@@ -121,7 +121,7 @@ bool CWriter::isInlinableInst(Instruction &I) const {
       return false;
   }
 
-  // Only inline instruction it if it's use is in the same BB as the inst.
+  // Only inline instruction if its use is in the same BB as the inst.
   return I.getParent() == cast<Instruction>(I.user_back())->getParent();
 }
 
