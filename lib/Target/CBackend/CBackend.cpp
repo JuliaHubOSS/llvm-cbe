@@ -92,7 +92,7 @@ bool CWriter::isEmptyType(Type *Ty) const { return ::isEmptyType(Ty); }
 /// This happens for global variables, byval parameters, and direct allocas.
 bool CWriter::isAddressExposed(Value *V) const {
   if (Argument *A = dyn_cast<Argument>(V))
-    return ByValParams.count(A);
+    return ByValParams.count(A) > 0;
   return isa<GlobalVariable>(V) || isDirectAlloca(V);
 }
 
