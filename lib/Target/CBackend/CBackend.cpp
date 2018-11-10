@@ -97,7 +97,6 @@ bool CWriter::isAddressExposed(Value *V) const {
 // trees as much as possible.  To do this, we have to consistently decide
 // what is acceptable to inline, so that variable declarations don't get
 // printed and an extra copy of the expr is not emitted.
-//
 bool CWriter::isInlinableInst(Instruction &I) const {
   // Always inline cmp instructions, even if they are shared by multiple
   // expressions.  GCC generates horrible code if we don't.
@@ -126,7 +125,6 @@ bool CWriter::isInlinableInst(Instruction &I) const {
 // isDirectAlloca - Define fixed sized allocas in the entry block as direct
 // variables which are accessed with the & operator.  This causes GCC to
 // generate significantly better code than to emit alloca calls directly.
-//
 AllocaInst *CWriter::isDirectAlloca(Value *V) const {
   AllocaInst *AI = dyn_cast<AllocaInst>(V);
   if (!AI)
@@ -405,7 +403,6 @@ raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
 
 // Pass the Type* and the variable name and this prints out the variable
 // declaration.
-//
 raw_ostream &
 CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
                        std::pair<AttributeList, CallingConv::ID> PAL) {
@@ -665,7 +662,6 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
     // code, in which case we have to be careful not to print out hex digits
     // explicitly (the C compiler thinks it is a continuation of the previous
     // character, sheesh...)
-    //
     if (isprint(C) && (!LastWasHex || !isxdigit(C))) {
       LastWasHex = false;
       if (C == '"' || C == '\\')
@@ -717,7 +713,6 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
 // double to the original value of CFP. This depends on us and the target C
 // compiler agreeing on the conversion process (which is pretty likely since we
 // only deal in IEEE FP).
-//
 
 // TODO copied from CppBackend, new code should use raw_ostream
 static inline std::string ftostr(const APFloat &V) {
@@ -1608,7 +1603,6 @@ void CWriter::writeOperandWithCast(Value *Operand, ICmpInst &Cmp) {
 
 // generateCompilerSpecificCode - This is where we add conditional compilation
 // directives to cater to specific compilers as need be.
-//
 static void generateCompilerSpecificCode(raw_ostream &Out,
                                          const DataLayout *TD) {
   // Alloca is hard to get, and we don't want to include stdlib.h here.
@@ -2971,7 +2965,6 @@ void CWriter::printFloatingPointConstants(Function &F) {
   // in the function, we want to redirect it here so that we do not depend on
   // the precision of the printed form, unless the printed form preserves
   // precision.
-  //
   for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I)
     for (Instruction::op_iterator I_Op = I->op_begin(), E_Op = I->op_end();
          I_Op != E_Op; ++I_Op)
@@ -3032,7 +3025,6 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
 
 /// printSymbolTable - Run through symbol table looking for type names.  If a
 /// type name is found, emit its declaration...
-///
 void CWriter::printModuleTypes(raw_ostream &Out) {
   Out << "/* Helper union for bitcasts */\n";
   Out << "typedef union {\n";
@@ -3131,7 +3123,6 @@ void CWriter::forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty,
 
 // Push the struct onto the stack and recursively push all structs
 // this one depends on.
-//
 void CWriter::printContainedTypes(raw_ostream &Out, Type *Ty,
                                   std::set<Type *> &TypesPrinted) {
   // Check to see if we have already printed this struct.
@@ -3276,7 +3267,6 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   // the only terminator use is the predecessor basic block's terminator.
   // We have to scan the use list because PHI nodes use basic blocks too but
   // do not require a label to be generated.
-  //
   bool NeedsLabel = false;
   for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI)
     if (isGotoCodeNecessary(*PI, BB)) {
@@ -3306,7 +3296,6 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
 
 // Specific Instruction type classes... note that all of the casts are
 // necessary because we use the instruction classes as opaque types...
-//
 void CWriter::visitReturnInst(ReturnInst &I) {
   CurInstr = &I;
 
@@ -3446,7 +3435,6 @@ void CWriter::printBranchToBlock(BasicBlock *CurBB, BasicBlock *Succ,
 
 // Branch instruction printing - Avoid printing out a branch to a basic block
 // that immediately succeeds the current one.
-//
 void CWriter::visitBranchInst(BranchInst &I) {
   CurInstr = &I;
 
@@ -4225,7 +4213,6 @@ void CWriter::visitCallInst(CallInst &I) {
   // that void* and function pointers have the same size. :( To deal with this
   // in the common case, we handle casts where the number of arguments passed
   // match exactly.
-  //
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Callee))
     if (CE->isCast())
       if (Function *RF = dyn_cast<Function>(CE->getOperand(0))) {
