@@ -61,7 +61,6 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::map<const ConstantFP *, unsigned> FPConstantMap;
   std::set<const Argument *> ByValParams;
   unsigned FPCounter = 0;
-  unsigned OpaqueCounter = 0;
 
   DenseMap<const Value *, unsigned> AnonValueNumbers;
   unsigned NextAnonValueNumber = 0;

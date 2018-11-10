@@ -1984,7 +1984,6 @@ bool CWriter::doFinalization(Module &M) {
 
   // reset all state
   FPCounter = 0;
-  OpaqueCounter = 0;
   NextAnonValueNumber = 0;
   NextAnonStructNumber = 0;
   NextFunctionNumber = 0;
