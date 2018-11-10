@@ -131,11 +131,11 @@ bool CWriter::isInlinableInst(Instruction &I) const {
 AllocaInst *CWriter::isDirectAlloca(Value *V) const {
   AllocaInst *AI = dyn_cast<AllocaInst>(V);
   if (!AI)
-    return 0;
+    return nullptr;
   if (AI->isArrayAllocation())
-    return 0; // FIXME: we can also inline fixed size array allocas!
+    return nullptr; // FIXME: we can also inline fixed size array allocas!
   if (AI->getParent() != &AI->getParent()->getParent()->getEntryBlock())
-    return 0;
+    return nullptr;
   return AI;
 }
 
@@ -1948,12 +1948,25 @@ bool CWriter::doFinalization(Module &M) {
   FileOut << header << methods;
 
   // Free memory...
+
   delete IL;
+  IL = nullptr;
+
   delete TD;
+  TD = nullptr;
+
   delete TCtx;
+  TCtx = nullptr;
+
   delete TAsm;
+  TAsm = nullptr;
+
   delete MRI;
+  MRI = nullptr;
+
   delete MOFI;
+  MOFI = nullptr;
+
   FPConstantMap.clear();
   ByValParams.clear();
   AnonValueNumbers.clear();
@@ -2988,7 +3001,7 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
 
   // Otherwise, check for a FP constant that we need to print.
   const ConstantFP *FPC = dyn_cast<ConstantFP>(C);
-  if (FPC == 0 ||
+  if (FPC == nullptr ||
       // Do not put in FPConstantMap if safe.
       isFPCSafeToPrint(FPC) ||
       // Already printed this constant?
@@ -3241,7 +3254,7 @@ void CWriter::printFunction(Function &F) {
   // print the basic blocks
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
     if (Loop *L = LI->getLoopFor(&*BB)) {
-      if (L->getHeader() == &*BB && L->getParentLoop() == 0)
+      if (L->getHeader() == &*BB && L->getParentLoop() == nullptr)
         printLoop(L);
     } else {
       printBasicBlock(&*BB);
