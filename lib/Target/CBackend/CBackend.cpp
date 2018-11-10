@@ -32,9 +32,6 @@
 
 #include <iostream>
 
-//#include "Graph.h"
-//#include "PHINodePass.h"
-
 // Jackson Korba 9/29/14
 #ifndef DEBUG_TYPE
 #define DEBUG_TYPE ""
