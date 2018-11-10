@@ -167,15 +167,17 @@ bool CWriter::runOnFunction(Function &F) {
 static std::string CBEMangle(const std::string &S) {
   std::string Result;
 
-  for (unsigned i = 0, e = S.size(); i != e; ++i)
-    if (isalnum(S[i]) || S[i] == '_') {
-      Result += S[i];
+  for (auto c : S) {
+    if (isalnum(c) || c == '_') {
+      Result += c;
     } else {
       Result += '_';
-      Result += 'A' + (S[i] & 15);
-      Result += 'A' + ((S[i] >> 4) & 15);
+      Result += 'A' + (c & 15);
+      Result += 'A' + ((c >> 4) & 15);
       Result += '_';
     }
+  }
+
   return Result;
 }
 
@@ -3070,7 +3072,7 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   Out << "\n/* Function definitions */\n";
 
-  for (auto I : UnnamedFunctionIDs) {
+  for (auto &I : UnnamedFunctionIDs) {
     Out << '\n';
     std::pair<FunctionType *, std::pair<AttributeList, CallingConv::ID>> F =
         I.first;
@@ -3082,7 +3084,7 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
-  for (auto F : prototypesToGen) {
+  for (auto &F : prototypesToGen) {
     Out << '\n';
     printFunctionProto(Out, F);
     Out << ";\n";
@@ -4094,10 +4096,10 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
 void CWriter::lowerIntrinsics(Function &F) {
   // Examine all the instructions in this function to find the intrinsics that
   // need to be lowered.
-  for (Function::iterator BB = F.begin(), EE = F.end(); BB != EE; ++BB)
-    for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E;)
-      if (CallInst *CI = dyn_cast<CallInst>(I++))
-        if (Function *F = CI->getCalledFunction())
+  for (auto &BB : F) {
+    for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E;) {
+      if (CallInst *CI = dyn_cast<CallInst>(I++)) {
+        if (Function *F = CI->getCalledFunction()) {
           switch (F->getIntrinsicID()) {
           case Intrinsic::not_intrinsic:
           case Intrinsic::vastart:
@@ -4141,21 +4143,23 @@ void CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::dbg_declare:
             // We directly implement these intrinsics
             break;
+
           default:
             // All other intrinsic calls we must lower.
-            Instruction *Before = 0;
-            if (CI != &BB->front())
-              Before = &*std::prev(BasicBlock::iterator(CI));
+            Instruction *Before = (CI == &BB.front())
+                                      ? nullptr
+                                      : &*std::prev(BasicBlock::iterator(CI));
 
             IL->LowerIntrinsicCall(CI);
             if (Before) { // Move iterator to instruction after call
               I = BasicBlock::iterator(Before);
               ++I;
             } else {
-              I = BB->begin();
+              I = BB.begin();
             }
+
             // If the intrinsic got lowered to another call, and that call has
-            // a definition then we need to make sure its prototype is emitted
+            // a definition, then we need to make sure its prototype is emitted
             // before any calls to it.
             if (CallInst *Call = dyn_cast<CallInst>(I))
               if (Function *NewF = Call->getCalledFunction())
@@ -4164,6 +4168,10 @@ void CWriter::lowerIntrinsics(Function &F) {
 
             break;
           }
+        }
+      }
+    }
+  }
 }
 
 void CWriter::visitCallInst(CallInst &I) {
