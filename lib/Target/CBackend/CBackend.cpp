@@ -152,7 +152,7 @@ bool CWriter::runOnFunction(Function &F) {
   LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 
   // Get rid of intrinsics we can't handle.
-  lowerIntrinsics(F);
+  bool Modified = lowerIntrinsics(F);
 
   // Output all floating point constants that cannot be printed accurately.
   printFloatingPointConstants(F);
@@ -161,7 +161,7 @@ bool CWriter::runOnFunction(Function &F) {
 
   LI = nullptr;
 
-  return true; // may have lowered an IntrinsicCall
+  return Modified;
 }
 
 static std::string CBEMangle(const std::string &S) {
@@ -4093,7 +4093,9 @@ void CWriter::printIntrinsicDefinition(Function &F, raw_ostream &Out) {
   printIntrinsicDefinition(funT, Opcode, OpName, Out);
 }
 
-void CWriter::lowerIntrinsics(Function &F) {
+bool CWriter::lowerIntrinsics(Function &F) {
+  bool LoweredAny = false;
+
   // Examine all the instructions in this function to find the intrinsics that
   // need to be lowered.
   for (auto &BB : F) {
@@ -4146,6 +4148,8 @@ void CWriter::lowerIntrinsics(Function &F) {
 
           default:
             // All other intrinsic calls we must lower.
+            LoweredAny = true;
+
             Instruction *Before = (CI == &BB.front())
                                       ? nullptr
                                       : &*std::prev(BasicBlock::iterator(CI));
@@ -4172,6 +4176,8 @@ void CWriter::lowerIntrinsics(Function &F) {
       }
     }
   }
+
+  return LoweredAny;
 }
 
 void CWriter::visitCallInst(CallInst &I) {

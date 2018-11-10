@@ -183,7 +183,7 @@ private:
 
   std::string InterpretASMConstraint(InlineAsm::ConstraintInfo &c);
 
-  void lowerIntrinsics(Function &F);
+  bool lowerIntrinsics(Function &F);
   /// Prints the definition of the intrinsic function F. Supports the
   /// intrinsics which need to be explicitly defined in the CBackend.
   void printIntrinsicDefinition(Function &F, raw_ostream &Out);
