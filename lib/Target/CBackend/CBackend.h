@@ -1,4 +1,3 @@
-
 #include "CTargetMachine.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
@@ -34,8 +33,11 @@
 
 #include <set>
 
+#include "IDMap.h"
+
 namespace {
 using namespace llvm;
+using namespace llvm_cbe;
 
 class CBEMCAsmInfo : public MCAsmInfo {
 public:
@@ -58,17 +60,14 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   const DataLayout *TD = nullptr;
   const Instruction *CurInstr = nullptr;
 
-  std::map<const ConstantFP *, unsigned> FPConstantMap;
+  IDMap<const ConstantFP *> FPConstantMap;
   std::set<const Argument *> ByValParams;
-  unsigned FPCounter = 0;
 
-  DenseMap<const Value *, unsigned> AnonValueNumbers;
-  unsigned NextAnonValueNumber = 0;
+  IDMap<const Value *> AnonValueNumbers;
 
   /// UnnamedStructIDs - This contains a unique ID for each struct that is
   /// either anonymous or has no name.
-  DenseMap<StructType *, unsigned> UnnamedStructIDs;
-  unsigned NextAnonStructNumber = 0;
+  IDMap<StructType *> UnnamedStructIDs;
 
   std::set<Type *> TypedefDeclTypes;
   std::set<Type *> SelectDeclTypes;
@@ -78,10 +77,8 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::set<std::pair<unsigned, Type *>> InlineOpDeclTypes;
   std::set<Type *> CtorDeclTypes;
 
-  DenseMap<std::pair<FunctionType *, std::pair<AttributeList, CallingConv::ID>>,
-           unsigned>
+  IDMap<std::pair<FunctionType *, std::pair<AttributeList, CallingConv::ID>>>
       UnnamedFunctionIDs;
-  unsigned NextFunctionNumber = 0;
 
   // This is used to keep track of intrinsics that get generated to a lowered
   // function. We must generate the prototypes before the function body which

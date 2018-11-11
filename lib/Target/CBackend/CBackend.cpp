@@ -195,9 +195,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
     if (!ST->isLiteral() && !ST->getName().empty())
       return Out << "struct_" << CBEMangle(ST->getName());
 
-    unsigned &id = UnnamedStructIDs[ST];
-    if (id == 0)
-      id = ++NextAnonStructNumber;
+    unsigned id = UnnamedStructIDs.getOrInsert(ST);
     return Out << "unnamed_" + utostr(id);
   }
 
@@ -260,18 +258,14 @@ std::string CWriter::getStructName(StructType *ST) {
   if (!ST->isLiteral() && !ST->getName().empty())
     return "struct l_struct_" + CBEMangle(ST->getName().str());
 
-  unsigned &id = UnnamedStructIDs[ST];
-  if (id == 0)
-    id = ++NextAnonStructNumber;
+  unsigned id = UnnamedStructIDs.getOrInsert(ST);
   return "struct l_unnamed_" + utostr(id);
 }
 
 std::string
 CWriter::getFunctionName(FunctionType *FT,
                          std::pair<AttributeList, CallingConv::ID> PAL) {
-  unsigned &id = UnnamedFunctionIDs[std::make_pair(FT, PAL)];
-  if (id == 0)
-    id = ++NextFunctionNumber;
+  unsigned id = UnnamedFunctionIDs.getOrInsert(std::make_pair(FT, PAL));
   return "l_fptr_" + utostr(id);
 }
 
@@ -1088,8 +1082,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   case Type::PPC_FP128TyID:
   case Type::FP128TyID: {
     ConstantFP *FPC = cast<ConstantFP>(CPV);
-    std::map<const ConstantFP *, unsigned>::iterator I =
-        FPConstantMap.find(FPC);
+    auto I = FPConstantMap.find(FPC);
     if (I != FPConstantMap.end()) {
       // Because of FP precision problems we must load from a stack allocated
       // value that holds the value in hex.
@@ -1386,9 +1379,7 @@ std::string CWriter::GetValueName(Value *Operand) {
 
   std::string Name = Operand->getName();
   if (Name.empty()) { // Assign unique names to local temporaries.
-    unsigned &No = AnonValueNumbers[Operand];
-    if (No == 0)
-      No = ++NextAnonValueNumber;
+    unsigned No = AnonValueNumbers.getOrInsert(Operand);
     Name = "tmp__" + utostr(No);
   }
 
@@ -1982,11 +1973,6 @@ bool CWriter::doFinalization(Module &M) {
   CtorDeclTypes.clear();
   prototypesToGen.clear();
 
-  // reset all state
-  FPCounter = 0;
-  NextAnonValueNumber = 0;
-  NextAnonStructNumber = 0;
-  NextFunctionNumber = 0;
   return true; // may have lowered an IntrinsicCall
 }
 
@@ -3006,26 +2992,26 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
       // Do not put in FPConstantMap if safe.
       isFPCSafeToPrint(FPC) ||
       // Already printed this constant?
-      FPConstantMap.count(FPC))
+      FPConstantMap.has(FPC))
     return;
 
-  FPConstantMap[FPC] = FPCounter; // Number the FP constants
+  unsigned Counter = FPConstantMap.getOrInsert(FPC);
 
   if (FPC->getType() == Type::getDoubleTy(FPC->getContext())) {
     double Val = FPC->getValueAPF().convertToDouble();
     uint64_t i = FPC->getValueAPF().bitcastToAPInt().getZExtValue();
-    Out << "static const ConstantDoubleTy FPConstant" << FPCounter++ << " = 0x"
+    Out << "static const ConstantDoubleTy FPConstant" << Counter << " = 0x"
         << utohexstr(i) << "ULL;    /* " << Val << " */\n";
   } else if (FPC->getType() == Type::getFloatTy(FPC->getContext())) {
     float Val = FPC->getValueAPF().convertToFloat();
     uint32_t i = (uint32_t)FPC->getValueAPF().bitcastToAPInt().getZExtValue();
-    Out << "static const ConstantFloatTy FPConstant" << FPCounter++ << " = 0x"
+    Out << "static const ConstantFloatTy FPConstant" << Counter << " = 0x"
         << utohexstr(i) << "U;    /* " << Val << " */\n";
   } else if (FPC->getType() == Type::getX86_FP80Ty(FPC->getContext())) {
     // api needed to prevent premature destruction
     const APInt api = FPC->getValueAPF().bitcastToAPInt();
     const uint64_t *p = api.getRawData();
-    Out << "static const ConstantFP80Ty FPConstant" << FPCounter++ << " = { 0x"
+    Out << "static const ConstantFP80Ty FPConstant" << Counter << " = { 0x"
         << utohexstr(p[0]) << "ULL, 0x" << utohexstr((uint16_t)p[1])
         << ",{0,0,0}"
         << "}; /* Long double constant */\n";
@@ -3033,7 +3019,7 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
              FPC->getType() == Type::getFP128Ty(FPC->getContext())) {
     const APInt api = FPC->getValueAPF().bitcastToAPInt();
     const uint64_t *p = api.getRawData();
-    Out << "static const ConstantFP128Ty FPConstant" << FPCounter++ << " = { 0x"
+    Out << "static const ConstantFP128Ty FPConstant" << Counter << " = { 0x"
         << utohexstr(p[0]) << ", 0x" << utohexstr(p[1])
         << "}; /* Long double constant */\n";
 
