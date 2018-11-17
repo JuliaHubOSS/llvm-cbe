@@ -26,4 +26,53 @@ TEST(TypeNameTest, Void) {
   EXPECT_EQ(CWriterTestHelper::getTypeName(ty), "void");
 }
 
+TEST(TypeNameTest, Bool) {
+  LLVMContext ctx;
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt1Ty(ctx)), "bool");
+}
+
+TEST(TypeNameTest, SimpleNumeric) {
+  LLVMContext ctx;
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt8Ty(ctx)), "uint8_t");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt16Ty(ctx)), "uint16_t");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt32Ty(ctx)), "uint32_t");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt64Ty(ctx)), "uint64_t");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getInt128Ty(ctx)),
+            "uint128_t");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getFloatTy(ctx)), "float");
+  EXPECT_EQ(CWriterTestHelper::getTypeName(Type::getDoubleTy(ctx)), "double");
+}
+
+TEST(TypeNameTest, BoolPtr) {
+  LLVMContext ctx;
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt1Ty(ctx)->getPointerTo()),
+      "bool*");
+}
+
+TEST(TypeNameTest, SimpleNumericPtr) {
+  LLVMContext ctx;
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt8Ty(ctx)->getPointerTo()),
+      "uint8_t*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt16Ty(ctx)->getPointerTo()),
+      "uint16_t*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt32Ty(ctx)->getPointerTo()),
+      "uint32_t*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt64Ty(ctx)->getPointerTo()),
+      "uint64_t*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getInt128Ty(ctx)->getPointerTo()),
+      "uint128_t*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getFloatTy(ctx)->getPointerTo()),
+      "float*");
+  EXPECT_EQ(
+      CWriterTestHelper::getTypeName(Type::getDoubleTy(ctx)->getPointerTo()),
+      "double*");
+}
+
 } // namespace llvm_cbe
