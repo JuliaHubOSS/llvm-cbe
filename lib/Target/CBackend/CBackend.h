@@ -49,7 +49,7 @@ public:
 class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::string _Out;
   raw_string_ostream Out;
-  raw_pwrite_stream &FileOut;
+  raw_ostream &FileOut;
   IntrinsicLowering *IL = nullptr;
   LoopInfo *LI = nullptr;
   const Module *TheModule = nullptr;
@@ -87,8 +87,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
 
 public:
   static char ID;
-  explicit CWriter(raw_pwrite_stream &o)
-      : FunctionPass(ID), Out(_Out), FileOut(o) {}
+  explicit CWriter(raw_ostream &o) : FunctionPass(ID), Out(_Out), FileOut(o) {}
 
   virtual StringRef getPassName() const { return "C backend"; }
 
