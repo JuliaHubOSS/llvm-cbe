@@ -35,9 +35,9 @@
 
 #include "IDMap.h"
 
-namespace {
+namespace llvm_cbe {
+
 using namespace llvm;
-using namespace llvm_cbe;
 
 class CBEMCAsmInfo : public MCAsmInfo {
 public:
@@ -263,4 +263,5 @@ private:
 
   std::string GetValueName(Value *Operand);
 };
-} // namespace
+
+} // namespace llvm_cbe
