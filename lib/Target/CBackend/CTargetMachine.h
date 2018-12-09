@@ -29,7 +29,7 @@ struct CTargetMachine : public TargetMachine {
   /// emitted.  Typically this will involve several steps of code generation.
   bool addPassesToEmitFile(
     PassManagerBase &PM, raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
     raw_pwrite_stream *DwoOut,
 #endif
     CodeGenFileType FileType, bool DisableVerify=true, MachineModuleInfo *MMI=nullptr) override;

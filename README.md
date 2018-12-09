@@ -31,10 +31,10 @@ The first step is to compile LLVM on your machine
      cd $HOME
      git clone https://github.com/llvm-mirror/llvm
      cd llvm
-     git checkout release_37
+     git checkout release_70
      mkdir build
      cd build
-     ../configure
+     cmake ..
      make
 
 Step 2: Compiling LLVM-CBE
@@ -58,7 +58,7 @@ main.c
 $ clang -S -emit-llvm main.c
 $ ls
 main.c main.ll
-$ $(HOME)/llvm/build/Debug+Asserts/bin/llvm-cbe main.ll
+$ $(HOME)/llvm/build/bin/llvm-cbe main.ll
 ```
 
 Compile Generated C-Code and Run

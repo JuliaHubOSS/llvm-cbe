@@ -27,5 +27,5 @@ parent = Target
 type = Library
 name = CBackendCodeGen
 parent = CBackend
-required_libraries = Analysis CBackendInfo CodeGen Core MC Scalar Support Target TransformUtils
+required_libraries = Analysis CBackendInfo CodeGen Core MC ScalarOpts Support Target TransformUtils
 add_to_library_groups = CBackend

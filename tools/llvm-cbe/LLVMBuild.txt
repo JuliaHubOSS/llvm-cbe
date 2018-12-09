@@ -19,4 +19,19 @@
 type = Tool
 name = llc
 parent = Tools
-required_libraries =  BitReader AsmParser IRReader all-targets
+required_libraries =
+ Analysis
+ AsmParser
+ AsmPrinter
+ BitReader
+ CBackendCodeGen
+ CBackendInfo
+ CodeGen
+ Core
+ IRReader
+ MC
+ ScalarOpts
+ SelectionDAG
+ Support
+ Target
+ all-targets

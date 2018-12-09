@@ -23,7 +23,7 @@
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Config/config.h"
 
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
 #include "llvm/Transforms/Utils.h"
 #endif
 
@@ -1529,7 +1529,7 @@ static void generateCompilerSpecificCode(raw_ostream& Out,
   Out << "#define __noreturn __declspec(noreturn)\n";
   Out << "#else\n";
   Out << "#define __noreturn __attribute__((noreturn))\n";
-  Out << "#define __forceinline __attribute__((always_inline))\n";
+  Out << "#define __forceinline __attribute__((always_inline)) inline\n";
   Out << "#endif\n\n";
 
   // Define NaN and Inf as GCC builtins if using GCC
@@ -2205,15 +2205,19 @@ void CWriter::generateHeader(Module &M) {
     default:
       SrcSigned = false;
       DstSigned = false;
+      break;
     case Instruction::SIToFP:
       SrcSigned = true;
       DstSigned = false;
+      break;
     case Instruction::FPToSI:
       SrcSigned = false;
       DstSigned = true;
+      break;
     case Instruction::SExt:
       SrcSigned = true;
       DstSigned = true;
+      break;
     }
 
     Out << "static __forceinline ";
@@ -4551,7 +4555,7 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
 
 bool CTargetMachine::addPassesToEmitFile(
     PassManagerBase &PM, raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR == 7
+#if LLVM_VERSION_MAJOR >= 7
     raw_pwrite_stream *DwoOut,
 #endif
     CodeGenFileType FileType, bool DisableVerify, MachineModuleInfo *MMI) {
