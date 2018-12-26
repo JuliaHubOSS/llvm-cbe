@@ -4190,10 +4190,11 @@ void CWriter::visitCallInst(CallInst &I) {
     return visitInlineAsm(I);
 
   // Handle intrinsic function calls first...
-  if (Function *F = I.getCalledFunction())
-    if (Intrinsic::ID ID = (Intrinsic::ID)F->getIntrinsicID())
-      if (visitBuiltinCall(I, ID))
-        return;
+  if (Function *F = I.getCalledFunction()) {
+    auto ID = F->getIntrinsicID();
+    if (ID != Intrinsic::not_intrinsic && visitBuiltinCall(I, ID))
+      return;
+  }
 
   Value *Callee = I.getCalledValue();
 
