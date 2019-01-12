@@ -5031,10 +5031,10 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   if (FileType != TargetMachine::CGFT_AssemblyFile)
     return true;
 
-  PM.add(new TargetPassConfig(*this, PM));
+  auto *TPC = new TargetPassConfig(*this, PM);
+  PM.add(TPC);
   PM.add(createGCLoweringPass());
-  PM.add(createLowerInvokePass());
-  PM.add(createCFGSimplificationPass()); // clean up after lower invoke.
+  TPC->addPassesToHandleExceptions();
   PM.add(new llvm_cbe::CWriter(Out));
   return false;
 }
