@@ -15,4 +15,3 @@ int main() {
   volatile unsigned int a = 6;
   return a;
 }
-

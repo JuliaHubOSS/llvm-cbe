@@ -4805,19 +4805,17 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
   if (!IsUnaligned) {
     Out << '*';
     if (IsVolatile) {
-        Out << "(volatile ";
-        printTypeName(Out, OperandType, false);
-        Out << "*)";
-      }
-  }
-  else if (IsUnaligned) {
+      Out << "(volatile ";
+      printTypeName(Out, OperandType, false);
+      Out << "*)";
+    }
+  } else if (IsUnaligned) {
     Out << "__UNALIGNED_LOAD__(";
     printTypeNameUnaligned(Out, OperandType, false);
     if (IsVolatile)
       Out << " volatile";
     Out << ", " << Alignment << ", ";
   }
-
 
   writeOperand(Operand);
 
