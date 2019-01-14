@@ -82,3 +82,22 @@ $ ls
 main.c  main.cbe  main.cbe.c  main.ll
 $ ./main.cbe
 ```
+
+Running tests
+==================
+
+Unit tests:
+
+```sh
+    $ cd $HOME/llvm/build
+    $ make CBEUnitTests && projects/llvm-cbe/unittests/CWriterTest
+```
+
+Other tests:
+
+First, compile llvm-cbe, and install pytest. Then:
+
+```sh
+    $ cd $HOME/llvm/projects/llvm-cbe
+    $ pytest
+```

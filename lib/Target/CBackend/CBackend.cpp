@@ -44,6 +44,8 @@
 #undef setjmp
 #endif
 
+namespace llvm_cbe {
+
 using namespace llvm;
 
 extern "C" void LLVMInitializeCBackendTarget() {
@@ -85,7 +87,7 @@ static bool isEmptyType(Type *Ty) {
   return Ty->isVoidTy();
 }
 
-bool CWriter::isEmptyType(Type *Ty) const { return ::isEmptyType(Ty); }
+bool CWriter::isEmptyType(Type *Ty) const { return llvm_cbe::isEmptyType(Ty); }
 
 /// isAddressExposed - Return true if the specified value's name needs to
 /// have its address taken in order to get a C value of the correct type.
@@ -5019,9 +5021,13 @@ LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
   llvm_unreachable(message);
 }
 
+} // namespace llvm_cbe
+
 //===----------------------------------------------------------------------===//
 //                       External Interface declaration
 //===----------------------------------------------------------------------===//
+
+namespace llvm {
 
 bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                          raw_pwrite_stream &Out,
@@ -5038,6 +5044,8 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   PM.add(createGCLoweringPass());
   PM.add(createLowerInvokePass());
   PM.add(createCFGSimplificationPass()); // clean up after lower invoke.
-  PM.add(new CWriter(Out));
+  PM.add(new llvm_cbe::CWriter(Out));
   return false;
 }
+
+} // namespace llvm
