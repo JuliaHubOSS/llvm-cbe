@@ -15,6 +15,7 @@
 #include "CBackend.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/Config/config.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Support/Debug.h"
@@ -1918,18 +1919,12 @@ bool CWriter::doInitialization(Module &M) {
   IL = new IntrinsicLowering(*TD);
   IL->AddPrototypes(M);
 
-#if 0
-  std::string Triple = TheModule->getTargetTriple();
-  if (Triple.empty())
-    Triple = llvm::sys::getDefaultTargetTriple();
-
-  std::string E;
-  if (const Target *Match = TargetRegistry::lookupTarget(Triple, E))
-    TAsm = Match->createMCAsmInfo(Triple);
-#endif
-  TAsm = new CBEMCAsmInfo();
+  // TODO: should use getAnalysis here, but it fails despite getAnalysisUsage
+  auto *TPC = getAnalysisIfAvailable<TargetPassConfig>();
+  cwriter_assert(TPC != nullptr);
+  auto &TM = TPC->getTM<CTargetMachine>();
   MRI = new MCRegisterInfo();
-  TCtx = new MCContext(TAsm, MRI, nullptr);
+  TCtx = new MCContext(TM.getMCAsmInfo(), MRI, nullptr);
   return false;
 }
 
@@ -1952,9 +1947,6 @@ bool CWriter::doFinalization(Module &M) {
 
   delete TCtx;
   TCtx = nullptr;
-
-  delete TAsm;
-  TAsm = nullptr;
 
   delete MRI;
   MRI = nullptr;
@@ -5039,6 +5031,7 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   if (FileType != TargetMachine::CGFT_AssemblyFile)
     return true;
 
+  PM.add(new TargetPassConfig(*this, PM));
   PM.add(createGCLoweringPass());
   PM.add(createLowerInvokePass());
   PM.add(createCFGSimplificationPass()); // clean up after lower invoke.
