@@ -15,15 +15,33 @@
 #define CTARGETMACHINE_H
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
+
+class CBEMCAsmInfo : public MCAsmInfo {
+public:
+  CBEMCAsmInfo() { PrivateGlobalPrefix = ""; }
+};
 
 struct CTargetMachine : public TargetMachine {
   CTargetMachine(const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
                  const TargetOptions &Options, Optional<Reloc::Model> RM,
                  Optional<CodeModel::Model> CM, CodeGenOpt::Level OL, bool JIT)
-      : TargetMachine(T, "", TT, CPU, FS, Options) {}
+      : TargetMachine(T, "", TT, CPU, FS, Options) {
+
+#if 0
+  std::string Triple = TheModule->getTargetTriple();
+  if (Triple.empty())
+    Triple = llvm::sys::getDefaultTargetTriple();
+
+  std::string E;
+  if (const Target *Match = TargetRegistry::lookupTarget(Triple, E))
+    AsmInfo = Match->createMCAsmInfo(Triple);
+#endif
+    AsmInfo = new CBEMCAsmInfo();
+  }
 
   /// Add passes to the specified pass manager to get the specified file
   /// emitted.  Typically this will involve several steps of code generation.
