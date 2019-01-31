@@ -1,0 +1,26 @@
+version: "3"
+
+services:
+  llvm-cde:
+    build: .
+    working_dir: /root
+    command: |
+      bash -c "
+        set -e;
+        cd /root/llvm/projects/llvm-cbe/test/selectionsort;
+
+        echo '# Logging initial files';
+        ls;
+
+        clang -S -emit-llvm main.c;
+        echo '# Logging compiled files';
+        ls;
+
+        /root/llvm/build/bin/llvm-cbe main.ll;
+        gcc -g -o main.cbe main.cbe.c;
+        echo '# Logging files compiled to C';
+        ls;
+
+        echo '# Running files compiled from code compiled to C';
+        ./main.cbe;
+      "
