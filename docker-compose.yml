@@ -4,23 +4,24 @@ services:
   llvm-cde:
     build: .
     working_dir: /root
+    volumes:
+      - ./test:/test
     command: |
       bash -c "
         set -e;
-        cd /root/llvm/projects/llvm-cbe/test/selectionsort;
 
-        echo '# Logging initial files';
-        ls;
+        # Navigate to test folder
+        cd /test/hello_world;
 
+        # Compile main.c to llvm IR
         clang -S -emit-llvm main.c;
-        echo '# Logging compiled files';
-        ls;
 
+        # Compile llvm IR back to C
         /root/llvm/build/bin/llvm-cbe main.ll;
-        gcc -g -o main.cbe main.cbe.c;
-        echo '# Logging files compiled to C';
-        ls;
 
-        echo '# Running files compiled from code compiled to C';
+        # Compile llvm-cbe generated C code
+        gcc -g -o main.cbe main.cbe.c;
+
+        # Run it
         ./main.cbe;
       "
