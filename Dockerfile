@@ -25,4 +25,5 @@ RUN \
   make llvm-cbe; \
   make lli; \
   make CBEUnitTests; \
-  /root/llvm/build/projects/llvm-cbe/unittests/CWriterTest;
+  /root/llvm/build/projects/llvm-cbe/unittests/CWriterTest; \
+  ln -s /root/llvm/build/bin/llvm-cbe /bin/llvm-cbe;

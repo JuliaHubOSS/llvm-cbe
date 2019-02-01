@@ -17,7 +17,7 @@ services:
         clang -S -emit-llvm main.c;
 
         # Compile llvm IR back to C
-        /root/llvm/build/bin/llvm-cbe main.ll;
+        llvm-cbe main.ll;
 
         # Compile llvm-cbe generated C code
         gcc -g -o main.cbe main.cbe.c;
