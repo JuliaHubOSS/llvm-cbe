@@ -5040,8 +5040,13 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     return true;
 
   PM.add(createGCLoweringPass());
+
+  // Remove exception handling with LowerInvokePass. This would be done with
+  // TargetPassConfig if TargetPassConfig supported TargetMachines that aren't
+  // LLVMTargetMachines.
   PM.add(createLowerInvokePass());
-  PM.add(createCFGSimplificationPass()); // clean up after lower invoke.
+  PM.add(createUnreachableBlockEliminationPass());
+
   PM.add(new llvm_cbe::CWriter(Out));
   return false;
 }
