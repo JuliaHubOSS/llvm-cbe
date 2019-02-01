@@ -12,9 +12,12 @@ RUN \
   mkdir -p /root/llvm/build; \
   cd /root/llvm/build; \
   cmake ..; \
-  make; \
-  cd /root/llvm/projects; \
-  git clone https://github.com/JuliaComputing/llvm-cbe; \
+  make;
+
+COPY . /root/llvm/projects/llvm-cbe/
+
+RUN \
+  set -e; \
   cd /root/llvm/projects/llvm-cbe; \
   git reset 45a5de1bb25e0d9bb7fea50100deab829f194c9a --hard; \
   cd /root/llvm/build; \
