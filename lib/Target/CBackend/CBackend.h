@@ -88,8 +88,7 @@ public:
     AU.addRequired<TargetPassConfig>();
     AU.addPreserved<TargetPassConfig>();
     AU.addRequired<LoopInfoWrapperPass>();
-    // lower invoke breaks CFG
-    // AU.setPreservesCFG();
+    AU.setPreservesCFG();
   }
 
   virtual bool doInitialization(Module &M);
