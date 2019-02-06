@@ -20,6 +20,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -38,6 +39,11 @@ namespace llvm_cbe {
 
 using namespace llvm;
 
+class CBEMCAsmInfo : public MCAsmInfo {
+public:
+  CBEMCAsmInfo() { PrivateGlobalPrefix = ""; }
+};
+
 /// CWriter - This class is the main chunk of code that converts an LLVM
 /// module to a C translation unit.
 class CWriter : public FunctionPass, public InstVisitor<CWriter> {
@@ -47,6 +53,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   IntrinsicLowering *IL = nullptr;
   LoopInfo *LI = nullptr;
   const Module *TheModule = nullptr;
+  const MCAsmInfo *TAsm = nullptr;
   const MCRegisterInfo *MRI = nullptr;
   const MCObjectFileInfo *MOFI = nullptr;
   MCContext *TCtx = nullptr;
@@ -85,11 +92,8 @@ public:
   virtual StringRef getPassName() const { return "C backend"; }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<TargetPassConfig>();
-    AU.addPreserved<TargetPassConfig>();
     AU.addRequired<LoopInfoWrapperPass>();
-    // lower invoke breaks CFG
-    // AU.setPreservesCFG();
+    AU.setPreservesCFG();
   }
 
   virtual bool doInitialization(Module &M);
