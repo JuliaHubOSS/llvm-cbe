@@ -1,7 +1,5 @@
 #include <stdatomic.h>
 
-// xfail: no atomic support (#10)
-
 int main() {
   atomic_int x = 0;
   int y = 1;
