@@ -23,8 +23,6 @@ COMMON_CFLAGS = [
     '-Wall',
     '-Wno-unused-function',
     '-Wno-unused-variable',
-    '-Wno-error=attributes',
-    '-Wno-attributes',
     '-Wno-main',
     '-Wno-error=main',
     '-Werror',

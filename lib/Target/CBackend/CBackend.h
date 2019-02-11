@@ -109,6 +109,8 @@ private:
   void forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty,
                                       std::set<Type *> &TypesPrinted);
 
+  raw_ostream &printFunctionAttributes(raw_ostream &Out, AttributeList Attrs);
+
   raw_ostream &
   printFunctionProto(raw_ostream &Out, FunctionType *Ty,
                      std::pair<AttributeList, CallingConv::ID> Attrs,
