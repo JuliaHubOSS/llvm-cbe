@@ -106,8 +106,6 @@ private:
 
   void forwardDeclareStructs(raw_ostream &Out, Type *Ty,
                              std::set<Type *> &TypesPrinted);
-  void forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty,
-                                      std::set<Type *> &TypesPrinted);
 
   raw_ostream &printFunctionAttributes(raw_ostream &Out, AttributeList Attrs);
 

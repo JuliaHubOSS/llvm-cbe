@@ -3139,15 +3139,6 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     }
   }
 
-  // forward-declare all function pointer typedefs (Issue #2)
-
-  {
-    std::set<Type *> TypesPrinted;
-    for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
-         it != end; ++it) {
-      forwardDeclareFunctionTypedefs(Out, *it, TypesPrinted);
-    }
-  }
 
   Out << "\n/* Types Definitions */\n";
 
@@ -3193,21 +3184,6 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
   }
 }
 
-void CWriter::forwardDeclareFunctionTypedefs(raw_ostream &Out, Type *Ty,
-                                             std::set<Type *> &TypesPrinted) {
-  if (!TypesPrinted.insert(Ty).second)
-    return;
-  if (isEmptyType(Ty))
-    return;
-
-  for (auto I = Ty->subtype_begin(); I != Ty->subtype_end(); ++I) {
-    forwardDeclareFunctionTypedefs(Out, *I, TypesPrinted);
-  }
-
-  if (FunctionType *FT = dyn_cast<FunctionType>(Ty)) {
-    printFunctionDeclaration(Out, FT);
-  }
-}
 
 // Push the struct onto the stack and recursively push all structs
 // this one depends on.
