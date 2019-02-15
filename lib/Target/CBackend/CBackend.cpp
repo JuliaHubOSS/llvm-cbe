@@ -3139,7 +3139,6 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     }
   }
 
-
   Out << "\n/* Types Definitions */\n";
 
   for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
@@ -3151,11 +3150,7 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   for (auto &I : UnnamedFunctionIDs) {
     Out << '\n';
-    std::pair<FunctionType *, std::pair<AttributeList, CallingConv::ID>> F =
-        I.first;
-    if (F.second.first.isEmpty() && F.second.second == CallingConv::C)
-      if (!TypesPrinted.insert(F.first).second)
-        continue; // already printed this above
+    const auto &F = I.first;
     printFunctionDeclaration(Out, F.first, F.second);
   }
 
@@ -3183,7 +3178,6 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
     Out << getStructName(ST) << ";\n";
   }
 }
-
 
 // Push the struct onto the stack and recursively push all structs
 // this one depends on.
