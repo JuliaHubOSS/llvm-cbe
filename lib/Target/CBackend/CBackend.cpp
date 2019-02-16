@@ -490,6 +490,81 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out,
   return Out;
 }
 
+raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
+                                              AttributeList Attrs) {
+  SmallVector<std::string, 5> AttrsToPrint;
+  for (const auto &FnAttr : Attrs.getFnAttributes()) {
+    if (FnAttr.isEnumAttribute() || FnAttr.isIntAttribute()) {
+      switch (FnAttr.getKindAsEnum()) {
+      case Attribute::AttrKind::AlwaysInline:
+        AttrsToPrint.push_back("always_inline");
+        break;
+      case Attribute::AttrKind::Cold:
+        AttrsToPrint.push_back("cold");
+        break;
+      case Attribute::AttrKind::Naked:
+        AttrsToPrint.push_back("naked");
+        break;
+      case Attribute::AttrKind::NoDuplicate:
+        AttrsToPrint.push_back("noclone");
+        break;
+      case Attribute::AttrKind::NoInline:
+        AttrsToPrint.push_back("noinline");
+        break;
+      case Attribute::AttrKind::NoUnwind:
+        AttrsToPrint.push_back("nothrow");
+        break;
+      case Attribute::AttrKind::ReadOnly:
+        AttrsToPrint.push_back("pure");
+        break;
+      case Attribute::AttrKind::ReadNone:
+        AttrsToPrint.push_back("const");
+        break;
+      case Attribute::AttrKind::ReturnsTwice:
+        AttrsToPrint.push_back("returns_twice");
+        break;
+      case Attribute::AttrKind::StackProtect:
+      case Attribute::AttrKind::StackProtectReq:
+      case Attribute::AttrKind::StackProtectStrong:
+        AttrsToPrint.push_back("stack_protect");
+        break;
+      case Attribute::AttrKind::AllocSize: {
+        const auto AllocSize = FnAttr.getAllocSizeArgs();
+        if (AllocSize.second.hasValue()) {
+          AttrsToPrint.push_back(
+              "alloc_size(" + std::to_string(AllocSize.first) + "," +
+              std::to_string(AllocSize.second.getValue()) + ")");
+        } else {
+          AttrsToPrint.push_back("alloc_size(" +
+                                 std::to_string(AllocSize.first) + ")");
+        }
+      } break;
+
+      default:
+        break;
+      }
+    }
+    if (FnAttr.isStringAttribute()) {
+      if (FnAttr.getKindAsString() == "patchable-function" &&
+          FnAttr.getValueAsString() == "prologue-short-redirect") {
+        AttrsToPrint.push_back("ms_hook_prologue");
+      }
+    }
+  }
+  if (!AttrsToPrint.empty()) {
+    Out << " __ATTRIBUTELIST__((";
+    bool DidPrintAttr = false;
+    for (const auto &Attr : AttrsToPrint) {
+      if (DidPrintAttr)
+        Out << ", ";
+      Out << Attr;
+      DidPrintAttr = true;
+    }
+    Out << "))";
+  }
+  return Out;
+}
+
 raw_ostream &CWriter::printFunctionDeclaration(
     raw_ostream &Out, FunctionType *Ty,
     std::pair<AttributeList, CallingConv::ID> PAL) {
@@ -1654,6 +1729,13 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
 
+  // gcc attributes
+  Out << "#if defined(__GNUC__)\n"
+      << "#define  __ATTRIBUTELIST__(x) __attribute__(x)\n"
+      << "#else\n"
+      << "#define  __ATTRIBUTELIST__(x)  \n"
+      << "#endif\n\n";
+
   // Define unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __UNALIGNED_LOAD__(type, align, op) *((type "
@@ -2159,6 +2241,7 @@ void CWriter::generateHeader(Module &M) {
     if (I->hasExternalWeakLinkage())
       Out << "extern ";
     printFunctionProto(Out, &*I);
+    printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage())
       Out << " __ATTRIBUTE_WEAK__";
     if (I->hasExternalWeakLinkage())
