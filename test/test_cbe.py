@@ -32,6 +32,9 @@ GCC = 'gcc'
 GCCFLAGS = COMMON_CFLAGS + [
     '-Wno-error=unused-but-set-variable',
     '-Wno-unused-but-set-variable',
+    '-Wno-builtin-declaration-mismatch',
+    '-Wno-error=builtin-declaration-mismatch',
+    '-latomic',
 ]
 
 CLANG = 'clang'

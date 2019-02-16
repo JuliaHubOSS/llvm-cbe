@@ -23,9 +23,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TargetRegistry.h"
 
-#if LLVM_VERSION_MAJOR >= 7
-#include "llvm/Transforms/Utils.h"
-#endif
+
 
 #include <algorithm>
 #include <cstdio>
@@ -5104,34 +5102,4 @@ LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
 
 } // namespace llvm_cbe
 
-//===----------------------------------------------------------------------===//
-//                       External Interface declaration
-//===----------------------------------------------------------------------===//
 
-namespace llvm {
-
-bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
-                                         raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR >= 7
-                                         raw_pwrite_stream *DwoOut,
-#endif
-                                         CodeGenFileType FileType,
-                                         bool DisableVerify,
-                                         MachineModuleInfo *MMI) {
-
-  if (FileType != TargetMachine::CGFT_AssemblyFile)
-    return true;
-
-  PM.add(createGCLoweringPass());
-
-  // Remove exception handling with LowerInvokePass. This would be done with
-  // TargetPassConfig if TargetPassConfig supported TargetMachines that aren't
-  // LLVMTargetMachines.
-  PM.add(createLowerInvokePass());
-  PM.add(createUnreachableBlockEliminationPass());
-
-  PM.add(new llvm_cbe::CWriter(Out));
-  return false;
-}
-
-} // namespace llvm
