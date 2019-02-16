@@ -23,7 +23,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TargetRegistry.h"
 
-
+#include "TopologicalSorter.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -3148,10 +3148,54 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   Out << "\n/* Function definitions */\n";
 
+  struct FunctionDefinition {
+    FunctionType *FT;
+    std::vector<FunctionType *> Dependencies;
+    std::string NameToPrint;
+  };
+
+  std::vector<FunctionDefinition> FunctionTypeDefinitions;
+  // Copy Function Types into indexable container
   for (auto &I : UnnamedFunctionIDs) {
-    Out << '\n';
     const auto &F = I.first;
-    printFunctionDeclaration(Out, F.first, F.second);
+    FunctionType *FT = F.first;
+    std::vector<FunctionType *> FDeps;
+    for (const auto P : F.first->params()) {
+      if (P->isPointerTy()) {
+        PointerType *PP = dyn_cast<PointerType>(P);
+        if (PP->getElementType()->isFunctionTy()) {
+          FDeps.push_back(dyn_cast<FunctionType>(PP->getElementType()));
+        }
+      }
+    }
+    std::string DeclString;
+    raw_string_ostream TmpOut(DeclString);
+    printFunctionDeclaration(TmpOut, F.first, F.second);
+    TmpOut.flush();
+    FunctionTypeDefinitions.emplace_back(
+        FunctionDefinition{FT, FDeps, DeclString});
+  }
+
+  // Sort function types
+  TopologicalSorter Sorter(FunctionTypeDefinitions.size());
+  DenseMap<FunctionType *, int> TopologicalSortMap;
+  // Add Vertices
+  for (unsigned I = 0; I < FunctionTypeDefinitions.size(); I++) {
+    TopologicalSortMap[FunctionTypeDefinitions[I].FT] = I;
+  }
+  // Add Edges
+  for (unsigned I = 0; I < FunctionTypeDefinitions.size(); I++) {
+    const auto &Dependencies = FunctionTypeDefinitions[I].Dependencies;
+    for (unsigned J = 0; J < Dependencies.size(); J++) {
+      Sorter.addEdge(I, TopologicalSortMap[Dependencies[J]]);
+    }
+  }
+  Optional<std::vector<int>> TopologicalSortResult = Sorter.sort();
+  if (!TopologicalSortResult.hasValue()) {
+    errorWithMessage("Cyclic dependencies in function definitions");
+  }
+  for (const auto I : TopologicalSortResult.getValue()) {
+    Out << FunctionTypeDefinitions[I].NameToPrint << "\n";
   }
 
   // We may have collected some intrinsic prototypes to emit.
@@ -5071,5 +5115,3 @@ LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
 }
 
 } // namespace llvm_cbe
-
-
