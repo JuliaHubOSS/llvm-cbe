@@ -80,7 +80,7 @@ static bool isEmptyType(Type *Ty) {
     return VTy->getNumElements() == 0 || isEmptyType(VTy->getElementType());
 
   if (ArrayType *ATy = dyn_cast<ArrayType>(Ty))
-    return ATy->getNumElements() == 0 || isEmptyType(ATy->getElementType());
+    return isEmptyType(ATy->getElementType());
 
   return Ty->isVoidTy();
 }
