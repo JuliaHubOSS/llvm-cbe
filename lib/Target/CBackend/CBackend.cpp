@@ -23,8 +23,6 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TargetRegistry.h"
 
-
-
 #include <algorithm>
 #include <cstdio>
 
@@ -1912,6 +1910,10 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
   // If we aren't being compiled with GCC, just drop these attributes.
   Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
       << "#define __attribute__(X)\n"
+      << "#endif\n\n";
+
+  Out << "#ifdef _MSC_VER\n"
+      << "#define __atomic_thread_fence(x) __faststorefence\n"
       << "#endif\n\n";
 }
 
@@ -4932,6 +4934,32 @@ void CWriter::visitStoreInst(StoreInst &I) {
     Out << ") & " << BitMask << ")";
 }
 
+void CWriter::visitFenceInst(FenceInst &I) {
+  Out << "__atomic_thread_fence(";
+  switch (I.getOrdering()) {
+  case AtomicOrdering::Acquire:
+    Out << "__ATOMIC_ACQUIRE";
+    break;
+  case AtomicOrdering::Release:
+    Out << "__ATOMIC_RELEASE";
+    break;
+  case AtomicOrdering::AcquireRelease:
+    Out << "__ATOMIC_ACQ_REL";
+    break;
+  case AtomicOrdering::SequentiallyConsistent:
+    Out << "__ATOMIC_SEQ_CST";
+    break;
+  case AtomicOrdering::NotAtomic:
+  case AtomicOrdering::Unordered:
+  case AtomicOrdering::Monotonic:
+    Out << "__ATOMIC_RELAXED";
+    break;
+  default:
+    errorWithMessage("Unhandled atomic ordering for fence instruction");
+  }
+  Out << ");\n";
+}
+
 void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
   CurInstr = &I;
 
@@ -5101,5 +5129,3 @@ LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
 }
 
 } // namespace llvm_cbe
-
-
