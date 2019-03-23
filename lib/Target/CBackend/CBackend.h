@@ -1,5 +1,6 @@
 #include "CTargetMachine.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -105,7 +106,8 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool ConstantFloatTy: 1;
     bool ConstantFP80Ty: 1;
     bool ConstantFP128Ty: 1;
-    bool BitCastUnion;
+    bool BitCastUnion: 1;
+    bool ForceInline: 1;
   } UsedHeaders;
 
 #define USED_HEADERS_FLAG(Name)\
@@ -132,6 +134,10 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(ConstantFP80Ty)
   USED_HEADERS_FLAG(ConstantFP128Ty)
   USED_HEADERS_FLAG(BitCastUnion)
+  USED_HEADERS_FLAG(ForceInline)
+
+  llvm::SmallSet<CmpInst::Predicate, 26> FCmpOps;
+  void headerUseFCmpOp(CmpInst::Predicate P);
 
   void generateCompilerSpecificCode(raw_ostream &Out, const DataLayout *) const;
 

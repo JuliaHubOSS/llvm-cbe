@@ -355,6 +355,76 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   }
 }
 
+static const char* getFCmpImplem(CmpInst::Predicate P)
+{
+  switch (P) {
+  case FCmpInst::FCMP_FALSE:
+    return "0";
+  case FCmpInst::FCMP_OEQ:
+    return "X == Y"; 
+  case FCmpInst::FCMP_OGT:
+    return "X >  Y"; 
+  case FCmpInst::FCMP_OGE:
+    return "X >= Y"; 
+  case FCmpInst::FCMP_OLT:
+    return "X <  Y"; 
+  case FCmpInst::FCMP_OLE:
+    return "X <= Y"; 
+  case FCmpInst::FCMP_ONE:
+    return "X != Y && llvm_fcmp_ord(X, Y);"; 
+  case FCmpInst::FCMP_ORD:
+    return "X == X && Y == Y";
+  case FCmpInst::FCMP_UNO:
+    return "X != X || Y != Y";
+  case FCmpInst::FCMP_UEQ:
+    return "X == Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_UGT:
+    return "X >  Y || llvm_fcmp_uno(X, Y)";
+    return "ugt";
+  case FCmpInst::FCMP_UGE:
+    return "X >= Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_ULT:
+    return "X <  Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_ULE:
+    return "X <= Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_UNE:
+    return "X != Y";
+  case FCmpInst::FCMP_TRUE:
+    return "1";
+  default:
+#ifndef NDEBUG
+    errs() << "Invalid fcmp predicate!" << P << "\n";
+#endif
+    // TODO: cwriter_assert
+    llvm_unreachable(0);
+  }
+}
+
+static void defineFCmpOp(raw_ostream& Out, CmpInst::Predicate const P)
+{
+  Out << "static __forceinline int llvm_fcmp_" << getCmpPredicateName(P) << "(double X, double Y) { ";
+  Out << "return " << getFCmpImplem(P) << "; }\n";
+}
+
+void CWriter::headerUseFCmpOp(CmpInst::Predicate P)
+{
+  switch (P) {
+  case FCmpInst::FCMP_ONE:
+    FCmpOps.insert(CmpInst::FCMP_ORD);
+    break;
+  case FCmpInst::FCMP_UEQ:
+  case FCmpInst::FCMP_UGT:
+  case FCmpInst::FCMP_UGE:
+  case FCmpInst::FCMP_ULT:
+  case FCmpInst::FCMP_ULE:
+    FCmpOps.insert(CmpInst::FCMP_UNO);
+    break;
+  default:
+    break;
+  }
+  FCmpOps.insert(P);
+}
+
 raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
                                       bool isSigned) {
   cwriter_assert((Ty->isSingleValueType() || Ty->isVoidTy()) &&
@@ -1069,8 +1139,10 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       else if (CE->getPredicate() == FCmpInst::FCMP_TRUE)
         Out << "1";
       else {
+        const auto Pred = (CmpInst::Predicate)CE->getPredicate();
+        headerUseFCmpOp(Pred);
         Out << "llvm_fcmp_"
-            << getCmpPredicateName((CmpInst::Predicate)CE->getPredicate())
+            << getCmpPredicateName(Pred)
             << "(";
         printConstant(CE->getOperand(0), ContextCasted);
         Out << ", ";
@@ -2082,7 +2154,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out, const DataLayout *)
     defineUnreachable(Out);
   if (headerIncNoReturn())
     defineNoReturn(Out);
-  defineForceInline(Out);
+  if (headerIncForceInline())
+    defineForceInline(Out);
   if (headerIncExternalWeak())
     defineExternalWeak(Out);
   if (headerIncAttributeWeak())
@@ -2426,42 +2499,9 @@ void CWriter::generateHeader(Module &M) {
 
   Out << "\n\n/* LLVM Intrinsic Builtin Function Bodies */\n";
 
-  // Emit some helper functions for dealing with FCMP instruction's
-  // predicates
-  Out << "static __forceinline int llvm_fcmp_ord(double X, double Y) { ";
-  Out << "return X == X && Y == Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_uno(double X, double Y) { ";
-  Out << "return X != X || Y != Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_ueq(double X, double Y) { ";
-  Out << "return X == Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_une(double X, double Y) { ";
-  Out << "return X != Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_ult(double X, double Y) { ";
-  Out << "return X <  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_ugt(double X, double Y) { ";
-  Out << "return X >  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_ule(double X, double Y) { ";
-  Out << "return X <= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_uge(double X, double Y) { ";
-  Out << "return X >= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_oeq(double X, double Y) { ";
-  Out << "return X == Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_one(double X, double Y) { ";
-  Out << "return X != Y && llvm_fcmp_ord(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_olt(double X, double Y) { ";
-  Out << "return X <  Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_ogt(double X, double Y) { ";
-  Out << "return X >  Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_ole(double X, double Y) { ";
-  Out << "return X <= Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_oge(double X, double Y) { ";
-  Out << "return X >= Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_0(double X, double Y) { ";
-  Out << "return 0; }\n";
-  Out << "static __forceinline int llvm_fcmp_1(double X, double Y) { ";
-  Out << "return 1; }\n";
-
   // Loop over all select operations
+  if (!SelectDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<Type *>::iterator it = SelectDeclTypes.begin(),
                                   end = SelectDeclTypes.end();
        it != end; ++it) {
@@ -2508,6 +2548,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all compare operations
+  if (!CmpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<std::pair<CmpInst::Predicate, VectorType *>>::iterator
            it = CmpDeclTypes.begin(),
            end = CmpDeclTypes.end();
@@ -2528,11 +2570,14 @@ void CWriter::generateHeader(Module &M) {
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
-    if (CmpInst::isFPPredicate((*it).first))
+    const auto Pred = (*it).first;
+    if (CmpInst::isFPPredicate((*it).first)) {
+      FCmpOps.insert(Pred);
       Out << " llvm_fcmp_";
+    }
     else
       Out << " llvm_icmp_";
-    Out << getCmpPredicateName((*it).first) << "_";
+    Out << getCmpPredicateName(Pred) << "_";
     printTypeString(Out, (*it).second, isSigned);
     Out << "(";
     printTypeNameUnaligned(Out, (*it).second, isSigned);
@@ -2584,6 +2629,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all (vector) cast operations
+  if (!CastOpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<
            std::pair<CastInst::CastOps, std::pair<Type *, Type *>>>::iterator
            it = CastOpDeclTypes.begin(),
@@ -2702,6 +2749,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all simple vector operations
+  if (!InlineOpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<std::pair<unsigned, Type *>>::iterator
            it = InlineOpDeclTypes.begin(),
            end = InlineOpDeclTypes.end();
@@ -3031,6 +3080,8 @@ void CWriter::generateHeader(Module &M) {
     Out << "  return r;\n}\n";
   }
 
+  if (!CtorDeclTypes.empty())
+    headerUseForceInline();
   // Loop over all inline constructors
   for (std::set<Type *>::iterator it = CtorDeclTypes.begin(),
                                   end = CtorDeclTypes.end();
@@ -3088,6 +3139,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Emit definitions of the intrinsics.
+  if (!intrinsicsToDefine.empty())
+    headerUseForceInline();
   for (SmallVector<Function *, 16>::iterator I = intrinsicsToDefine.begin(),
                                              E = intrinsicsToDefine.end();
        I != E; ++I) {
@@ -3097,7 +3150,23 @@ void CWriter::generateHeader(Module &M) {
   if (!M.empty())
     Out << "\n\n/* Function Bodies */\n";
 
+  if (!FCmpOps.empty())
+    headerUseForceInline();
+
   generateCompilerSpecificCode(OutHeaders, TD);
+
+  // Loop over all fcmp compare operations. We do that after
+  // generateCompilerSpecificCode because we need __forceinline!
+  if (FCmpOps.erase(FCmpInst::FCMP_ORD)) {
+    defineFCmpOp(OutHeaders, FCmpInst::FCMP_ORD);
+  }
+  if (FCmpOps.erase(FCmpInst::FCMP_UNO)) {
+    defineFCmpOp(OutHeaders, FCmpInst::FCMP_UNO);
+  }
+  for (auto Pred: FCmpOps) {
+    defineFCmpOp(OutHeaders, Pred);
+  }
+  FCmpOps.clear();
 }
 
 void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
@@ -3942,7 +4011,9 @@ void CWriter::visitFCmpInst(FCmpInst &I) {
     return;
   }
 
-  Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "(";
+  const auto Pred = I.getPredicate();
+  headerUseFCmpOp(Pred);
+  Out << "llvm_fcmp_" << getCmpPredicateName(Pred) << "(";
   // Write the first operand
   writeOperand(I.getOperand(0), ContextCasted);
   Out << ", ";
