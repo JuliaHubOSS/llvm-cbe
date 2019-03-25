@@ -4,9 +4,8 @@ RUN \
   set -e; \
   apt update && apt install -y \
     clang \
-    ninja-build; \
-  wget -qO- "https://cmake.org/files/v3.13/cmake-3.13.1-Linux-x86_64.tar.gz" \
-    | tar --strip-components=1 -xz -C /usr/local; \
+    ninja-build \
+    cmake; \
   cd /root; \
   curl -fL http://releases.llvm.org/7.0.1/llvm-7.0.1.src.tar.xz \
     | tar xJf -; \
