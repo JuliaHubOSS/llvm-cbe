@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  llvm-cbe:
+    build: .
+    working_dir: /root
+    volumes:
+      - ./test:/test
+    command: |
+      bash -c "
+        set -e;
+
+        # Navigate to test folder
+        cd /test/hello_world;
+
+        # Compile main.c to llvm IR
+        clang -S -emit-llvm main.c;
+
+        # Compile llvm IR back to C
+        llvm-cbe main.ll;
+
+        # Compile llvm-cbe generated C code
+        gcc -g -o main.cbe main.cbe.c;
+
+        # Run it
+        ./main.cbe;
+      "
