@@ -1913,6 +1913,10 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
   Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
       << "#define __attribute__(X)\n"
       << "#endif\n\n";
+
+  Out << "#ifdef _MSC_VER\n"
+      << "#define __atomic_thread_fence(x) __faststorefence\n"
+      << "#endif\n\n";
 }
 
 /// FindStaticTors - Given a static ctor/dtor list, unpack its contents into
@@ -4946,6 +4950,32 @@ void CWriter::visitStoreInst(StoreInst &I) {
   writeOperand(Operand, BitMask ? ContextNormal : ContextCasted);
   if (BitMask)
     Out << ") & " << BitMask << ")";
+}
+
+void CWriter::visitFenceInst(FenceInst &I) {
+  Out << "__atomic_thread_fence(";
+  switch (I.getOrdering()) {
+  case AtomicOrdering::Acquire:
+    Out << "__ATOMIC_ACQUIRE";
+    break;
+  case AtomicOrdering::Release:
+    Out << "__ATOMIC_RELEASE";
+    break;
+  case AtomicOrdering::AcquireRelease:
+    Out << "__ATOMIC_ACQ_REL";
+    break;
+  case AtomicOrdering::SequentiallyConsistent:
+    Out << "__ATOMIC_SEQ_CST";
+    break;
+  case AtomicOrdering::NotAtomic:
+  case AtomicOrdering::Unordered:
+  case AtomicOrdering::Monotonic:
+    Out << "__ATOMIC_RELAXED";
+    break;
+  default:
+    errorWithMessage("Unhandled atomic ordering for fence instruction");
+  }
+  Out << ");\n";
 }
 
 void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {

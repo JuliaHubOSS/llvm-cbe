@@ -235,6 +235,7 @@ private:
   void visitAllocaInst(AllocaInst &I);
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
+  void visitFenceInst(FenceInst &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitVAArgInst(VAArgInst &I);
 
