@@ -1,5 +1,6 @@
 #include "CTargetMachine.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -48,6 +49,8 @@ public:
 /// module to a C translation unit.
 class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::string _Out;
+  std::string _OutHeaders;
+  raw_string_ostream OutHeaders;
   raw_string_ostream Out;
   raw_ostream &FileOut;
   IntrinsicLowering *IL = nullptr;
@@ -85,9 +88,64 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   // will only be expanded on first use
   std::vector<Function *> prototypesToGen;
 
+  struct {
+    bool BuiltinAlloca: 1;
+    bool Unreachable: 1;
+    bool NoReturn: 1;
+    bool ExternalWeak: 1;
+    bool AttributeWeak: 1;
+    bool Hidden: 1;
+    bool AttributeList: 1;
+    bool UnalignedLoad: 1;
+    bool MsAlign: 1;
+    bool NanInf: 1;
+    bool Int128: 1;
+    bool ThreadFence: 1;
+    bool StackSaveRestore: 1;
+    bool ConstantDoubleTy: 1;
+    bool ConstantFloatTy: 1;
+    bool ConstantFP80Ty: 1;
+    bool ConstantFP128Ty: 1;
+    bool BitCastUnion: 1;
+    bool ForceInline: 1;
+  } UsedHeaders;
+
+#define USED_HEADERS_FLAG(Name)\
+  void headerUse##Name() {\
+    UsedHeaders.Name = true;\
+  }\
+  bool headerInc##Name() const { return UsedHeaders.Name; }
+
+  USED_HEADERS_FLAG(BuiltinAlloca)
+  USED_HEADERS_FLAG(Unreachable)
+  USED_HEADERS_FLAG(NoReturn)
+  USED_HEADERS_FLAG(ExternalWeak)
+  USED_HEADERS_FLAG(AttributeWeak)
+  USED_HEADERS_FLAG(Hidden)
+  USED_HEADERS_FLAG(AttributeList)
+  USED_HEADERS_FLAG(UnalignedLoad)
+  USED_HEADERS_FLAG(MsAlign)
+  USED_HEADERS_FLAG(NanInf)
+  USED_HEADERS_FLAG(Int128)
+  USED_HEADERS_FLAG(ThreadFence)
+  USED_HEADERS_FLAG(StackSaveRestore)
+  USED_HEADERS_FLAG(ConstantDoubleTy)
+  USED_HEADERS_FLAG(ConstantFloatTy)
+  USED_HEADERS_FLAG(ConstantFP80Ty)
+  USED_HEADERS_FLAG(ConstantFP128Ty)
+  USED_HEADERS_FLAG(BitCastUnion)
+  USED_HEADERS_FLAG(ForceInline)
+
+  llvm::SmallSet<CmpInst::Predicate, 26> FCmpOps;
+  void headerUseFCmpOp(CmpInst::Predicate P);
+
+  void generateCompilerSpecificCode(raw_ostream &Out, const DataLayout *) const;
+
 public:
   static char ID;
-  explicit CWriter(raw_ostream &o) : FunctionPass(ID), Out(_Out), FileOut(o) {}
+  explicit CWriter(raw_ostream &o) : FunctionPass(ID), OutHeaders(_OutHeaders), Out(_Out), FileOut(o) {
+    memset(&UsedHeaders, 0, sizeof(UsedHeaders));
+  }
 
   virtual StringRef getPassName() const { return "C backend"; }
 

@@ -283,8 +283,10 @@ std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
   raw_string_ostream VectorInnards(astr);
   // Vectors are handled like arrays
   cwriter_assert(!isEmptyType(VT));
-  if (Aligned)
+  if (Aligned) {
+    headerUseMsAlign();
     Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
+  }
   printTypeName(VectorInnards, VT->getElementType(), false);
   return "struct l_vector_" + utostr(VT->getNumElements()) + '_' +
          CBEMangle(VectorInnards.str());
@@ -351,6 +353,76 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
     // TODO: cwriter_assert
     llvm_unreachable(0);
   }
+}
+
+static const char* getFCmpImplem(CmpInst::Predicate P)
+{
+  switch (P) {
+  case FCmpInst::FCMP_FALSE:
+    return "0";
+  case FCmpInst::FCMP_OEQ:
+    return "X == Y"; 
+  case FCmpInst::FCMP_OGT:
+    return "X >  Y"; 
+  case FCmpInst::FCMP_OGE:
+    return "X >= Y"; 
+  case FCmpInst::FCMP_OLT:
+    return "X <  Y"; 
+  case FCmpInst::FCMP_OLE:
+    return "X <= Y"; 
+  case FCmpInst::FCMP_ONE:
+    return "X != Y && llvm_fcmp_ord(X, Y);"; 
+  case FCmpInst::FCMP_ORD:
+    return "X == X && Y == Y";
+  case FCmpInst::FCMP_UNO:
+    return "X != X || Y != Y";
+  case FCmpInst::FCMP_UEQ:
+    return "X == Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_UGT:
+    return "X >  Y || llvm_fcmp_uno(X, Y)";
+    return "ugt";
+  case FCmpInst::FCMP_UGE:
+    return "X >= Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_ULT:
+    return "X <  Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_ULE:
+    return "X <= Y || llvm_fcmp_uno(X, Y)";
+  case FCmpInst::FCMP_UNE:
+    return "X != Y";
+  case FCmpInst::FCMP_TRUE:
+    return "1";
+  default:
+#ifndef NDEBUG
+    errs() << "Invalid fcmp predicate!" << P << "\n";
+#endif
+    // TODO: cwriter_assert
+    llvm_unreachable(0);
+  }
+}
+
+static void defineFCmpOp(raw_ostream& Out, CmpInst::Predicate const P)
+{
+  Out << "static __forceinline int llvm_fcmp_" << getCmpPredicateName(P) << "(double X, double Y) { ";
+  Out << "return " << getFCmpImplem(P) << "; }\n";
+}
+
+void CWriter::headerUseFCmpOp(CmpInst::Predicate P)
+{
+  switch (P) {
+  case FCmpInst::FCMP_ONE:
+    FCmpOps.insert(CmpInst::FCMP_ORD);
+    break;
+  case FCmpInst::FCMP_UEQ:
+  case FCmpInst::FCMP_UGT:
+  case FCmpInst::FCMP_UGE:
+  case FCmpInst::FCMP_ULT:
+  case FCmpInst::FCMP_ULE:
+    FCmpOps.insert(CmpInst::FCMP_UNO);
+    break;
+  default:
+    break;
+  }
+  FCmpOps.insert(P);
 }
 
 raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
@@ -548,6 +620,7 @@ raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
     }
   }
   if (!AttrsToPrint.empty()) {
+    headerUseAttributeList();
     Out << " __ATTRIBUTELIST__((";
     bool DidPrintAttr = false;
     for (const auto &Attr : AttrsToPrint) {
@@ -576,8 +649,10 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
                             iterator_range<Function::arg_iterator> *ArgList) {
   AttributeList &PAL = Attrs.first;
 
-  if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn))
+  if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn)) {
+    headerUseNoReturn();
     Out << "__noreturn ";
+  }
 
   // Should this function actually return a struct by-value?
   bool isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
@@ -1064,8 +1139,10 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       else if (CE->getPredicate() == FCmpInst::FCMP_TRUE)
         Out << "1";
       else {
+        const auto Pred = (CmpInst::Predicate)CE->getPredicate();
+        headerUseFCmpOp(Pred);
         Out << "llvm_fcmp_"
-            << getCmpPredicateName((CmpInst::Predicate)CE->getPredicate())
+            << getCmpPredicateName(Pred)
             << "(";
         printConstant(CE->getOperand(0), ContextCasted);
         Out << ", ";
@@ -1138,6 +1215,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     } else if (Ty->getPrimitiveSizeInBits() <= 64) {
       Out << "UINT64_C(" << CI->getZExtValue() << ")";
     } else if (Ty->getPrimitiveSizeInBits() <= 128) {
+      headerUseInt128();
       const APInt &V = CI->getValue();
       const APInt &Vlo = V.getLoBits(64);
       const APInt &Vhi = V.getHiBits(64);
@@ -1200,6 +1278,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         std::string Num(&Buffer[0], &Buffer[6]);
         unsigned long Val = strtoul(Num.c_str(), 0, 16);
 
+        headerUseNanInf();
         if (FPC->getType() == Type::getFloatTy(FPC->getContext()))
           Out << "LLVM_NAN" << (Val == QuietNaN ? "" : "S") << "F(\"" << Buffer
               << "\") /*nan*/ ";
@@ -1210,6 +1289,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         // The value is Inf
         if (V < 0)
           Out << '-';
+        headerUseNanInf();
         Out << "LLVM_INF"
             << (FPC->getType() == Type::getFloatTy(FPC->getContext()) ? "F"
                                                                       : "")
@@ -1672,10 +1752,30 @@ void CWriter::writeOperandWithCast(Value *Operand, ICmpInst &Cmp) {
   Out << ")";
 }
 
-// generateCompilerSpecificCode - This is where we add conditional compilation
-// directives to cater to specific compilers as need be.
-static void generateCompilerSpecificCode(raw_ostream &Out,
-                                         const DataLayout *TD) {
+static void defineConstantDoubleTy(raw_ostream& Out)
+{
+  Out << "typedef uint64_t ConstantDoubleTy;\n";
+}
+
+static void defineConstantFloatTy(raw_ostream& Out)
+{
+  Out << "typedef uint32_t ConstantFloatTy;\n";
+}
+
+static void defineConstantFP80Ty(raw_ostream& Out)
+{
+  Out << "typedef struct { uint64_t f1; uint16_t f2; "
+         "uint16_t pad[3]; } ConstantFP80Ty;\n";
+}
+
+static void defineConstantFP128Ty(raw_ostream& Out)
+{
+  // This is used for both kinds of 128-bit long double; meaning differs.
+  Out << "typedef struct { uint64_t f1; uint64_t f2; }"
+         " ConstantFP128Ty;\n";
+}
+
+static void defineBuiltinAlloca(raw_ostream& Out) {
   // Alloca is hard to get, and we don't want to include stdlib.h here.
   Out << "/* get a declaration for alloca */\n"
       << "#if defined(__CYGWIN__) || defined(__MINGW32__)\n"
@@ -1701,7 +1801,10 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#else\n"
       << "#include <alloca.h>\n"
       << "#endif\n\n";
+}
 
+static void defineExternalWeak(raw_ostream& Out)
+{
   // On Mac OS X, "external weak" is spelled "__attribute__((weak_import))".
   Out << "#if defined(__GNUC__) && defined(__APPLE_CC__)\n"
       << "#define __EXTERNAL_WEAK__ __attribute__((weak_import))\n"
@@ -1711,6 +1814,10 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#define __EXTERNAL_WEAK__\n"
       << "#endif\n\n";
 
+}
+
+static void defineAttributeWeak(raw_ostream& Out)
+{
   // For now, turn off the weak linkage attribute on Mac OS X. (See above.)
   Out << "#if defined(__GNUC__) && defined(__APPLE_CC__)\n"
       << "#define __ATTRIBUTE_WEAK__\n"
@@ -1719,12 +1826,18 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#else\n"
       << "#define __ATTRIBUTE_WEAK__\n"
       << "#endif\n\n";
+}
 
+static void defineHidden(raw_ostream& Out)
+{
   // Add hidden visibility support. FIXME: APPLE_CC?
   Out << "#if defined(__GNUC__)\n"
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
+}
 
+static void defineAttributeList(raw_ostream& Out)
+{
   // gcc attributes
   Out << "#if defined(__GNUC__)\n"
       << "#define  __ATTRIBUTELIST__(x) __attribute__(x)\n"
@@ -1732,6 +1845,16 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#define  __ATTRIBUTELIST__(x)  \n"
       << "#endif\n\n";
 
+  // We output GCC specific attributes to preserve 'linkonce'ness on globals.
+  // If we aren't being compiled with GCC, just drop these attributes.
+  Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
+      << "#define __attribute__(X)\n"
+      << "#endif\n\n";
+
+}
+
+static void defineUnalignedLoad(raw_ostream& Out)
+{
   // Define unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __UNALIGNED_LOAD__(type, align, op) *((type "
@@ -1740,23 +1863,41 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
   Out << "#define __UNALIGNED_LOAD__(type, align, op) ((struct { type data "
          "__attribute__((packed, aligned(align))); }*)op)->data\n";
   Out << "#endif\n\n";
+}
 
-  // Define unaligned-load helper macro
+static void defineMsAlign(raw_ostream& Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __MSALIGN__(X) __declspec(align(X))\n";
   Out << "#else\n";
   Out << "#define __MSALIGN__(X)\n";
   Out << "#endif\n\n";
+}
 
-  // Define compatibility macros to help msvc look more like gcc/clang
+static void defineUnreachable(raw_ostream& Out)
+{
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __builtin_unreachable() __assume(0)\n";
+  Out << "#endif\n";
+}
+
+static void defineNoReturn(raw_ostream& Out)
+{
+  Out << "#ifdef _MSC_VER\n";
   Out << "#define __noreturn __declspec(noreturn)\n";
   Out << "#else\n";
   Out << "#define __noreturn __attribute__((noreturn))\n";
+  Out << "#endif\n";
+}
+
+static void defineForceInline(raw_ostream& Out)
+{
+  Out << "#ifndef _MSC_VER\n";
   Out << "#define __forceinline __attribute__((always_inline)) inline\n";
   Out << "#endif\n\n";
+}
 
+static void defineNanInf(raw_ostream& Out)
+{
   // Define NaN and Inf as GCC builtins if using GCC
   // From the GCC documentation:
   //
@@ -1812,13 +1953,19 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
       << "#define __ATTRIBUTE_DTOR__ \"__attribute__((destructor)) not "
          "supported on this compiler\"\n"
       << "#endif\n\n";
+}
 
+static void defineStackSaveRestore(raw_ostream& Out)
+{
   Out << "#if !defined(__GNUC__) || __GNUC__ < 4 /* Old GCC's, or compilers "
          "not GCC */ \n"
       << "#define __builtin_stack_save() 0   /* not implemented */\n"
       << "#define __builtin_stack_restore(X) /* noop */\n"
       << "#endif\n\n";
+}
 
+static void defineInt128(raw_ostream& Out)
+{
   // Output typedefs for 128-bit integers
   Out << "#if defined(__GNUC__) && defined(__LP64__) /* 128-bit integer types "
          "*/\n"
@@ -1905,13 +2052,10 @@ static void generateCompilerSpecificCode(raw_ostream &Out,
          "(int64_t)l.lo > (int64_t)l.lo : 0); }\n"
       << "#define __emulate_i128\n"
       << "#endif\n\n";
+}
 
-  // We output GCC specific attributes to preserve 'linkonce'ness on globals.
-  // If we aren't being compiled with GCC, just drop these attributes.
-  Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
-      << "#define __attribute__(X)\n"
-      << "#endif\n\n";
-
+static void defineThreadFence(raw_ostream& Out)
+{
   Out << "#ifdef _MSC_VER\n"
       << "#define __atomic_thread_fence(x) __faststorefence\n"
       << "#endif\n\n";
@@ -1993,6 +2137,47 @@ static void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
   PrintEscapedString(Str.c_str(), Str.size(), Out);
 }
 
+// generateCompilerSpecificCode - This is where we add conditional compilation
+// directives to cater to specific compilers as need be.
+void CWriter::generateCompilerSpecificCode(raw_ostream &Out, const DataLayout *) const {
+  if (headerIncConstantDoubleTy())
+    defineConstantDoubleTy(Out);
+  if (headerIncConstantFloatTy())
+    defineConstantFloatTy(Out);
+  if (headerIncConstantFP80Ty())
+    defineConstantFP80Ty(Out);
+  if (headerIncConstantFP128Ty())
+    defineConstantFP128Ty(Out);
+  if (headerIncBuiltinAlloca())
+    defineBuiltinAlloca(Out);
+  if (headerIncUnreachable())
+    defineUnreachable(Out);
+  if (headerIncNoReturn())
+    defineNoReturn(Out);
+  if (headerIncForceInline())
+    defineForceInline(Out);
+  if (headerIncExternalWeak())
+    defineExternalWeak(Out);
+  if (headerIncAttributeWeak())
+    defineAttributeWeak(Out);
+  if (headerIncHidden())
+    defineHidden(Out);
+  if (headerIncAttributeList())
+    defineAttributeList(Out);
+  if (headerIncUnalignedLoad())
+    defineUnalignedLoad(Out);
+  if (headerIncMsAlign())
+    defineMsAlign(Out);
+  if (headerIncNanInf())
+    defineNanInf(Out);
+  if (headerIncInt128())
+    defineInt128(Out);
+  if (headerIncThreadFence())
+    defineThreadFence(Out);
+  if (headerIncStackSaveRestore())
+    defineStackSaveRestore(Out);
+}
+
 bool CWriter::doInitialization(Module &M) {
   TheModule = &M;
 
@@ -2020,8 +2205,9 @@ bool CWriter::doFinalization(Module &M) {
   std::string methods = Out.str();
   _Out.clear();
   generateHeader(M);
-  std::string header = Out.str();
+  std::string header = OutHeaders.str() + Out.str();
   _Out.clear();
+  _OutHeaders.clear();
   FileOut << header << methods;
 
   // Free memory...
@@ -2079,28 +2265,18 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // get declaration for alloca
-  Out << "/* Provide Declarations */\n";
-  Out << "#include <stdarg.h>\n"; // Varargs support
-  Out << "#include <setjmp.h>\n"; // Unwind support
-  Out << "#include <limits.h>\n"; // With overflow intrinsics support.
-  Out << "#include <stdint.h>\n"; // Sized integer support
-  Out << "#include <math.h>\n";   // definitions for some math functions and
+  OutHeaders << "/* Provide Declarations */\n";
+  OutHeaders << "#include <stdarg.h>\n"; // Varargs support
+  OutHeaders << "#include <setjmp.h>\n"; // Unwind support
+  OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
+  OutHeaders << "#include <stdint.h>\n"; // Sized integer support
+  OutHeaders << "#include <math.h>\n";   // definitions for some math functions and
                                   // numeric constants
   // Provide a definition for `bool' if not compiling with a C++ compiler.
-  Out << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
-  Out << "\n";
+  OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
+  OutHeaders << "\n";
 
-  generateCompilerSpecificCode(Out, TD);
-
-  Out << "\n\n/* Support for floating point constants */\n"
-      << "typedef uint64_t ConstantDoubleTy;\n"
-      << "typedef uint32_t ConstantFloatTy;\n"
-      << "typedef struct { uint64_t f1; uint16_t f2; "
-         "uint16_t pad[3]; } ConstantFP80Ty;\n"
-      // This is used for both kinds of 128-bit long double; meaning differs.
-      << "typedef struct { uint64_t f1; uint64_t f2; }"
-         " ConstantFP128Ty;\n"
-      << "\n\n/* Global Declarations */\n";
+  Out << "\n\n/* Global Declarations */\n";
 
   // First output all the declarations for the program, because C requires
   // Functions & globals to be declared before they are used.
@@ -2167,14 +2343,18 @@ void CWriter::generateHeader(Module &M) {
       unsigned Alignment = I->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlignment(ElTy);
-      if (IsOveraligned)
+      if (IsOveraligned) {
+        headerUseMsAlign();
         Out << "__MSALIGN__(" << Alignment << ") ";
+      }
       printTypeName(Out, ElTy, false) << ' ' << GetValueName(&*I);
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
 
-      if (I->hasExternalWeakLinkage())
+      if (I->hasExternalWeakLinkage()) {
+        headerUseExternalWeak();
         Out << " __EXTERNAL_WEAK__";
+      }
       Out << ";\n";
     }
   }
@@ -2242,16 +2422,22 @@ void CWriter::generateHeader(Module &M) {
       Out << "extern ";
     printFunctionProto(Out, &*I);
     printFunctionAttributes(Out, I->getAttributes());
-    if (I->hasWeakLinkage() || I->hasLinkOnceLinkage())
+    if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
+      headerUseAttributeWeak();
       Out << " __ATTRIBUTE_WEAK__";
-    if (I->hasExternalWeakLinkage())
+    }
+    if (I->hasExternalWeakLinkage()) {
+      headerUseExternalWeak();
       Out << " __EXTERNAL_WEAK__";
+    }
     if (StaticCtors.count(&*I))
       Out << " __ATTRIBUTE_CTOR__";
     if (StaticDtors.count(&*I))
       Out << " __ATTRIBUTE_DTOR__";
-    if (I->hasHiddenVisibility())
+    if (I->hasHiddenVisibility()) {
+      headerUseHidden();
       Out << " __HIDDEN__";
+    }
 
     if (I->hasName() && I->getName()[0] == 1)
       Out << " __asm__ (\"" << I->getName().substr(1) << "\")";
@@ -2291,16 +2477,20 @@ void CWriter::generateHeader(Module &M) {
       unsigned Alignment = I->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlignment(ElTy);
-      if (IsOveraligned)
+      if (IsOveraligned) {
+        headerUseMsAlign();
         Out << "__MSALIGN__(" << Alignment << ") ";
+      }
       // GetValueName would resolve the alias, which is not what we want,
       // so use getName directly instead (assuming that the Alias has a name...)
       printTypeName(Out, ElTy, false) << " *" << I->getName();
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
 
-      if (I->hasExternalWeakLinkage())
+      if (I->hasExternalWeakLinkage()) {
+        headerUseExternalWeak();
         Out << " __EXTERNAL_WEAK__";
+      }
       Out << " = ";
       writeOperand(I->getAliasee(), ContextStatic);
       Out << ";\n";
@@ -2309,42 +2499,9 @@ void CWriter::generateHeader(Module &M) {
 
   Out << "\n\n/* LLVM Intrinsic Builtin Function Bodies */\n";
 
-  // Emit some helper functions for dealing with FCMP instruction's
-  // predicates
-  Out << "static __forceinline int llvm_fcmp_ord(double X, double Y) { ";
-  Out << "return X == X && Y == Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_uno(double X, double Y) { ";
-  Out << "return X != X || Y != Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_ueq(double X, double Y) { ";
-  Out << "return X == Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_une(double X, double Y) { ";
-  Out << "return X != Y; }\n";
-  Out << "static __forceinline int llvm_fcmp_ult(double X, double Y) { ";
-  Out << "return X <  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_ugt(double X, double Y) { ";
-  Out << "return X >  Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_ule(double X, double Y) { ";
-  Out << "return X <= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_uge(double X, double Y) { ";
-  Out << "return X >= Y || llvm_fcmp_uno(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_oeq(double X, double Y) { ";
-  Out << "return X == Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_one(double X, double Y) { ";
-  Out << "return X != Y && llvm_fcmp_ord(X, Y); }\n";
-  Out << "static __forceinline int llvm_fcmp_olt(double X, double Y) { ";
-  Out << "return X <  Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_ogt(double X, double Y) { ";
-  Out << "return X >  Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_ole(double X, double Y) { ";
-  Out << "return X <= Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_oge(double X, double Y) { ";
-  Out << "return X >= Y ; }\n";
-  Out << "static __forceinline int llvm_fcmp_0(double X, double Y) { ";
-  Out << "return 0; }\n";
-  Out << "static __forceinline int llvm_fcmp_1(double X, double Y) { ";
-  Out << "return 1; }\n";
-
   // Loop over all select operations
+  if (!SelectDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<Type *>::iterator it = SelectDeclTypes.begin(),
                                   end = SelectDeclTypes.end();
        it != end; ++it) {
@@ -2391,6 +2548,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all compare operations
+  if (!CmpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<std::pair<CmpInst::Predicate, VectorType *>>::iterator
            it = CmpDeclTypes.begin(),
            end = CmpDeclTypes.end();
@@ -2411,11 +2570,14 @@ void CWriter::generateHeader(Module &M) {
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
-    if (CmpInst::isFPPredicate((*it).first))
+    const auto Pred = (*it).first;
+    if (CmpInst::isFPPredicate((*it).first)) {
+      FCmpOps.insert(Pred);
       Out << " llvm_fcmp_";
+    }
     else
       Out << " llvm_icmp_";
-    Out << getCmpPredicateName((*it).first) << "_";
+    Out << getCmpPredicateName(Pred) << "_";
     printTypeString(Out, (*it).second, isSigned);
     Out << "(";
     printTypeNameUnaligned(Out, (*it).second, isSigned);
@@ -2467,6 +2629,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all (vector) cast operations
+  if (!CastOpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<
            std::pair<CastInst::CastOps, std::pair<Type *, Type *>>>::iterator
            it = CastOpDeclTypes.begin(),
@@ -2585,6 +2749,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Loop over all simple vector operations
+  if (!InlineOpDeclTypes.empty())
+    headerUseForceInline();
   for (std::set<std::pair<unsigned, Type *>>::iterator
            it = InlineOpDeclTypes.begin(),
            end = InlineOpDeclTypes.end();
@@ -2914,6 +3080,8 @@ void CWriter::generateHeader(Module &M) {
     Out << "  return r;\n}\n";
   }
 
+  if (!CtorDeclTypes.empty())
+    headerUseForceInline();
   // Loop over all inline constructors
   for (std::set<Type *>::iterator it = CtorDeclTypes.begin(),
                                   end = CtorDeclTypes.end();
@@ -2971,6 +3139,8 @@ void CWriter::generateHeader(Module &M) {
   }
 
   // Emit definitions of the intrinsics.
+  if (!intrinsicsToDefine.empty())
+    headerUseForceInline();
   for (SmallVector<Function *, 16>::iterator I = intrinsicsToDefine.begin(),
                                              E = intrinsicsToDefine.end();
        I != E; ++I) {
@@ -2979,6 +3149,24 @@ void CWriter::generateHeader(Module &M) {
 
   if (!M.empty())
     Out << "\n\n/* Function Bodies */\n";
+
+  if (!FCmpOps.empty())
+    headerUseForceInline();
+
+  generateCompilerSpecificCode(OutHeaders, TD);
+
+  // Loop over all fcmp compare operations. We do that after
+  // generateCompilerSpecificCode because we need __forceinline!
+  if (FCmpOps.erase(FCmpInst::FCMP_ORD)) {
+    defineFCmpOp(OutHeaders, FCmpInst::FCMP_ORD);
+  }
+  if (FCmpOps.erase(FCmpInst::FCMP_UNO)) {
+    defineFCmpOp(OutHeaders, FCmpInst::FCMP_UNO);
+  }
+  for (auto Pred: FCmpOps) {
+    defineFCmpOp(OutHeaders, Pred);
+  }
+  FCmpOps.clear();
 }
 
 void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
@@ -3004,21 +3192,29 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
   Type *ElTy = I->getType()->getElementType();
   unsigned Alignment = I->getAlignment();
   bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(ElTy);
-  if (IsOveraligned)
+  if (IsOveraligned) {
+    headerUseMsAlign();
     Out << "__MSALIGN__(" << Alignment << ") ";
+  }
   printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
   if (IsOveraligned)
     Out << " __attribute__((aligned(" << Alignment << ")))";
 
   if (I->hasLinkOnceLinkage())
     Out << " __attribute__((common))";
-  else if (I->hasWeakLinkage())
+  else if (I->hasWeakLinkage()) {
+    headerUseAttributeWeak();
     Out << " __ATTRIBUTE_WEAK__";
-  else if (I->hasCommonLinkage())
+  }
+  else if (I->hasCommonLinkage()) {
+    headerUseAttributeWeak();
     Out << " __ATTRIBUTE_WEAK__";
+  }
 
-  if (I->hasHiddenVisibility())
+  if (I->hasHiddenVisibility()) {
+    headerUseHidden();
     Out << " __HIDDEN__";
+  }
 
   // If the initializer is not null, emit the initializer.  If it is null,
   // we try to avoid emitting large amounts of zeros.  The problem with
@@ -3085,17 +3281,20 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
   if (FPC->getType() == Type::getDoubleTy(FPC->getContext())) {
     double Val = FPC->getValueAPF().convertToDouble();
     uint64_t i = FPC->getValueAPF().bitcastToAPInt().getZExtValue();
+    headerUseConstantDoubleTy();
     Out << "static const ConstantDoubleTy FPConstant" << Counter << " = 0x"
         << utohexstr(i) << "ULL;    /* " << Val << " */\n";
   } else if (FPC->getType() == Type::getFloatTy(FPC->getContext())) {
     float Val = FPC->getValueAPF().convertToFloat();
     uint32_t i = (uint32_t)FPC->getValueAPF().bitcastToAPInt().getZExtValue();
+    headerUseConstantFloatTy();
     Out << "static const ConstantFloatTy FPConstant" << Counter << " = 0x"
         << utohexstr(i) << "U;    /* " << Val << " */\n";
   } else if (FPC->getType() == Type::getX86_FP80Ty(FPC->getContext())) {
     // api needed to prevent premature destruction
     const APInt api = FPC->getValueAPF().bitcastToAPInt();
     const uint64_t *p = api.getRawData();
+    headerUseConstantFP80Ty();
     Out << "static const ConstantFP80Ty FPConstant" << Counter << " = { 0x"
         << utohexstr(p[0]) << "ULL, 0x" << utohexstr((uint16_t)p[1])
         << ",{0,0,0}"
@@ -3104,6 +3303,7 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
              FPC->getType() == Type::getFP128Ty(FPC->getContext())) {
     const APInt api = FPC->getValueAPF().bitcastToAPInt();
     const uint64_t *p = api.getRawData();
+    headerUseConstantFP128Ty();
     Out << "static const ConstantFP128Ty FPConstant" << Counter << " = { 0x"
         << utohexstr(p[0]) << ", 0x" << utohexstr(p[1])
         << "}; /* Long double constant */\n";
@@ -3113,9 +3313,8 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
   }
 }
 
-/// printSymbolTable - Run through symbol table looking for type names.  If a
-/// type name is found, emit its declaration...
-void CWriter::printModuleTypes(raw_ostream &Out) {
+static void defineBitCastUnion(raw_ostream& Out)
+{
   Out << "/* Helper union for bitcasts */\n";
   Out << "typedef union {\n";
   Out << "  uint32_t Int32;\n";
@@ -3123,6 +3322,14 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   Out << "  float Float;\n";
   Out << "  double Double;\n";
   Out << "} llvmBitCastUnion;\n";
+}
+
+/// printSymbolTable - Run through symbol table looking for type names.  If a
+/// type name is found, emit its declaration...
+void CWriter::printModuleTypes(raw_ostream &Out) {
+  if (headerIncBitCastUnion()) {
+    defineBitCastUnion(Out);
+  }
 
   // Keep track of which types have been printed so far.
   std::set<Type *> TypesPrinted;
@@ -3289,8 +3496,10 @@ void CWriter::printFunction(Function &F) {
       bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(
                                                         AI->getAllocatedType());
       Out << "  ";
-      if (IsOveraligned)
+      if (IsOveraligned) {
+        headerUseMsAlign();
         Out << "__MSALIGN__(" << Alignment << ") ";
+      }
       printTypeName(Out, AI->getAllocatedType(), false) << ' ';
       Out << GetValueName(AI);
       if (IsOveraligned)
@@ -3314,6 +3523,7 @@ void CWriter::printFunction(Function &F) {
     // of a union to do the BitCast. This is separate from the need for a
     // variable to hold the result of the BitCast.
     if (isFPIntBitCast(*I)) {
+      headerUseBitCastUnion();
       Out << "  llvmBitCastUnion " << GetValueName(&*I)
           << "__BITCAST_TEMPORARY;\n";
       PrintedVar = true;
@@ -3481,6 +3691,7 @@ void CWriter::visitIndirectBrInst(IndirectBrInst &IBI) {
 void CWriter::visitUnreachableInst(UnreachableInst &I) {
   CurInstr = &I;
 
+  headerUseUnreachable();
   Out << "  __builtin_unreachable();\n\n";
 }
 
@@ -3800,7 +4011,9 @@ void CWriter::visitFCmpInst(FCmpInst &I) {
     return;
   }
 
-  Out << "llvm_fcmp_" << getCmpPredicateName(I.getPredicate()) << "(";
+  const auto Pred = I.getPredicate();
+  headerUseFCmpOp(Pred);
+  Out << "llvm_fcmp_" << getCmpPredicateName(Pred) << "(";
   // Write the first operand
   writeOperand(I.getOperand(0), ContextCasted);
   Out << ", ";
@@ -4480,6 +4693,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::stacksave:
     // Emit this as: Val = 0; *((void**)&Val) = __builtin_stack_save()
     // to work around GCC bugs (see PR1809).
+    headerUseStackSaveRestore();
     Out << "0; *((void**)&" << GetValueName(&I) << ") = __builtin_stack_save()";
     return true;
   case Intrinsic::x86_sse_cmp_ss:
@@ -4767,6 +4981,8 @@ void CWriter::visitInlineAsm(CallInst &CI) {
 void CWriter::visitAllocaInst(AllocaInst &I) {
   CurInstr = &I;
 
+  headerUseBuiltinAlloca();
+
   Out << '(';
   printTypeName(Out, I.getType());
   Out << ") alloca(sizeof(";
@@ -4893,6 +5109,7 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
       Out << "*)";
     }
   } else if (IsUnaligned) {
+    headerUseUnalignedLoad();
     Out << "__UNALIGNED_LOAD__(";
     printTypeNameUnaligned(Out, OperandType, false);
     if (IsVolatile)
@@ -4935,6 +5152,7 @@ void CWriter::visitStoreInst(StoreInst &I) {
 }
 
 void CWriter::visitFenceInst(FenceInst &I) {
+  headerUseThreadFence();
   Out << "__atomic_thread_fence(";
   switch (I.getOrdering()) {
   case AtomicOrdering::Acquire:
