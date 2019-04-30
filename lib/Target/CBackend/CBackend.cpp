@@ -2251,6 +2251,7 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <setjmp.h>\n"; // Unwind support
   OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
+  OutHeaders << "#include <string.h>\n"; // memcpy, memmove, memset
   OutHeaders << "#include <math.h>\n";   // definitions for some math functions
                                          // and numeric constants
   // Provide a definition for `bool' if not compiling with a C++ compiler.
@@ -2388,8 +2389,10 @@ void CWriter::generateHeader(Module &M) {
         I->getName() == "rintf" || I->getName() == "floor" ||
         I->getName() == "floorf" || I->getName() == "ceil" ||
         I->getName() == "ceilf" || I->getName() == "alloca" ||
-        I->getName() == "_alloca" || I->getName() == "_chkstk" ||
-        I->getName() == "__chkstk" || I->getName() == "___chkstk_ms")
+        I->getName() == "memcpy" || I->getName() == "memmove" ||
+        I->getName() == "memset" || I->getName() == "_alloca" ||
+        I->getName() == "_chkstk" || I->getName() == "__chkstk" ||
+        I->getName() == "___chkstk_ms")
       continue;
 
     if (I->hasDLLImportStorageClass())
