@@ -45,13 +45,8 @@ Next, download and compile llvm-cbe from the same folder:
     cd $HOME/llvm/projects
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd ../build
+    cmake ..
     make llvm-cbe
-
-To run tests, you will also need to build `lli`:
-
-```sh
-    make lli
-```
 
 To run tests, you will also need to build `lli`:
 
