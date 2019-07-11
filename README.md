@@ -7,7 +7,7 @@ resurrected LLVM "C Backend", with improvements
 INSTALLATION INSTRUCTIONS
 =========================
 
-This version of the LLVM-CBE library works with LLVM 6.0 and 7.0. You will have
+This version of the LLVM-CBE library works with LLVM 8.0. You will have
 to compile this version of LLVM before you try to use LLVM-CBE. This
 guide will walk you through the compilation and installation of both
 tools and show usage statements to verify that the LLVM-CBE library is
@@ -21,7 +21,7 @@ Step 1: Installing LLVM
 
 LLVM-CBE relies on specific LLVM internals, and so it is best to use
 it with a specific revision of the LLVM development tree. Currently,
-llvm-cbe works with the LLVM 6.0 and 7.0 release versions and autotools.
+llvm-cbe works with the LLVM 8.0 release version and autotools.
 
 Note: to convert C to LLVM IR to run the tests, you will also need a C compiler such as clang.
 
@@ -29,11 +29,11 @@ The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
 
      cd $HOME
-     git clone https://github.com/llvm-mirror/llvm
-     cd llvm
-     git checkout release_70
-     mkdir build
-     cd build
+     git clone https://github.com/llvm/llvm-project.git
+     cd llvm-project
+     git checkout release_80
+     mkdir llvm/build
+     cd llvm/build
      cmake ..
      make
 
@@ -42,7 +42,7 @@ Step 2: Compiling LLVM-CBE
 
 Next, download and compile llvm-cbe from the same folder:
 
-    cd $HOME/llvm/projects
+    cd $HOME/llvm-project/llvm/projects
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd ../build
     cmake ..
@@ -59,7 +59,7 @@ Step 3: Usage Examples
 
 If llvm-cbe compiles, you should be able to run it with the following commands.
 ```
-$ cd $HOME/llvm/projects/llvm-cbe/test/selectionsort
+$ cd $HOME/llvm-project/llvm/projects/llvm-cbe/test/selectionsort
 $ ls
 main.c
 $ clang -S -emit-llvm main.c
@@ -84,7 +84,7 @@ Running tests
 Unit tests:
 
 ```sh
-    $ cd $HOME/llvm/build
+    $ cd $HOME/llvm-project/llvm/build
     $ make CBEUnitTests && projects/llvm-cbe/unittests/CWriterTest
 ```
 
@@ -93,6 +93,6 @@ Other tests:
 First, compile llvm-cbe, and install pytest. Then:
 
 ```sh
-    $ cd $HOME/llvm/projects/llvm-cbe
+    $ cd $HOME/llvm-project/llvm/projects/llvm-cbe
     $ pytest
 ```
