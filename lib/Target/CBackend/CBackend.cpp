@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Config/config.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
@@ -3800,6 +3801,8 @@ void CWriter::visitPHINode(PHINode &I) {
 }
 
 void CWriter::visitBinaryOperator(BinaryOperator &I) {
+  using namespace PatternMatch;
+
   CurInstr = &I;
 
   // binary instructions, shift instructions, setCond instructions.
@@ -3823,24 +3826,25 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
   if (I.getType()->isVectorTy() || needsCast || shouldCast) {
     Type *VTy = I.getOperand(0)->getType();
     unsigned opcode;
-    if (BinaryOperator::isNeg(&I)) {
+    Value *X;
+    if (match(&I, m_Neg(m_Value(X)))) {
       opcode = BinaryNeg;
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNegArgument(&I), ContextCasted);
-    } else if (BinaryOperator::isFNeg(&I)) {
+      writeOperand(X, ContextCasted);
+    } else if (match(&I, m_FNeg(m_Value(X)))) {
       opcode = BinaryNeg;
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getFNegArgument(&I), ContextCasted);
-    } else if (BinaryOperator::isNot(&I)) {
+      writeOperand(X, ContextCasted);
+    } else if (match(&I, m_Not(m_Value(X)))) {
       opcode = BinaryNot;
       Out << "llvm_not_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNotArgument(&I), ContextCasted);
+      writeOperand(X, ContextCasted);
     } else {
       opcode = I.getOpcode();
       Out << "llvm_" << Instruction::getOpcodeName(opcode) << "_";
@@ -3857,17 +3861,18 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
 
   // If this is a negation operation, print it out as such.  For FP, we don't
   // want to print "-0.0 - X".
-  if (BinaryOperator::isNeg(&I)) {
+  Value *X;
+  if (match(&I, m_Neg(m_Value(X)))) {
     Out << "-(";
-    writeOperand(BinaryOperator::getNegArgument(&I));
+    writeOperand(X);
     Out << ")";
-  } else if (BinaryOperator::isFNeg(&I)) {
+  } else if (match(&I, m_FNeg(m_Value(X)))) {
     Out << "-(";
-    writeOperand(BinaryOperator::getFNegArgument(&I));
+    writeOperand(X);
     Out << ")";
-  } else if (BinaryOperator::isNot(&I)) {
+  } else if (match(&I, m_Not(m_Value(X)))) {
     Out << "~(";
-    writeOperand(BinaryOperator::getNotArgument(&I));
+    writeOperand(X);
     Out << ")";
   } else if (I.getOpcode() == Instruction::FRem) {
     // Output a call to fmod/fmodf instead of emitting a%b
