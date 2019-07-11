@@ -7,9 +7,9 @@ RUN \
     ninja-build \
     cmake; \
   cd /root; \
-  curl -fL http://releases.llvm.org/7.0.1/llvm-7.0.1.src.tar.xz \
+  curl -fL http://releases.llvm.org/8.0.0/llvm-8.0.0.src.tar.xz \
     | tar xJf -; \
-  mv /root/llvm-7.0.1.src /root/llvm; \
+  mv /root/llvm-8.0.0.src /root/llvm; \
   mkdir -p /root/llvm/build;
 
 COPY . /root/llvm/projects/llvm-cbe/
