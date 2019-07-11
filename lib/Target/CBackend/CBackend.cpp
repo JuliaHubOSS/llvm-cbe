@@ -110,7 +110,7 @@ bool CWriter::isInlinableInst(Instruction &I) const {
 
   // Must be an expression, must be used exactly once.  If it is dead, we
   // emit it inline where it would go.
-  if (isEmptyType(I.getType()) || !I.hasOneUse() || isa<TerminatorInst>(I) ||
+  if (isEmptyType(I.getType()) || !I.hasOneUse() || I.isTerminator() ||
       isa<CallInst>(I) || isa<PHINode>(I) || isa<LoadInst>(I) ||
       isa<VAArgInst>(I) || isa<InsertElementInst>(I) || isa<InsertValueInst>(I))
     // Don't inline a load across a store or other bad things!
