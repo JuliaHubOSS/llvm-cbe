@@ -89,31 +89,29 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::vector<Function *> prototypesToGen;
 
   struct {
-    bool BuiltinAlloca: 1;
-    bool Unreachable: 1;
-    bool NoReturn: 1;
-    bool ExternalWeak: 1;
-    bool AttributeWeak: 1;
-    bool Hidden: 1;
-    bool AttributeList: 1;
-    bool UnalignedLoad: 1;
-    bool MsAlign: 1;
-    bool NanInf: 1;
-    bool Int128: 1;
-    bool ThreadFence: 1;
-    bool StackSaveRestore: 1;
-    bool ConstantDoubleTy: 1;
-    bool ConstantFloatTy: 1;
-    bool ConstantFP80Ty: 1;
-    bool ConstantFP128Ty: 1;
-    bool BitCastUnion: 1;
-    bool ForceInline: 1;
+    bool BuiltinAlloca : 1;
+    bool Unreachable : 1;
+    bool NoReturn : 1;
+    bool ExternalWeak : 1;
+    bool AttributeWeak : 1;
+    bool Hidden : 1;
+    bool AttributeList : 1;
+    bool UnalignedLoad : 1;
+    bool MsAlign : 1;
+    bool NanInf : 1;
+    bool Int128 : 1;
+    bool ThreadFence : 1;
+    bool StackSaveRestore : 1;
+    bool ConstantDoubleTy : 1;
+    bool ConstantFloatTy : 1;
+    bool ConstantFP80Ty : 1;
+    bool ConstantFP128Ty : 1;
+    bool BitCastUnion : 1;
+    bool ForceInline : 1;
   } UsedHeaders;
 
-#define USED_HEADERS_FLAG(Name)\
-  void headerUse##Name() {\
-    UsedHeaders.Name = true;\
-  }\
+#define USED_HEADERS_FLAG(Name)                                                \
+  void headerUse##Name() { UsedHeaders.Name = true; }                          \
   bool headerInc##Name() const { return UsedHeaders.Name; }
 
   USED_HEADERS_FLAG(BuiltinAlloca)
@@ -143,7 +141,8 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
 
 public:
   static char ID;
-  explicit CWriter(raw_ostream &o) : FunctionPass(ID), OutHeaders(_OutHeaders), Out(_Out), FileOut(o) {
+  explicit CWriter(raw_ostream &o)
+      : FunctionPass(ID), OutHeaders(_OutHeaders), Out(_Out), FileOut(o) {
     memset(&UsedHeaders, 0, sizeof(UsedHeaders));
   }
 
