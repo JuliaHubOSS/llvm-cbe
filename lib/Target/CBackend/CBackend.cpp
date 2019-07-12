@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Config/config.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
@@ -109,7 +110,7 @@ bool CWriter::isInlinableInst(Instruction &I) const {
 
   // Must be an expression, must be used exactly once.  If it is dead, we
   // emit it inline where it would go.
-  if (isEmptyType(I.getType()) || !I.hasOneUse() || isa<TerminatorInst>(I) ||
+  if (isEmptyType(I.getType()) || !I.hasOneUse() || I.isTerminator() ||
       isa<CallInst>(I) || isa<PHINode>(I) || isa<LoadInst>(I) ||
       isa<VAArgInst>(I) || isa<InsertElementInst>(I) || isa<InsertValueInst>(I))
     // Don't inline a load across a store or other bad things!
@@ -357,23 +358,22 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   }
 }
 
-static const char* getFCmpImplem(CmpInst::Predicate P)
-{
+static const char *getFCmpImplem(CmpInst::Predicate P) {
   switch (P) {
   case FCmpInst::FCMP_FALSE:
     return "0";
   case FCmpInst::FCMP_OEQ:
-    return "X == Y"; 
+    return "X == Y";
   case FCmpInst::FCMP_OGT:
-    return "X >  Y"; 
+    return "X >  Y";
   case FCmpInst::FCMP_OGE:
-    return "X >= Y"; 
+    return "X >= Y";
   case FCmpInst::FCMP_OLT:
-    return "X <  Y"; 
+    return "X <  Y";
   case FCmpInst::FCMP_OLE:
-    return "X <= Y"; 
+    return "X <= Y";
   case FCmpInst::FCMP_ONE:
-    return "X != Y && llvm_fcmp_ord(X, Y);"; 
+    return "X != Y && llvm_fcmp_ord(X, Y);";
   case FCmpInst::FCMP_ORD:
     return "X == X && Y == Y";
   case FCmpInst::FCMP_UNO:
@@ -402,14 +402,13 @@ static const char* getFCmpImplem(CmpInst::Predicate P)
   }
 }
 
-static void defineFCmpOp(raw_ostream& Out, CmpInst::Predicate const P)
-{
-  Out << "static __forceinline int llvm_fcmp_" << getCmpPredicateName(P) << "(double X, double Y) { ";
+static void defineFCmpOp(raw_ostream &Out, CmpInst::Predicate const P) {
+  Out << "static __forceinline int llvm_fcmp_" << getCmpPredicateName(P)
+      << "(double X, double Y) { ";
   Out << "return " << getFCmpImplem(P) << "; }\n";
 }
 
-void CWriter::headerUseFCmpOp(CmpInst::Predicate P)
-{
+void CWriter::headerUseFCmpOp(CmpInst::Predicate P) {
   switch (P) {
   case FCmpInst::FCMP_ONE:
     FCmpOps.insert(CmpInst::FCMP_ORD);
@@ -1143,9 +1142,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       else {
         const auto Pred = (CmpInst::Predicate)CE->getPredicate();
         headerUseFCmpOp(Pred);
-        Out << "llvm_fcmp_"
-            << getCmpPredicateName(Pred)
-            << "(";
+        Out << "llvm_fcmp_" << getCmpPredicateName(Pred) << "(";
         printConstant(CE->getOperand(0), ContextCasted);
         Out << ", ";
         printConstant(CE->getOperand(1), ContextCasted);
@@ -1754,30 +1751,26 @@ void CWriter::writeOperandWithCast(Value *Operand, ICmpInst &Cmp) {
   Out << ")";
 }
 
-static void defineConstantDoubleTy(raw_ostream& Out)
-{
+static void defineConstantDoubleTy(raw_ostream &Out) {
   Out << "typedef uint64_t ConstantDoubleTy;\n";
 }
 
-static void defineConstantFloatTy(raw_ostream& Out)
-{
+static void defineConstantFloatTy(raw_ostream &Out) {
   Out << "typedef uint32_t ConstantFloatTy;\n";
 }
 
-static void defineConstantFP80Ty(raw_ostream& Out)
-{
+static void defineConstantFP80Ty(raw_ostream &Out) {
   Out << "typedef struct { uint64_t f1; uint16_t f2; "
          "uint16_t pad[3]; } ConstantFP80Ty;\n";
 }
 
-static void defineConstantFP128Ty(raw_ostream& Out)
-{
+static void defineConstantFP128Ty(raw_ostream &Out) {
   // This is used for both kinds of 128-bit long double; meaning differs.
   Out << "typedef struct { uint64_t f1; uint64_t f2; }"
          " ConstantFP128Ty;\n";
 }
 
-static void defineBuiltinAlloca(raw_ostream& Out) {
+static void defineBuiltinAlloca(raw_ostream &Out) {
   // Alloca is hard to get, and we don't want to include stdlib.h here.
   Out << "/* get a declaration for alloca */\n"
       << "#if defined(__CYGWIN__) || defined(__MINGW32__)\n"
@@ -1805,8 +1798,7 @@ static void defineBuiltinAlloca(raw_ostream& Out) {
       << "#endif\n\n";
 }
 
-static void defineExternalWeak(raw_ostream& Out)
-{
+static void defineExternalWeak(raw_ostream &Out) {
   // On Mac OS X, "external weak" is spelled "__attribute__((weak_import))".
   Out << "#if defined(__GNUC__) && defined(__APPLE_CC__)\n"
       << "#define __EXTERNAL_WEAK__ __attribute__((weak_import))\n"
@@ -1815,11 +1807,9 @@ static void defineExternalWeak(raw_ostream& Out)
       << "#else\n"
       << "#define __EXTERNAL_WEAK__\n"
       << "#endif\n\n";
-
 }
 
-static void defineAttributeWeak(raw_ostream& Out)
-{
+static void defineAttributeWeak(raw_ostream &Out) {
   // For now, turn off the weak linkage attribute on Mac OS X. (See above.)
   Out << "#if defined(__GNUC__) && defined(__APPLE_CC__)\n"
       << "#define __ATTRIBUTE_WEAK__\n"
@@ -1830,16 +1820,14 @@ static void defineAttributeWeak(raw_ostream& Out)
       << "#endif\n\n";
 }
 
-static void defineHidden(raw_ostream& Out)
-{
+static void defineHidden(raw_ostream &Out) {
   // Add hidden visibility support. FIXME: APPLE_CC?
   Out << "#if defined(__GNUC__)\n"
       << "#define __HIDDEN__ __attribute__((visibility(\"hidden\")))\n"
       << "#endif\n\n";
 }
 
-static void defineAttributeList(raw_ostream& Out)
-{
+static void defineAttributeList(raw_ostream &Out) {
   // gcc attributes
   Out << "#if defined(__GNUC__)\n"
       << "#define  __ATTRIBUTELIST__(x) __attribute__(x)\n"
@@ -1852,11 +1840,9 @@ static void defineAttributeList(raw_ostream& Out)
   Out << "#ifdef _MSC_VER  /* Can only support \"linkonce\" vars with GCC */\n"
       << "#define __attribute__(X)\n"
       << "#endif\n\n";
-
 }
 
-static void defineUnalignedLoad(raw_ostream& Out)
-{
+static void defineUnalignedLoad(raw_ostream &Out) {
   // Define unaligned-load helper macro
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __UNALIGNED_LOAD__(type, align, op) *((type "
@@ -1867,7 +1853,7 @@ static void defineUnalignedLoad(raw_ostream& Out)
   Out << "#endif\n\n";
 }
 
-static void defineMsAlign(raw_ostream& Out) {
+static void defineMsAlign(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __MSALIGN__(X) __declspec(align(X))\n";
   Out << "#else\n";
@@ -1875,15 +1861,13 @@ static void defineMsAlign(raw_ostream& Out) {
   Out << "#endif\n\n";
 }
 
-static void defineUnreachable(raw_ostream& Out)
-{
+static void defineUnreachable(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __builtin_unreachable() __assume(0)\n";
   Out << "#endif\n";
 }
 
-static void defineNoReturn(raw_ostream& Out)
-{
+static void defineNoReturn(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __noreturn __declspec(noreturn)\n";
   Out << "#else\n";
@@ -1891,15 +1875,13 @@ static void defineNoReturn(raw_ostream& Out)
   Out << "#endif\n";
 }
 
-static void defineForceInline(raw_ostream& Out)
-{
+static void defineForceInline(raw_ostream &Out) {
   Out << "#ifndef _MSC_VER\n";
   Out << "#define __forceinline __attribute__((always_inline)) inline\n";
   Out << "#endif\n\n";
 }
 
-static void defineNanInf(raw_ostream& Out)
-{
+static void defineNanInf(raw_ostream &Out) {
   // Define NaN and Inf as GCC builtins if using GCC
   // From the GCC documentation:
   //
@@ -1957,8 +1939,7 @@ static void defineNanInf(raw_ostream& Out)
       << "#endif\n\n";
 }
 
-static void defineStackSaveRestore(raw_ostream& Out)
-{
+static void defineStackSaveRestore(raw_ostream &Out) {
   Out << "#if !defined(__GNUC__) || __GNUC__ < 4 /* Old GCC's, or compilers "
          "not GCC */ \n"
       << "#define __builtin_stack_save() 0   /* not implemented */\n"
@@ -1966,8 +1947,7 @@ static void defineStackSaveRestore(raw_ostream& Out)
       << "#endif\n\n";
 }
 
-static void defineInt128(raw_ostream& Out)
-{
+static void defineInt128(raw_ostream &Out) {
   // Output typedefs for 128-bit integers
   Out << "#if defined(__GNUC__) && defined(__LP64__) /* 128-bit integer types "
          "*/\n"
@@ -2056,8 +2036,7 @@ static void defineInt128(raw_ostream& Out)
       << "#endif\n\n";
 }
 
-static void defineThreadFence(raw_ostream& Out)
-{
+static void defineThreadFence(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n"
       << "#define __atomic_thread_fence(x) __faststorefence\n"
       << "#endif\n\n";
@@ -2141,7 +2120,8 @@ static void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
 
 // generateCompilerSpecificCode - This is where we add conditional compilation
 // directives to cater to specific compilers as need be.
-void CWriter::generateCompilerSpecificCode(raw_ostream &Out, const DataLayout *) const {
+void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
+                                           const DataLayout *) const {
   if (headerIncConstantDoubleTy())
     defineConstantDoubleTy(Out);
   if (headerIncConstantFloatTy())
@@ -2272,8 +2252,8 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <setjmp.h>\n"; // Unwind support
   OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
-  OutHeaders << "#include <math.h>\n";   // definitions for some math functions and
-                                  // numeric constants
+  OutHeaders << "#include <math.h>\n";   // definitions for some math functions
+                                       // and numeric constants
   // Provide a definition for `bool' if not compiling with a C++ compiler.
   OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
   OutHeaders << "\n";
@@ -2576,8 +2556,7 @@ void CWriter::generateHeader(Module &M) {
     if (CmpInst::isFPPredicate((*it).first)) {
       FCmpOps.insert(Pred);
       Out << " llvm_fcmp_";
-    }
-    else
+    } else
       Out << " llvm_icmp_";
     Out << getCmpPredicateName(Pred) << "_";
     printTypeString(Out, (*it).second, isSigned);
@@ -3165,7 +3144,7 @@ void CWriter::generateHeader(Module &M) {
   if (FCmpOps.erase(FCmpInst::FCMP_UNO)) {
     defineFCmpOp(OutHeaders, FCmpInst::FCMP_UNO);
   }
-  for (auto Pred: FCmpOps) {
+  for (auto Pred : FCmpOps) {
     defineFCmpOp(OutHeaders, Pred);
   }
   FCmpOps.clear();
@@ -3207,8 +3186,7 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
   else if (I->hasWeakLinkage()) {
     headerUseAttributeWeak();
     Out << " __ATTRIBUTE_WEAK__";
-  }
-  else if (I->hasCommonLinkage()) {
+  } else if (I->hasCommonLinkage()) {
     headerUseAttributeWeak();
     Out << " __ATTRIBUTE_WEAK__";
   }
@@ -3315,8 +3293,7 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
   }
 }
 
-static void defineBitCastUnion(raw_ostream& Out)
-{
+static void defineBitCastUnion(raw_ostream &Out) {
   Out << "/* Helper union for bitcasts */\n";
   Out << "typedef union {\n";
   Out << "  uint32_t Int32;\n";
@@ -3416,8 +3393,6 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
        it != end; ++it) {
     printContainedTypes(Out, *it, TypesPrinted);
   }
-
-
 }
 
 void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
@@ -3800,6 +3775,8 @@ void CWriter::visitPHINode(PHINode &I) {
 }
 
 void CWriter::visitBinaryOperator(BinaryOperator &I) {
+  using namespace PatternMatch;
+
   CurInstr = &I;
 
   // binary instructions, shift instructions, setCond instructions.
@@ -3823,24 +3800,25 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
   if (I.getType()->isVectorTy() || needsCast || shouldCast) {
     Type *VTy = I.getOperand(0)->getType();
     unsigned opcode;
-    if (BinaryOperator::isNeg(&I)) {
+    Value *X;
+    if (match(&I, m_Neg(m_Value(X)))) {
       opcode = BinaryNeg;
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNegArgument(&I), ContextCasted);
-    } else if (BinaryOperator::isFNeg(&I)) {
+      writeOperand(X, ContextCasted);
+    } else if (match(&I, m_FNeg(m_Value(X)))) {
       opcode = BinaryNeg;
       Out << "llvm_neg_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getFNegArgument(&I), ContextCasted);
-    } else if (BinaryOperator::isNot(&I)) {
+      writeOperand(X, ContextCasted);
+    } else if (match(&I, m_Not(m_Value(X)))) {
       opcode = BinaryNot;
       Out << "llvm_not_";
       printTypeString(Out, VTy, false);
       Out << "(";
-      writeOperand(BinaryOperator::getNotArgument(&I), ContextCasted);
+      writeOperand(X, ContextCasted);
     } else {
       opcode = I.getOpcode();
       Out << "llvm_" << Instruction::getOpcodeName(opcode) << "_";
@@ -3857,17 +3835,18 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
 
   // If this is a negation operation, print it out as such.  For FP, we don't
   // want to print "-0.0 - X".
-  if (BinaryOperator::isNeg(&I)) {
+  Value *X;
+  if (match(&I, m_Neg(m_Value(X)))) {
     Out << "-(";
-    writeOperand(BinaryOperator::getNegArgument(&I));
+    writeOperand(X);
     Out << ")";
-  } else if (BinaryOperator::isFNeg(&I)) {
+  } else if (match(&I, m_FNeg(m_Value(X)))) {
     Out << "-(";
-    writeOperand(BinaryOperator::getFNegArgument(&I));
+    writeOperand(X);
     Out << ")";
-  } else if (BinaryOperator::isNot(&I)) {
+  } else if (match(&I, m_Not(m_Value(X)))) {
     Out << "~(";
-    writeOperand(BinaryOperator::getNotArgument(&I));
+    writeOperand(X);
     Out << ")";
   } else if (I.getOpcode() == Instruction::FRem) {
     // Output a call to fmod/fmodf instead of emitting a%b
