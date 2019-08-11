@@ -29,11 +29,9 @@ The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
 
      cd $HOME
-     git clone https://github.com/llvm/llvm-project.git
-     cd llvm-project
-     git checkout release_80
-     mkdir llvm/build
-     cd llvm/build
+     git clone --depth 1 -b release/8.x https://github.com/llvm/llvm-project.git
+     mkdir llvm-project/llvm/build
+     cd llvm-project/llvm/build
      cmake ..
      make
 
