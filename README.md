@@ -31,7 +31,7 @@ The first step is to compile LLVM on your machine
      cd $HOME
      git clone https://github.com/llvm/llvm-project.git
      cd llvm-project
-     git checkout release_80
+     git checkout release/8.x
      mkdir llvm/build
      cd llvm/build
      cmake ..
@@ -62,7 +62,7 @@ If llvm-cbe compiles, you should be able to run it with the following commands.
 $ cd $HOME/llvm-project/llvm/projects/llvm-cbe/test/selectionsort
 $ ls
 main.c
-$ clang -S -emit-llvm main.c
+$ clang -S -emit-llvm -g main.c
 $ ls
 main.c main.ll
 $ $(HOME)/llvm/build/bin/llvm-cbe main.ll
