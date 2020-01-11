@@ -15,7 +15,6 @@
 #include "CBackend.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/TargetLowering.h"
-#include "llvm/Config/config.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/DebugInfoMetadata.h"
