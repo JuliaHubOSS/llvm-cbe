@@ -1,3 +1,4 @@
+project(llvm-cbe)
 if (USE_SYSTEM_LLVM)
   cmake_minimum_required(VERSION 3.4.3)
   find_package(LLVM REQUIRED CONFIG)
