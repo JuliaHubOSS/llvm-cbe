@@ -8,6 +8,8 @@ if (USE_SYSTEM_LLVM)
 
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
   include(AddLLVM)
+
+  set (CMAKE_CXX_STANDARD 14)
 endif()
 
 add_subdirectory(lib)

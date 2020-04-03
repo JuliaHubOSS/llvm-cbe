@@ -2165,7 +2165,9 @@ bool CWriter::doInitialization(Module &M) {
 
   TD = new DataLayout(&M);
   IL = new IntrinsicLowering(*TD);
+#if LLVM_VERSION_MAJOR < 9
   IL->AddPrototypes(M);
+#endif
 
 #if 0
   std::string Triple = TheModule->getTargetTriple();
