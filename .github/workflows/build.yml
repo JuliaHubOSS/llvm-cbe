@@ -7,3 +7,9 @@ jobs:
     steps:
     - name: Docker Setup and Build
       uses: aminya/llvm-cbe@v8
+    - name: Go to llvm root
+      run: cd /root/llvm/
+    - name: Upload all
+      uses: actions/upload-artifact@v2-preview
+      with:
+        path: ./
