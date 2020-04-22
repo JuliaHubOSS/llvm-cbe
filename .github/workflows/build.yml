@@ -6,4 +6,4 @@ jobs:
     name: Builds llvm-cbe
     steps:
     - name: Docker Setup and Build
-      uses: actions/llvm-cbe@v8
+      uses: aminya/llvm-cbe@v8
