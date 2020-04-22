@@ -16,6 +16,8 @@ compiled correctly.
 The library is known to compile on various Linux versions (Redhat,
 Mageia, Ubuntu, Debian), Mac OS X, and Windows (Mingw-w64).
 
+Make sure that you have 30 GB of free space on your system. The whole building process may take 1-2 hours.
+
 Step 1: Installing LLVM
 =======================
 
