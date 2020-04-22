@@ -1,0 +1,9 @@
+on: [push]
+
+jobs:
+  Buld:
+    runs-on: ubuntu-latest
+    name: Builds llvm-cbe
+    steps:
+    - name: Docker Setup and Build
+      uses: actions/llvm-cbe@v1
