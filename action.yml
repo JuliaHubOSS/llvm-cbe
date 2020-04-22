@@ -1,0 +1,5 @@
+name: 'llvm-cbe docker'
+description: 'Prepares llvm-cbe docke'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
