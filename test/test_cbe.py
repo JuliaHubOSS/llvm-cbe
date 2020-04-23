@@ -6,15 +6,17 @@ from glob import glob
 from subprocess import call, Popen, PIPE
 import pytest
 
-
+# This configuration assumes that you are using the system LLVM.
+# And that you created a subdir "build" to compile this from.
+# In other cases, please modify the lines below.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LLVM_TOOL_DIR = os.environ.get(
     'LLVMToolDir',
-    os.path.join(TEST_DIR, '..', '..', '..', 'build', 'bin'))
+    os.path.join(TEST_DIR, '..', 'build', 'tools', 'llvm-cbe'))
 
 LLVM_CBE_PATH = os.path.join(LLVM_TOOL_DIR, 'llvm-cbe')
-LLI_PATH = os.path.join(LLVM_TOOL_DIR, 'lli')
+LLI_PATH = 'lli'
 
 
 COMMON_CFLAGS = [
