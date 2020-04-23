@@ -43,6 +43,11 @@
 #undef setjmp
 #endif
 
+// On LLVM 10 and later, include intrinsics files.
+#if LLVM_VERSION_MAJOR >= 10
+#include "llvm/IR/IntrinsicsX86.h"
+#include "llvm/IR/IntrinsicsPowerPC.h"
+#endif
 namespace llvm_cbe {
 
 using namespace llvm;
@@ -672,6 +677,9 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 
   switch (Attrs.second) {
   case CallingConv::C:
+    break;
+  // Consider the LLVM fast calling convention as the same as the C calling convention for now.
+  case CallingConv::Fast:
     break;
   case CallingConv::X86_StdCall:
     Out << " __stdcall";
@@ -4414,10 +4422,14 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::vaend:
           case Intrinsic::returnaddress:
           case Intrinsic::frameaddress:
+// LLVM 10 doesn't have setjmp/longjmp as intrinsics.
+// TODO: figure this out.
+#if LLVM_VERSION_MAJOR < 10
           case Intrinsic::setjmp:
           case Intrinsic::longjmp:
           case Intrinsic::sigsetjmp:
           case Intrinsic::siglongjmp:
+#endif
           case Intrinsic::prefetch:
           case Intrinsic::x86_sse_cmp_ss:
           case Intrinsic::x86_sse_cmp_ps:
@@ -4659,6 +4671,9 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
+// LLVM 10 doesn't have setjmp/longjmp as intrinsics.
+// TODO: figure this out.
+#if LLVM_VERSION_MAJOR < 10
   case Intrinsic::setjmp:
     Out << "setjmp(*(jmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
@@ -4685,6 +4700,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
+#endif
   case Intrinsic::prefetch:
     Out << "LLVM_PREFETCH((const void *)";
     writeOperand(I.getArgOperand(0), ContextCasted);

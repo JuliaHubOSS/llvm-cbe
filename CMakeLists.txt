@@ -1,4 +1,6 @@
-if (USE_SYSTEM_LLVM)
+if (NOT DEFINED LLVM_VERSION_MAJOR)
+  project(llvm-cbe)
+  set (USE_SYSTEM_LLVM 1)
   cmake_minimum_required(VERSION 3.4.3)
   find_package(LLVM REQUIRED CONFIG)
   message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")

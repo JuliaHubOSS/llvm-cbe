@@ -65,7 +65,12 @@ public:
                            raw_pwrite_stream *DwoOut,
 #endif
                            CodeGenFileType FileType, bool DisableVerify = true,
-                           MachineModuleInfo *MMI = nullptr) override;
+#if LLVM_VERSION_MAJOR >= 10
+                           MachineModuleInfoWrapperPass *MMI = nullptr
+#else
+                           MachineModuleInfo *MMI = nullptr
+#endif
+			  ) override;
 
   // TargetMachine interface
   const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override;

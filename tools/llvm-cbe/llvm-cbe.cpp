@@ -32,6 +32,9 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Pass.h"
+#if LLVM_VERSION_MAJOR >= 10
+#include "llvm/InitializePasses.h"
+#endif
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
@@ -109,7 +112,11 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
       OutputFilename = GetFileNameRoot(InputFilename);
 
       switch (FileType) {
+#if LLVM_VERSION_MAJOR >= 10
+      case CodeGenFileType::CGFT_AssemblyFile:
+#else
       case TargetMachine::CGFT_AssemblyFile:
+#endif
         if (TargetName[0] == 'c') {
           if (TargetName[1] == 0)
             OutputFilename += ".cbe.c";
@@ -120,13 +127,22 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
         } else
           OutputFilename += ".s";
         break;
+
+#if LLVM_VERSION_MAJOR >= 10
+      case CodeGenFileType::CGFT_ObjectFile:
+#else
       case TargetMachine::CGFT_ObjectFile:
+#endif
         if (OS == Triple::Win32)
           OutputFilename += ".obj";
         else
           OutputFilename += ".o";
         break;
+#if LLVM_VERSION_MAJOR >= 10
+      case CodeGenFileType::CGFT_Null:
+#else
       case TargetMachine::CGFT_Null:
+#endif
         OutputFilename += ".null";
         break;
       }
@@ -136,10 +152,19 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
   // Decide if we need "binary" output.
   bool Binary = false;
   switch (FileType) {
+#if LLVM_VERSION_MAJOR >= 10
+  case CodeGenFileType::CGFT_AssemblyFile:
+#else
   case TargetMachine::CGFT_AssemblyFile:
+#endif
     break;
+#if LLVM_VERSION_MAJOR >= 10
+  case CodeGenFileType::CGFT_ObjectFile:
+  case CodeGenFileType::CGFT_Null:
+#else
   case TargetMachine::CGFT_ObjectFile:
   case TargetMachine::CGFT_Null:
+#endif
     Binary = true;
     break;
   }
@@ -328,7 +353,11 @@ static int compileModule(char **argv, LLVMContext &Context) {
   PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
   if (RelaxAll) {
+#if LLVM_VERSION_MAJOR >= 10
+    if (FileType != CodeGenFileType::CGFT_ObjectFile)
+#else
     if (FileType != TargetMachine::CGFT_ObjectFile)
+#endif
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj\n";
   }
