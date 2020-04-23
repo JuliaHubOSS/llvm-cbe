@@ -1,29 +1,20 @@
 llvm-cbe
 ========
 
-resurrected LLVM "C Backend", with improvements
+Resurrected LLVM C backend, with improvements.
 
 
 INSTALLATION INSTRUCTIONS
 =========================
 
-This version of the LLVM-CBE library works with LLVM 8.0. You will have
-to compile this version of LLVM before you try to use LLVM-CBE. This
-guide will walk you through the compilation and installation of both
-tools and show usage statements to verify that the LLVM-CBE library is
-compiled correctly.
-
-The library is known to compile on various Linux versions (Redhat,
-Mageia, Ubuntu, Debian), Mac OS X, and Windows (Mingw-w64).
+This version of the LLVM C backend works with LLVM 10.0. Earlier versions are supported too.
 
 Step 1: Installing LLVM
 =======================
 
-LLVM-CBE relies on specific LLVM internals, and so it is best to use
-it with a specific revision of the LLVM development tree. Currently,
-llvm-cbe works with the LLVM 8.0 release version and autotools.
-
-Note: to convert C to LLVM IR to run the tests, you will also need a C compiler such as clang.
+Either compile LLVM yourself:
+-----------------------------
+Note: to convert C to LLVM IR to run the tests, you will also need a C compiler using the LLVM infrastructure, such as clang.
 
 The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
@@ -37,10 +28,15 @@ The first step is to compile LLVM on your machine
      cmake ..
      make
 
+Or install the LLVM packages on your system:
+--------------------------------------------
+
+On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package.
+
 Step 2: Compiling LLVM-CBE
 ==========================
 
-Next, download and compile llvm-cbe from the same folder:
+Next, download and compile llvm-cbe from the same folder if you built LLVM yourself, or where you'd like in the other case:
 
     cd $HOME/llvm-project/llvm/projects
     git clone https://github.com/JuliaComputing/llvm-cbe
@@ -96,3 +92,5 @@ First, compile llvm-cbe, and install pytest. Then:
     $ cd $HOME/llvm-project/llvm/projects/llvm-cbe
     $ pytest
 ```
+
+You might have to adjust the llvm-cbe and lli paths in that configuration.
