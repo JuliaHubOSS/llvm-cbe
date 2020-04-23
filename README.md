@@ -3,11 +3,12 @@ llvm-cbe
 
 Resurrected LLVM C backend, with improvements.
 
-
-INSTALLATION INSTRUCTIONS
+Installation instructions
 =========================
 
-This version of the LLVM C backend works with LLVM 10.0. Earlier versions are supported too.
+This version of the LLVM C backend works with LLVM 10.0.
+
+Earlier versions are supported too (LLVM 7 and earlier should work).
 
 Step 1: Installing LLVM
 =======================
@@ -28,27 +29,25 @@ The first step is to compile LLVM on your machine
      cmake ..
      make
 
+To run tests, you need to build `lli`.
+
 Or install the LLVM packages on your system:
 --------------------------------------------
 
-On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package.
+On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package. On Debian and derivatives, install the llvm-dev package.
+
+It is recommended to install the clang package too.
 
 Step 2: Compiling LLVM-CBE
 ==========================
 
 Next, download and compile llvm-cbe from the same folder if you built LLVM yourself, or where you'd like in the other case:
 
-    cd $HOME/llvm-project/llvm/projects
+    cd $HOME/llvm-project/llvm/projects # Or any place, if you use the LLVM package of your distribution.
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd ../build
     cmake ..
     make llvm-cbe
-
-To run tests, you will also need to build `lli`:
-
-```sh
-    make lli
-```
 
 Step 3: Usage Examples
 ======================
@@ -64,7 +63,7 @@ main.c main.ll
 $ $(HOME)/llvm/build/bin/llvm-cbe main.ll
 ```
 
-Compile Generated C-Code and Run
+Compile Generated C Code and Run
 ================================
 
 ```
