@@ -13,7 +13,14 @@ Earlier versions are supported too (LLVM 7 and earlier should work).
 Step 1: Installing LLVM
 =======================
 
-Either compile LLVM yourself:
+Either install the LLVM packages on your system:
+--------------------------------------------
+
+On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package. On Debian and derivatives, install the llvm-dev package.
+
+It is recommended to install the clang package too.
+
+Or compile LLVM yourself:
 -----------------------------
 Note: to convert C to LLVM IR to run the tests, you will also need a C compiler using the LLVM infrastructure, such as clang.
 
@@ -31,12 +38,6 @@ The first step is to compile LLVM on your machine
 
 To run tests, you need to build `lli`.
 
-Or install the LLVM packages on your system:
---------------------------------------------
-
-On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package. On Debian and derivatives, install the llvm-dev package.
-
-It is recommended to install the clang package too.
 
 Step 2: Compiling LLVM-CBE
 ==========================
