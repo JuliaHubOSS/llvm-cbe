@@ -16,9 +16,20 @@ Step 1: Installing LLVM
 Either install the LLVM packages on your system:
 --------------------------------------------
 
-On macOS, use pkgsrc and install the llvm package. On CentOS, install the llvm-devel package. On Debian and derivatives, install the llvm-dev package.
+On macOS, use [pkgsrc](http://pkgsrc.joyent.com/install-on-osx/) and run the following commands:
+```
+    pkgin in llvm clang
+```
 
-It is recommended to install the clang package too.
+On CentOS, install the llvm-devel package:
+```
+    dnf install llvm-devel clang
+```
+
+On Debian and derivatives, install the llvm-dev package via:
+```
+    apt install llvm-dev clang
+```
 
 Or compile LLVM yourself:
 -----------------------------
