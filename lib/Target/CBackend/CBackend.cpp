@@ -15,9 +15,9 @@
 #include "CBackend.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/PatternMatch.h"
-#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
@@ -2165,7 +2165,9 @@ bool CWriter::doInitialization(Module &M) {
 
   TD = new DataLayout(&M);
   IL = new IntrinsicLowering(*TD);
+#if LLVM_VERSION_MAJOR < 9
   IL->AddPrototypes(M);
+#endif
 
 #if 0
   std::string Triple = TheModule->getTargetTriple();
@@ -2253,7 +2255,7 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
   OutHeaders << "#include <math.h>\n";   // definitions for some math functions
-                                       // and numeric constants
+                                         // and numeric constants
   // Provide a definition for `bool' if not compiling with a C++ compiler.
   OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
   OutHeaders << "\n";
@@ -3574,7 +3576,9 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E; ++II) {
     DILocation *Loc = (*II).getDebugLoc();
     if (Loc != nullptr && LastAnnotatedSourceLine != Loc->getLine()) {
-      Out << "#line " << Loc->getLine() << " \"" << Loc->getDirectory() << "/" << Loc->getFilename() << "\"" << "\n";
+      Out << "#line " << Loc->getLine() << " \"" << Loc->getDirectory() << "/"
+          << Loc->getFilename() << "\""
+          << "\n";
       LastAnnotatedSourceLine = Loc->getLine();
     }
     if (!isInlinableInst(*II) && !isDirectAlloca(&*II)) {
@@ -4412,16 +4416,23 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::vaend:
           case Intrinsic::returnaddress:
           case Intrinsic::frameaddress:
+#if LLVM_VERSION_MAJOR >= 9
+          case Intrinsic::eh_sjlj_setjmp:
+          case Intrinsic::eh_sjlj_longjmp:
+#else
           case Intrinsic::setjmp:
           case Intrinsic::longjmp:
           case Intrinsic::sigsetjmp:
           case Intrinsic::siglongjmp:
+#endif
           case Intrinsic::prefetch:
+#if LLVM_VERSION_MAJOR < 9
           case Intrinsic::x86_sse_cmp_ss:
           case Intrinsic::x86_sse_cmp_ps:
           case Intrinsic::x86_sse2_cmp_sd:
           case Intrinsic::x86_sse2_cmp_pd:
           case Intrinsic::ppc_altivec_lvsl:
+#endif
           case Intrinsic::uadd_with_overflow:
           case Intrinsic::sadd_with_overflow:
           case Intrinsic::usub_with_overflow:
@@ -4657,6 +4668,20 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
+#if LLVM_VERSION_MAJOR >= 9
+  case Intrinsic::eh_sjlj_setjmp:
+    Out << "setjmp(*(jmp_buf*)";
+    writeOperand(I.getArgOperand(0), ContextCasted);
+    Out << ')';
+    return true;
+  case Intrinsic::eh_sjlj_longjmp:
+    Out << "longjmp(*(jmp_buf*)";
+    writeOperand(I.getArgOperand(0), ContextCasted);
+    Out << ", ";
+    writeOperand(I.getArgOperand(1), ContextCasted);
+    Out << ')';
+    return true;
+#else
   case Intrinsic::setjmp:
     Out << "setjmp(*(jmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
@@ -4683,6 +4708,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(1), ContextCasted);
     Out << ')';
     return true;
+#endif
   case Intrinsic::prefetch:
     Out << "LLVM_PREFETCH((const void *)";
     writeOperand(I.getArgOperand(0), ContextCasted);
@@ -4698,6 +4724,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     headerUseStackSaveRestore();
     Out << "0; *((void**)&" << GetValueName(&I) << ") = __builtin_stack_save()";
     return true;
+#if LLVM_VERSION_MAJOR < 9
   case Intrinsic::x86_sse_cmp_ss:
   case Intrinsic::x86_sse_cmp_ps:
   case Intrinsic::x86_sse2_cmp_sd:
@@ -4757,6 +4784,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ")";
     return true;
+#endif
   case Intrinsic::stackprotector:
     writeOperandDeref(I.getArgOperand(1));
     Out << " = ";

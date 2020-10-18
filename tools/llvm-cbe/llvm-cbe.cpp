@@ -46,6 +46,9 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
+#if LLVM_VERSION_MAJOR >= 9
+#include "llvm/InitializePasses.h"
+#endif
 #include <memory>
 using namespace llvm;
 
@@ -101,6 +104,9 @@ static inline std::string GetFileNameRoot(const std::string &InputFilename) {
 static ToolOutputFile *GetOutputStream(const char *TargetName,
                                        Triple::OSType OS,
                                        const char *ProgName) {
+#if LLVM_VERSION_MAJOR >= 9
+  using TargetMachine = CodeGenFileType;
+#endif
   // If we don't yet have an output filename, make one.
   if (OutputFilename.empty()) {
     if (InputFilename == "-")
@@ -328,6 +334,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
   PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
   if (RelaxAll) {
+#if LLVM_VERSION_MAJOR >= 9
+    using TargetMachine = CodeGenFileType;
+#endif
     if (FileType != TargetMachine::CGFT_ObjectFile)
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj\n";

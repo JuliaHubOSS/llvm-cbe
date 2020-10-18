@@ -33,9 +33,20 @@ public:
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef FS)
       : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
-                            ArrayRef<SubtargetFeatureKV>(), nullptr, nullptr,
-                            nullptr, nullptr, nullptr, nullptr, nullptr),
-        Lowering(TM) {}
+#if LLVM_VERSION_MAJOR >= 9
+                            ArrayRef<SubtargetSubTypeKV>()
+#else
+                            ArrayRef<SubtargetFeatureKV>()
+#endif
+                                ,
+                            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr
+#if LLVM_VERSION_MAJOR < 9
+                            ,
+                            nullptrz
+#endif
+                            ),
+        Lowering(TM) {
+  }
   bool enableAtomicExpand() const override;
   const TargetLowering *getTargetLowering() const override;
   const CTargetLowering Lowering;
@@ -59,7 +70,12 @@ public:
                            raw_pwrite_stream *DwoOut,
 #endif
                            CodeGenFileType FileType, bool DisableVerify = true,
-                           MachineModuleInfo *MMI = nullptr) override;
+#if LLVM_VERSION_MAJOR >= 9
+                           MachineModuleInfoWrapperPass *MMIWP = nullptr
+#else
+                           MachineModuleInfo *MMI = nullptr
+#endif
+                           ) override;
 
   // TargetMachine interface
   const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override;

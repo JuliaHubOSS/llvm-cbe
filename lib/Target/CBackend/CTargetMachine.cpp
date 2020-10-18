@@ -28,10 +28,20 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
 #endif
                                          CodeGenFileType FileType,
                                          bool DisableVerify,
-                                         MachineModuleInfo *MMI) {
+#if LLVM_VERSION_MAJOR >= 9
+                                         MachineModuleInfoWrapperPass *MMIWP
+#else
+                                         MachineModuleInfo *MMI
+#endif
+) {
 
+#if LLVM_VERSION_MAJOR >= 9
+  if (FileType != CodeGenFileType::CGFT_AssemblyFile)
+    return true;
+#else
   if (FileType != TargetMachine::CGFT_AssemblyFile)
     return true;
+#endif
 
   PM.add(new TargetPassConfig(*this, PM));
   PM.add(createGCLoweringPass());
@@ -47,7 +57,7 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
 
   PM.add(new llvm_cbe::CWriter(Out));
   return false;
-}
+} // namespace llvm
 
 const TargetSubtargetInfo *
 CTargetMachine::getSubtargetImpl(const Function &) const {
