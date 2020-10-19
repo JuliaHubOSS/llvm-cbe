@@ -1,4 +1,6 @@
-if (USE_SYSTEM_LLVM)
+if (NOT DEFINED LLVM_VERSION_MAJOR)
+  project(llvm-cbe)
+  set (USE_SYSTEM_LLVM 1)
   cmake_minimum_required(VERSION 3.4.3)
   find_package(LLVM REQUIRED CONFIG)
   message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
@@ -8,6 +10,8 @@ if (USE_SYSTEM_LLVM)
 
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
   include(AddLLVM)
+
+  set (CMAKE_CXX_STANDARD 14)
 endif()
 
 add_subdirectory(lib)
