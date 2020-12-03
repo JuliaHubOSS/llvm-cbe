@@ -23,3 +23,6 @@
 # Python
 __pycache__
 .pytest_cache/
+
+# Build folder
+build/

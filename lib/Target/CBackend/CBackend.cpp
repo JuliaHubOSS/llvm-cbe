@@ -48,6 +48,14 @@
 #include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/IntrinsicsPowerPC.h"
 #endif
+
+// Debug output helper
+#ifndef NDEBUG
+#define DBG_ERRS(x) errs() << x << " (#" << __LINE__ << ")\n"
+#else
+#define DBG_ERRS(x)
+#endif
+
 namespace llvm_cbe {
 
 using namespace llvm;
@@ -252,9 +260,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   }
 
   default:
-#ifndef NDEBUG
-    errs() << "Unknown primitive type: " << *Ty << "\n";
-#endif
+    DBG_ERRS("Unknown primitive type: " << *Ty);
     errorWithMessage("unknown primitive type");
   }
 }
@@ -355,9 +361,7 @@ static const std::string getCmpPredicateName(CmpInst::Predicate P) {
   case ICmpInst::ICMP_SGT:
     return "sgt";
   default:
-#ifndef NDEBUG
-    errs() << "Invalid icmp predicate!" << P << "\n";
-#endif
+    DBG_ERRS("Invalid icmp predicate!" << P);
     // TODO: cwriter_assert
     llvm_unreachable(0);
   }
@@ -399,9 +403,7 @@ static const char *getFCmpImplem(CmpInst::Predicate P) {
   case FCmpInst::FCMP_TRUE:
     return "1";
   default:
-#ifndef NDEBUG
-    errs() << "Invalid fcmp predicate!" << P << "\n";
-#endif
+    DBG_ERRS("Invalid fcmp predicate!" << P);
     // TODO: cwriter_assert
     llvm_unreachable(0);
   }
@@ -471,9 +473,7 @@ raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
                << " __attribute__((vector_size(8)))";
 
   default:
-#ifndef NDEBUG
-    errs() << "Unknown primitive type: " << *Ty;
-#endif
+    DBG_ERRS("Unknown primitive type: " << *Ty);
     errorWithMessage("unknown primitive type");
   }
 }
@@ -517,9 +517,7 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
   }
 
   default:
-#ifndef NDEBUG
-    errs() << "Unexpected type: " << *Ty << "\n";
-#endif
+    DBG_ERRS("Unexpected type: " << *Ty);
     errorWithMessage("unexpected type");
   }
 }
@@ -691,9 +689,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     Out << " __thiscall";
     break;
   default:
-#ifndef NDEBUG
-    errs() << "Unhandled calling convention " << Attrs.second << "\n";
-#endif
+    DBG_ERRS("Unhandled calling convention " << Attrs.second);
     errorWithMessage("Encountered Unhandled Calling Convention");
     break;
   }
@@ -989,10 +985,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     // TODO: VectorType are valid here, but not supported
     if (!CE->getType()->isIntegerTy() && !CE->getType()->isFloatingPointTy() &&
         !CE->getType()->isPointerTy()) {
-#ifndef NDEBUG
-      errs() << "Unsupported constant type " << *CE->getType() << " in: " << *CE
-             << "\n";
-#endif
+      DBG_ERRS("Unsupported constant type " << *CE->getType() << " in: " << *CE);
       errorWithMessage("Unsupported constant type");
     }
     switch (CE->getOpcode()) {
@@ -1162,9 +1155,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       return;
     }
     default:
-#ifndef NDEBUG
-      errs() << "CWriter Error: Unhandled constant expression: " << *CE << "\n";
-#endif
+      DBG_ERRS("CWriter Error: Unhandled constant expression: " << *CE);
       errorWithMessage("unhandled constant expression");
     }
   } else if (isa<UndefValue>(CPV) && CPV->getType()->isSingleValueType()) {
@@ -1435,9 +1426,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     }
     // FALL THROUGH
   default:
-#ifndef NDEBUG
-    errs() << "Unknown constant type: " << *CPV << "\n";
-#endif
+    DBG_ERRS("Unknown constant type: " << *CPV);
     errorWithMessage("unknown constant type");
   }
 }
@@ -1505,11 +1494,8 @@ void CWriter::printConstantWithCast(Constant *CPV, unsigned Opcode) {
   Type *OpTy = CPV->getType();
   // TODO: VectorType are valid here, but not supported
   if (!OpTy->isIntegerTy() && !OpTy->isFloatingPointTy()) {
-#ifndef NDEBUG
-    errs() << "Unsupported 'constant with cast' type " << *OpTy
-           << " in: " << *CPV << "\n"
-           << "\n";
-#endif
+    DBG_ERRS("Unsupported 'constant with cast' type " << *OpTy
+           << " in: " << *CPV);
     errorWithMessage("Unsupported 'constant with cast' type");
   }
 
@@ -2580,7 +2566,7 @@ void CWriter::generateHeader(Module &M) {
     for (n = 0; n < l; n++) {
       Out << "  c.vector[" << n << "] = ";
       if (CmpInst::isFPPredicate((*it).first)) {
-        Out << "llvm_fcmp_ " << getCmpPredicateName((*it).first) << "(l.vector["
+        Out << "llvm_fcmp_" << getCmpPredicateName((*it).first) << "(l.vector["
             << n << "], r.vector[" << n << "]);\n";
       } else {
         Out << "l.vector[" << n << "]";
@@ -2608,9 +2594,7 @@ void CWriter::generateHeader(Module &M) {
           Out << " > ";
           break;
         default:
-#ifndef NDEBUG
-          errs() << "Invalid icmp predicate!" << (*it).first << "\n";
-#endif
+          DBG_ERRS("Invalid icmp predicate!" << (*it).first);
           errorWithMessage("invalid icmp predicate");
         }
         Out << "r.vector[" << n << "];\n";
@@ -2714,8 +2698,12 @@ void CWriter::generateHeader(Module &M) {
       case Instruction::Trunc:
         Out << "Trunc";
         break;
-      // case Instruction::FPExt:
-      // case Instruction::FPTrunc:
+      case Instruction::FPExt:
+        Out << "FPExt";
+        break;
+      case Instruction::FPTrunc:
+        Out << "FPTrunc";
+        break;
       case Instruction::ZExt:
         Out << "ZExt";
         break;
@@ -2729,6 +2717,7 @@ void CWriter::generateHeader(Module &M) {
         Out << "FPtoSI";
         break;
       default:
+        DBG_ERRS("Invalid cast opcode: " << opcode);
         errorWithMessage("Invalid cast opcode for i128");
       }
       Out << "(" << SrcTy->getPrimitiveSizeInBits() << ", &in, "
@@ -2857,9 +2846,7 @@ void CWriter::generateHeader(Module &M) {
             Out << " >> ";
             break;
           default:
-#ifndef NDEBUG
-            errs() << "Invalid operator type!" << opcode << "\n";
-#endif
+            DBG_ERRS("Invalid operator type ! " << opcode);
             errorWithMessage("invalid operator type");
           }
           Out << "b.vector[" << n << "]";
@@ -2882,12 +2869,15 @@ void CWriter::generateHeader(Module &M) {
         Out << "a";
         switch (opcode) {
         case Instruction::Add:
+        case Instruction::FAdd:
           Out << " + ";
           break;
         case Instruction::Sub:
+        case Instruction::FSub:
           Out << " - ";
           break;
         case Instruction::Mul:
+        case Instruction::FMul:
           Out << " * ";
           break;
         case Instruction::URem:
@@ -2896,6 +2886,7 @@ void CWriter::generateHeader(Module &M) {
           break;
         case Instruction::UDiv:
         case Instruction::SDiv:
+        case Instruction::FDiv:
           Out << " / ";
           break;
         case Instruction::And:
@@ -2915,9 +2906,7 @@ void CWriter::generateHeader(Module &M) {
           Out << " >> ";
           break;
         default:
-#ifndef NDEBUG
-          errs() << "Invalid operator type!" << opcode << "\n";
-#endif
+          DBG_ERRS("Invalid operator type !" << opcode);
           errorWithMessage("invalid operator type");
         }
         Out << "b;\n";
@@ -2961,11 +2950,20 @@ void CWriter::generateHeader(Module &M) {
         case Instruction::Add:
           Out << "Add";
           break;
+        case Instruction::FAdd:
+          Out << "FAdd";
+          break;
         case Instruction::Sub:
           Out << "Sub";
           break;
+        case Instruction::FSub:
+          Out << "FSub";
+          break;
         case Instruction::Mul:
           Out << "Mul";
+          break;
+        case Instruction::FMul:
+          Out << "FMul";
           break;
         case Instruction::URem:
           Out << "URem";
@@ -2979,6 +2977,9 @@ void CWriter::generateHeader(Module &M) {
         case Instruction::SDiv:
           Out << "SDiv";
           break;
+        case Instruction::FDiv:
+          Out << "FDiv";
+          break;
         // case Instruction::And:  Out << "And"; break;
         // case Instruction::Or:   Out << "Or"; break;
         // case Instruction::Xor:  Out << "Xor"; break;
@@ -2990,9 +2991,7 @@ void CWriter::generateHeader(Module &M) {
           Out << "AShr";
           break;
         default:
-#ifndef NDEBUG
-          errs() << "Invalid operator type!" << opcode << "\n";
-#endif
+          DBG_ERRS("Invalid operator type !" << opcode);
           errorWithMessage("invalid operator type");
         }
         Out << "(16, &a, &b, &r);\n";
@@ -3057,9 +3056,7 @@ void CWriter::generateHeader(Module &M) {
           Out << " >> ";
           break;
         default:
-#ifndef NDEBUG
-          errs() << "Invalid operator type!" << opcode << "\n";
-#endif
+          DBG_ERRS("Invalid operator type !" << opcode);
           errorWithMessage("invalid operator type");
         }
         Out << "b";
@@ -3926,9 +3923,7 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
       Out << " >> ";
       break;
     default:
-#ifndef NDEBUG
-      errs() << "Invalid operator type!" << I << "\n";
-#endif
+      DBG_ERRS("Invalid operator type !" << I);
       errorWithMessage("invalid operator type");
     }
 
@@ -3992,9 +3987,7 @@ void CWriter::visitICmpInst(ICmpInst &I) {
     Out << " > ";
     break;
   default:
-#ifndef NDEBUG
-    errs() << "Invalid icmp predicate!" << I << "\n";
-#endif
+    DBG_ERRS("Invalid icmp predicate!" << I);
     errorWithMessage("invalid icmp predicate");
   }
 
@@ -4240,9 +4233,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
                    "CBackend does not support arbitrary size integers.");
     switch (Opcode) {
     default:
-#ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
-#endif
+      DBG_ERRS("Unsupported Intrinsic!" << Opcode);
       errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::uadd_with_overflow:
@@ -4344,17 +4335,13 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     } else if (elemT->isPPC_FP128Ty()) {
       suffix = "l";
     } else {
-#ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
-#endif
+      DBG_ERRS("Unsupported Intrinsic!" << Opcode);
       errorWithMessage("unsupported instrinsic");
     }
 
     switch (Opcode) {
     default:
-#ifndef NDEBUG
-      errs() << "Unsupported Intrinsic!" << Opcode << "\n";
-#endif
+      DBG_ERRS("Unsupported Intrinsic!" << Opcode);
       errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::ceil:
@@ -4620,9 +4607,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
 
   switch (ID) {
   default: {
-#ifndef NDEBUG
-    errs() << "Unknown LLVM intrinsic! " << I << "\n";
-#endif
+    DBG_ERRS("Unknown LLVM intrinsic! " << I);
     errorWithMessage("unknown llvm instrinsic");
     return false;
   }
