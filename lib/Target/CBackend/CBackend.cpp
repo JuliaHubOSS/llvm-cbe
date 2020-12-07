@@ -870,15 +870,13 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
 
 // TODO copied from CppBackend, new code should use raw_ostream
 static inline std::string ftostr(const APFloat &V) {
-  std::string Buf;
-  if (&V.getSemantics() == &APFloat::IEEEdouble()) {
-    raw_string_ostream(Buf) << V.convertToDouble();
-    return Buf;
-  } else if (&V.getSemantics() == &APFloat::IEEEsingle()) {
-    raw_string_ostream(Buf) << (double)V.convertToFloat();
-    return Buf;
+  if (&V.getSemantics() != &APFloat::IEEEdouble() &&
+      &V.getSemantics() != &APFloat::IEEEsingle()) {
+    return "<unknown format in ftostr>"; // error
   }
-  return "<unknown format in ftostr>"; // error
+  SmallVector<char, 32> Buffer;
+  V.toString(Buffer);
+  return std::string(Buffer.data(), Buffer.size());
 }
 
 static bool isFPCSafeToPrint(const ConstantFP *CFP) {
