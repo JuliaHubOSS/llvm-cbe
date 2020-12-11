@@ -2547,8 +2547,8 @@ void CWriter::generateHeader(Module &M) {
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
     const auto Pred = (*it).first;
-    if (CmpInst::isFPPredicate((*it).first)) {
-      FCmpOps.insert(Pred);
+    if (CmpInst::isFPPredicate(Pred)) {
+      headerUseFCmpOp(Pred);
       Out << " llvm_fcmp_";
     } else
       Out << " llvm_icmp_";
