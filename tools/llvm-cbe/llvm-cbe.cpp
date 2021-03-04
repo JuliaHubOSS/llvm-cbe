@@ -16,7 +16,9 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#if LLVM_VERSION_MAJOR >= 7
+#if LLVM_VERSION_MAJOR > 10
+#include "llvm/CodeGen/CommandFlags.h"
+#elif LLVM_VERSION_MAJOR >= 7
 #include "llvm/CodeGen/CommandFlags.inc"
 #else
 #include "llvm/CodeGen/CommandFlags.def"
@@ -51,6 +53,8 @@
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
 using namespace llvm;
+
+static codegen::RegisterCodeGenFlags CGF;
 
 extern "C" void LLVMInitializeCBackendTarget();
 extern "C" void LLVMInitializeCBackendTargetInfo();
@@ -111,7 +115,7 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
     else {
       OutputFilename = GetFileNameRoot(InputFilename);
 
-      switch (FileType) {
+      switch (codegen::getFileType()) {
 #if LLVM_VERSION_MAJOR >= 10
       case CodeGenFileType::CGFT_AssemblyFile:
 #else
@@ -151,7 +155,7 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
 
   // Decide if we need "binary" output.
   bool Binary = false;
-  switch (FileType) {
+  switch (codegen::getFileType()) {
 #if LLVM_VERSION_MAJOR >= 10
   case CodeGenFileType::CGFT_AssemblyFile:
 #else
@@ -239,8 +243,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
   Module *mod = 0;
   Triple TheTriple;
 
+  auto MAttrs = codegen::getMAttrs();
   bool SkipModule =
-      MCPU == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
+      codegen::getMCPU() == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
 
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
@@ -265,7 +270,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Get the target specific parser.
   std::string Error;
   // Override MArch
-  MArch = "c";
+  //codegen::getMArch() = "c";
+  const std::string MArch = "c";
   const Target *TheTarget =
       TargetRegistry::lookupTarget(MArch, TheTriple, Error);
   if (!TheTarget) {
@@ -305,23 +311,22 @@ static int compileModule(char **argv, LLVMContext &Context) {
   }
 
   TargetOptions Options;
-  Options.AllowFPOpFusion = FuseFPOps;
-  Options.UnsafeFPMath = EnableUnsafeFPMath;
-  Options.NoInfsFPMath = EnableNoInfsFPMath;
-  Options.NoNaNsFPMath = EnableNoNaNsFPMath;
+  Options.AllowFPOpFusion = codegen::getFuseFPOps();
+  Options.UnsafeFPMath = codegen::getEnableUnsafeFPMath();
+  Options.NoInfsFPMath = codegen::getEnableNoInfsFPMath();
+  Options.NoNaNsFPMath = codegen::getEnableNoNaNsFPMath();
   Options.HonorSignDependentRoundingFPMathOption =
-      EnableHonorSignDependentRoundingFPMath;
-  if (FloatABIForCalls != FloatABI::Default)
-    Options.FloatABIType = FloatABIForCalls;
-  Options.NoZerosInBSS = DontPlaceZerosInBSS;
-  Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
-  Options.StackAlignmentOverride = OverrideStackAlignment;
+      codegen::getEnableHonorSignDependentRoundingFPMath();
+  if (codegen::getFloatABIForCalls() != FloatABI::Default)
+    Options.FloatABIType = codegen::getFloatABIForCalls();
+  Options.NoZerosInBSS = codegen::getDontPlaceZerosInBSS();
+  Options.GuaranteedTailCallOpt = codegen::getEnableGuaranteedTailCallOpt();
+  Options.StackAlignmentOverride = codegen::getOverrideStackAlignment();
 
   // Jackson Korba 9/30/14
   // OwningPtr<targetMachine>
   std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
-      TheTriple.getTriple(), MCPU, FeaturesStr, Options, getRelocModel(),
-      getCodeModel(), OLvl));
+      TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options, llvm::codegen::getRelocModel()));
   assert(target.get() && "Could not allocate target machine!");
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
@@ -352,8 +357,11 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Add intenal analysis passes from the target machine.
   PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
+#if LLVM_VERSION_MAJOR > 10
+  if (mc::getExplicitRelaxAll()) {
+    if (codegen::getFileType() != CodeGenFileType::CGFT_ObjectFile)
+#elif LLVM_VERSION_MAJOR == 10
   if (RelaxAll) {
-#if LLVM_VERSION_MAJOR >= 10
     if (FileType != CodeGenFileType::CGFT_ObjectFile)
 #else
     if (FileType != TargetMachine::CGFT_ObjectFile)
@@ -367,7 +375,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
 #if LLVM_VERSION_MAJOR >= 7
                                  nullptr,
 #endif
-                                 FileType, NoVerify)) {
+                                 codegen::getFileType(), NoVerify)) {
     errs() << argv[0] << ": target does not support generation of this"
            << " file type!\n";
     return 1;
