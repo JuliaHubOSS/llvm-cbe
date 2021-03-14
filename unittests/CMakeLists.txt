@@ -1,9 +1,6 @@
 add_custom_target(CBEUnitTests)
 set_target_properties(CBEUnitTests PROPERTIES FOLDER "Tests")
 
-set(CMAKE_PREFIX_PATH $ENV{GTEST_HOME})
-find_package(GTest REQUIRED)
-
 set(LLVM_LINK_COMPONENTS
   Analysis
   CBackendCodeGen
@@ -15,94 +12,7 @@ set(LLVM_LINK_COMPONENTS
   Support
   Target
   TransformUtils
-  #For link errors
-  XRay
-  WindowsManifest
-  TableGen
-  Symbolize
-  DebugInfoPDB
-  OrcJIT
-  OrcError
-  JITLink
-  ObjectYAML
-  MIRParser
-  MCA
-  LTO
-  ObjCARCOpts
-  Extensions
-  Polly
-  Passes
-  Coroutines
-  LineEditor
-  LibDriver
-  Interpreter
-  FuzzMutate
-  MCJIT
-  ExecutionEngine
-  RuntimeDyld
-  DWARFLinker
-  DlltoolDriver
-  Option
-  DebugInfoGSYM
-  Coverage
-  NVPTXCodeGen
-  ipo
-  Instrumentation
-  Vectorize
-  Linker
-  IRReader
-  AsmParser
-  FrontendOpenMP
-  NVPTXDesc
-  NVPTXInfo
-  BPFDisassembler
-  BPFCodeGen
-  BPFAsmParser
-  BPFDesc
-  BPFInfo
-  X86Disassembler
-  X86AsmParser
-  X86CodeGen
-  X86Desc
-  X86Info
-  AArch64Disassembler
-  MCDisassembler
-  AArch64CodeGen
-  CFGuard
-  GlobalISel
-  SelectionDAG
-  AsmPrinter
-  DebugInfoDWARF
-  CodeGen
-  Target
-  ScalarOpts
-  InstCombine
-  AggressiveInstCombine
-  TransformUtils
-  BitWriter
-  Analysis
-  ProfileData
-  Object
-  TextAPI
-  BitReader
-  Core
-  Remarks
-  BitstreamReader
-  AArch64AsmParser
-  MCParser
-  AArch64Desc
-  MC
-  DebugInfoCodeView
-  DebugInfoMSF
-  BinaryFormat
-  AArch64Utils
-  AArch64Info
-  Support
-  Demangle
   )
-
-include_directories(${GTEST_INCLUDE_DIR})
-link_directories($ENV{GTEST_HOME}/lib)
 
 add_unittest(CBEUnitTests CWriterTest
   TypeNameTest.cpp

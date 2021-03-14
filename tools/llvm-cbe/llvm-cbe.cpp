@@ -162,9 +162,9 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
   // Decide if we need "binary" output.
   bool Binary = false;
 #if LLVM_VERSION_MAJOR > 10
-      switch (codegen::getFileType()) {
+  switch (codegen::getFileType()) {
 #else
-      switch (FileType) {
+  switch (FileType) {
 #endif
 #if LLVM_VERSION_MAJOR >= 10
   case CodeGenFileType::CGFT_AssemblyFile:
