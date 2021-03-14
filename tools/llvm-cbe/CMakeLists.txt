@@ -18,7 +18,6 @@ if (NOT USE_SYSTEM_LLVM)
     SelectionDAG
     Support
     Target
-    TransformUtils
     )
 
 
