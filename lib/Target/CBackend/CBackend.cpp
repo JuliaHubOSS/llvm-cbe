@@ -163,8 +163,9 @@ AllocaInst *CWriter::isDirectAlloca(Value *V) const {
 
 // isInlineAsm - Check if the instruction is a call to an inline asm chunk.
 bool CWriter::isInlineAsm(Instruction &I) const {
-  if (CallInst *CI = dyn_cast<CallInst>(&I))
-    return isa<InlineAsm>(CI->getCalledValue());
+  if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+    return isa<InlineAsm>(CI->getCalledOperand());
+  }
   else
     return false;
 }
@@ -213,8 +214,10 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
     cwriter_assert(!isEmptyType(ST));
     TypedefDeclTypes.insert(Ty);
 
-    if (!ST->isLiteral() && !ST->getName().empty())
-      return Out << "struct_" << CBEMangle(ST->getName());
+    if (!ST->isLiteral() && !ST->getName().empty()) {
+      std::string Name{ST->getName()};
+      return Out << "struct_" << CBEMangle(Name);
+    }
 
     unsigned id = UnnamedStructIDs.getOrInsert(ST);
     return Out << "unnamed_" + utostr(id);
@@ -249,8 +252,13 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
 
   case Type::X86_MMXTyID:
     return Out << (isSigned ? "i32y2" : "u32y2");
-
-  case Type::VectorTyID: {
+#if LLVM_VERSION_MAJOR > 10
+  case Type::FixedVectorTyID:
+  case Type::ScalableVectorTyID:
+#else
+  case Type::VectorTyID:
+#endif
+  {
     TypedefDeclTypes.insert(Ty);
     VectorType *VTy = cast<VectorType>(Ty);
     cwriter_assert(VTy->getNumElements() != 0);
@@ -517,8 +525,13 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
     TypedefDeclTypes.insert(Ty);
     return Out << getArrayName(cast<ArrayType>(Ty));
   }
-
-  case Type::VectorTyID: {
+#if LLVM_VERSION_MAJOR > 10
+  case Type::FixedVectorTyID:
+  case Type::ScalableVectorTyID:
+#else
+  case Type::VectorTyID:
+#endif
+  {
     TypedefDeclTypes.insert(Ty);
     return Out << getVectorName(cast<VectorType>(Ty), true);
   }
@@ -1346,8 +1359,13 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
                 : ")"); // Arrays are wrapped in struct types.
     break;
   }
-
-  case Type::VectorTyID: {
+#if LLVM_VERSION_MAJOR > 10
+  case Type::FixedVectorTyID:
+  case Type::ScalableVectorTyID:
+#else
+  case Type::VectorTyID:
+#endif
+  {
     VectorType *VT = cast<VectorType>(CPV->getType());
     cwriter_assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (Context != ContextStatic) {
@@ -1528,7 +1546,7 @@ std::string CWriter::GetValueName(Value *Operand) {
     Operand = GA->getAliasee();
   }
 
-  std::string Name = Operand->getName();
+  std::string Name{Operand->getName()};
   if (Name.empty()) { // Assign unique names to local temporaries.
     unsigned No = AnonValueNumbers.getOrInsert(Operand);
 
@@ -2464,7 +2482,7 @@ void CWriter::generateHeader(Module &M) {
         Out << "__thread ";
 
       Type *ElTy = I->getType()->getElementType();
-      unsigned Alignment = I->getAlignment();
+      unsigned Alignment = I->getBaseObject()->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlignment(ElTy);
       if (IsOveraligned) {
@@ -2514,7 +2532,7 @@ void CWriter::generateHeader(Module &M) {
       printTypeNameUnaligned(
           Out,
           VectorType::get(Type::getInt1Ty((*it)->getContext()),
-                          (*it)->getVectorNumElements()),
+                          cast<VectorType>(*it)->getNumElements()),
           false);
     else
       Out << "bool";
@@ -2526,7 +2544,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeNameUnaligned(Out, *it, false);
     Out << " r;\n";
     if (isa<VectorType>(*it)) {
-      unsigned n, l = (*it)->getVectorNumElements();
+      unsigned n, l = cast<VectorType>(*it)->getNumElements();
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = condition.vector[" << n
             << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
@@ -2554,7 +2572,7 @@ void CWriter::generateHeader(Module &M) {
     //   };
     //   return c;
     // }
-    unsigned n, l = (*it).second->getVectorNumElements();
+    unsigned n, l = (*it).second->getNumElements();
     VectorType *RTy =
         VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
     bool isSigned = CmpInst::isSigned((*it).first);
@@ -2685,8 +2703,8 @@ void CWriter::generateHeader(Module &M) {
       Out << "  ";
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
-      unsigned n, l = DstTy->getVectorNumElements();
-      cwriter_assert(SrcTy->getVectorNumElements() == l);
+      unsigned n, l = cast<VectorType>(DstTy)->getNumElements();
+      cwriter_assert(cast<VectorType>(SrcTy)->getNumElements() == l);
       for (n = 0; n < l; n++) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
@@ -2759,7 +2777,7 @@ void CWriter::generateHeader(Module &M) {
     // }
     unsigned opcode = (*it).first;
     Type *OpTy = (*it).second;
-    Type *ElemTy = isa<VectorType>(OpTy) ? OpTy->getVectorElementType() : OpTy;
+    Type *ElemTy = isa<VectorType>(OpTy) ? cast<VectorType>(OpTy)->getElementType() : OpTy;
     bool shouldCast;
     bool isSigned;
     opcodeNeedsCast(opcode, shouldCast, isSigned);
@@ -2799,7 +2817,7 @@ void CWriter::generateHeader(Module &M) {
 
     if (isa<VectorType>(OpTy)) {
       Out << " r;\n";
-      unsigned n, l = OpTy->getVectorNumElements();
+      unsigned n, l = cast<VectorType>(OpTy)->getNumElements();
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = ";
         if (mask)
@@ -3106,7 +3124,7 @@ void CWriter::generateHeader(Module &M) {
     bool printed = false;
     for (unsigned i = 0; i != e; ++i) {
       Type *ElTy =
-          STy ? STy->getElementType(i) : (*it)->getSequentialElementType();
+          STy ? STy->getElementType(i) : nullptr;
       if (isEmptyType(ElTy))
         Out << " /* ";
       else if (printed)
@@ -3123,7 +3141,7 @@ void CWriter::generateHeader(Module &M) {
     Out << " r;";
     for (unsigned i = 0; i != e; ++i) {
       Type *ElTy =
-          STy ? STy->getElementType(i) : (*it)->getSequentialElementType();
+          STy ? STy->getElementType(i) : nullptr;
       if (isEmptyType(ElTy))
         continue;
       if (STy)
@@ -4525,7 +4543,7 @@ bool CWriter::lowerIntrinsics(Function &F) {
 void CWriter::visitCallInst(CallInst &I) {
   CurInstr = &I;
 
-  if (isa<InlineAsm>(I.getCalledValue()))
+  if (isa<InlineAsm>(I.getCalledOperand()))
     return visitInlineAsm(I);
 
   // Handle intrinsic function calls first...
@@ -4535,7 +4553,7 @@ void CWriter::visitCallInst(CallInst &I) {
       return;
   }
 
-  Value *Callee = I.getCalledValue();
+  Value *Callee = I.getCalledOperand();
 
   PointerType *PTy = cast<PointerType>(Callee->getType());
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
@@ -4580,7 +4598,7 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((";
-    printTypeName(Out, I.getCalledValue()->getType()->getPointerElementType(),
+    printTypeName(Out, I.getCalledOperand()->getType()->getPointerElementType(),
                   false, std::make_pair(PAL, I.getCallingConv()));
     Out << "*)(void*)";
   }
@@ -4597,8 +4615,8 @@ void CWriter::visitCallInst(CallInst &I) {
   }
 
   unsigned NumDeclaredParams = FTy->getNumParams();
-  CallSite CS(&I);
-  CallSite::arg_iterator AI = CS.arg_begin(), AE = CS.arg_end();
+  auto CS(&I);
+  auto AI = CS->arg_begin(), AE = CS->arg_end();
   unsigned ArgNo = 0;
   if (isStructRet) { // Skip struct return argument.
     ++AI;
@@ -4900,7 +4918,7 @@ static std::string gccifyAsm(std::string asmstr) {
 void CWriter::visitInlineAsm(CallInst &CI) {
   CurInstr = &CI;
 
-  InlineAsm *as = cast<InlineAsm>(CI.getCalledValue());
+  InlineAsm *as = cast<InlineAsm>(CI.getCalledOperand());
   InlineAsm::ConstraintInfoVector Constraints = as->ParseConstraints();
 
   std::vector<std::pair<Value *, int>> ResultVals;
