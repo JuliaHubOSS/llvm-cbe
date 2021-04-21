@@ -18,6 +18,10 @@ LLVM_TOOL_DIR = os.environ.get(
 LLVM_CBE_PATH = os.path.join(LLVM_TOOL_DIR, 'llvm-cbe')
 LLI_PATH = 'lli'
 
+CBE_FLAGS = [
+    # Harder to get right than early declarations, so more value to test it.
+    '-cbe-declare-locals-late',
+]
 
 COMMON_CFLAGS = [
     '-Iinclude/',
@@ -106,7 +110,7 @@ def compile_to_ir(c_filename, ir_filename, flags=None, cplusplus=False):
 
 
 def run_llvm_cbe(ir_filename, c_filename):
-    check_no_output([LLVM_CBE_PATH, ir_filename, '-o', c_filename])
+    check_no_output([LLVM_CBE_PATH, ir_filename, *CBE_FLAGS, '-o', c_filename])
     return c_filename
 
 

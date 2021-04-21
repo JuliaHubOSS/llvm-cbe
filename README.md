@@ -75,6 +75,9 @@ main.c main.ll
 $ $(HOME)/llvm/build/bin/llvm-cbe main.ll
 ```
 
+You can find options to configure the C backend's output with `llvm-cbe --help`.
+Look for options beginning with `--cbe-`.
+
 Compile Generated C Code and Run
 ================================
 

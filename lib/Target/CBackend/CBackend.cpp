@@ -60,6 +60,13 @@ namespace llvm_cbe {
 
 using namespace llvm;
 
+static cl::opt<bool> DeclareLocalsLate(
+  "cbe-declare-locals-late",
+  cl::desc(
+    "C backend: Declare local variables at the point they're first assigned, "
+    "if possible, rather than always at the start of the function. Note that "
+    "this is not legal in standard C prior to C99."));
+
 extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
@@ -3460,6 +3467,21 @@ static inline bool isFPIntBitCast(Instruction &I) {
          (DstTy->isFloatingPointTy() && SrcTy->isIntegerTy());
 }
 
+bool CWriter::canDeclareLocalLate(Instruction &I) {
+  if (!DeclareLocalsLate) {
+    return false;
+  }
+
+  // When a late declaration ends up inside a deeper scope than one of its uses,
+  // the C compiler will reject it. That doesn't happen if we restrict to a
+  // single block.
+  if (I.isUsedOutsideOfBlock(I.getParent())) {
+    return false;
+  }
+
+  return true;
+}
+
 void CWriter::printFunction(Function &F) {
   /// isStructReturn - Should this function actually return a struct by-value?
   bool isStructReturn = F.hasStructRetAttr();
@@ -3512,9 +3534,11 @@ void CWriter::printFunction(Function &F) {
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
     } else if (!isEmptyType(I->getType()) && !isInlinableInst(*I)) {
-      Out << "  ";
-      printTypeName(Out, I->getType(), false) << ' ' << GetValueName(&*I);
-      Out << ";\n";
+      if (!canDeclareLocalLate(*I)) {
+        Out << "  ";
+        printTypeName(Out, I->getType(), false) << ' ' << GetValueName(&*I);
+        Out << ";\n";
+      }
 
       if (isa<PHINode>(*I)) { // Print out PHI node temporaries as well...
         Out << "  ";
@@ -3567,7 +3591,6 @@ void CWriter::printLoop(Loop *L) {
 }
 
 void CWriter::printBasicBlock(BasicBlock *BB) {
-
   // Don't print the label for the basic block if there are no uses, or if
   // the only terminator use is the predecessor basic block's terminator.
   // We have to scan the use list because PHI nodes use basic blocks too but
@@ -3579,8 +3602,16 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
       break;
     }
 
-  if (NeedsLabel)
-    Out << GetValueName(BB) << ":\n";
+  if (NeedsLabel) {
+    Out << GetValueName(BB) << ":";
+    // A label immediately before a late variable declaration is problematic,
+    // because "a label can only be part of a statement and a declaration is not
+    // a statement" (GCC). Adding a ";" is a simple workaround.
+    if (DeclareLocalsLate){
+      Out << ";";
+    }
+    Out << "\n";
+  }
 
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E; ++II) {
@@ -3590,11 +3621,13 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
       LastAnnotatedSourceLine = Loc->getLine();
     }
     if (!isInlinableInst(*II) && !isDirectAlloca(&*II)) {
-      if (!isEmptyType(II->getType()) && !isInlineAsm(*II))
-        outputLValue(&*II);
-
-      else
-        Out << "  ";
+      Out << "  ";
+      if (!isEmptyType(II->getType()) && !isInlineAsm(*II)) {
+        if (canDeclareLocalLate(*II)) {
+          printTypeName(Out, II->getType(), false) << ' ';
+        }
+        Out << GetValueName(&*II) << " = ";
+      }
       writeInstComputationInline(*II);
       Out << ";\n";
     }

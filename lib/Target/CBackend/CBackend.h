@@ -310,11 +310,10 @@ private:
     errorWithMessage("unsupported LLVM instruction");
   }
 
-  void outputLValue(Instruction *I) { Out << "  " << GetValueName(I) << " = "; }
-
   LLVM_ATTRIBUTE_NORETURN void errorWithMessage(const char *message);
 
   bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
+  bool canDeclareLocalLate(Instruction &I);
   void printPHICopiesForSuccessor(BasicBlock *CurBlock, BasicBlock *Successor,
                                   unsigned Indent);
   void printBranchToBlock(BasicBlock *CurBlock, BasicBlock *SuccBlock,
