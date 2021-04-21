@@ -38,7 +38,7 @@ Note: to convert C to LLVM IR to run the tests, you will also need a C compiler 
 The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
 
-     cd $HOME
+
      git clone https://github.com/llvm/llvm-project.git
      cd llvm-project
      git checkout release/8.x
@@ -53,11 +53,20 @@ To run tests, you need to build `lli`.
 Step 2: Compiling LLVM-CBE
 ==========================
 
-Next, download and compile llvm-cbe from the same folder if you built LLVM yourself, or where you'd like in the other case:
+Now you can download and compile llvm-cbe.
 
-    cd $HOME/llvm-project/llvm/projects # Or any place, if you use the LLVM package of your distribution.
+If you built LLVM yourself, put it in the same folder you built LLVM in:
+
+    cd $HOME/llvm-project/llvm/projects
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd ../build
+    cmake ..
+    make llvm-cbe
+
+If you used your distribution's package, put it wherever you feel like:
+
+    git clone https://github.com/JuliaComputing/llvm-cbe
+    cd llvm-cbe && mkdir build && cd build
     cmake ..
     make llvm-cbe
 
@@ -97,6 +106,10 @@ Unit tests:
     $ cd $HOME/llvm-project/llvm/build
     $ make CBEUnitTests && projects/llvm-cbe/unittests/CWriterTest
 ```
+
+Note that you need to have passed `-DLLVM_INCLUDE_TESTS=1` to cmake if you used
+your distribution's LLVM package. You also will need to install gtest (on Debian
+derivatives: `apt install libgtest-dev`).
 
 Other tests:
 
