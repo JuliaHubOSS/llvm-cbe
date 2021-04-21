@@ -1524,7 +1524,14 @@ std::string CWriter::GetValueName(Value *Operand) {
   std::string Name = Operand->getName();
   if (Name.empty()) { // Assign unique names to local temporaries.
     unsigned No = AnonValueNumbers.getOrInsert(Operand);
-    Name = "tmp__" + utostr(No);
+
+    Name = "_" + utostr(No);
+    if (!TheModule->getNamedValue(Name)) {
+      // Short name for the common case where there's no conflicting global.
+      return Name;
+    }
+
+    Name = "tmp_" + Name;
   }
 
   // Mangle globals with the standard mangler interface for LLC compatibility.
