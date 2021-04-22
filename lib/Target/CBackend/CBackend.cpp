@@ -3842,6 +3842,47 @@ void CWriter::visitPHINode(PHINode &I) {
   Out << "__PHI_TEMPORARY";
 }
 
+void CWriter::visitUnaryOperator(UnaryOperator &I) {
+  CurInstr = &I;
+
+  // Currently the only unary operator supported is FNeg, which was introduced
+  // in LLVM 8, although not fully exploited until later LLVM versions.
+  // Older code uses a pseudo-FNeg pattern (-0.0 - x) which is matched in
+  // visitBinaryOperator instead.
+  if (I.getOpcode() != Instruction::FNeg) {
+    DBG_ERRS("Invalid operator type !" << I);
+    errorWithMessage("invalid operator type");
+  }
+
+  Value *X = I.getOperand(0);
+
+  // We must cast the results of operations which might be promoted.
+  bool needsCast = false;
+  if ((I.getType() == Type::getInt8Ty(I.getContext())) ||
+      (I.getType() == Type::getInt16Ty(I.getContext())) ||
+      (I.getType() == Type::getFloatTy(I.getContext()))) {
+    // types too small to work with directly
+    needsCast = true;
+  } else if (I.getType()->getPrimitiveSizeInBits() > 64) {
+    // types too big to work with directly
+    needsCast = true;
+  }
+
+  if (I.getType()->isVectorTy() || needsCast) {
+    Type *VTy = I.getOperand(0)->getType();
+    Out << "llvm_neg_";
+    printTypeString(Out, VTy, false);
+    Out << "(";
+    writeOperand(X, ContextCasted);
+    Out << ")";
+    InlineOpDeclTypes.insert(std::pair<unsigned, Type *>(BinaryNeg, VTy));
+  } else {
+    Out << "-(";
+    writeOperand(X);
+    Out << ")";
+  }
+}
+
 void CWriter::visitBinaryOperator(BinaryOperator &I) {
   using namespace PatternMatch;
 
