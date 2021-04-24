@@ -666,11 +666,59 @@ raw_ostream &CWriter::printFunctionDeclaration(
   return Out << ";\n";
 }
 
+// Commonly accepted types and names for main()'s return type and arguments.
+static const std::initializer_list<std::pair<StringRef, StringRef>> MainArgs = {
+  // Standard C return type.
+  {"int", ""},
+  // Standard C.
+  {"int", "argc"},
+  // Standard C. The canonical form is `*argv[]`, but `**argv` is equivalent
+  // and more convenient here.
+  {"char **", "argv"},
+  // De-facto UNIX standard (not POSIX!) extra argument `*envp[]`.
+  // The C standard mentions this as a "common extension".
+  {"char **", "envp"},
+};
+// Commonly accepted argument counts for the C main() function.
+static const std::initializer_list<unsigned> MainArgCounts = {
+  0, // Standard C `main(void)`
+  2, // Standard C `main(argc, argv)`
+  3, // De-facto UNIX standard `main(argc, argv, envp)`
+};
+
+// C compilers are pedantic about the exact type of main(), and this is
+// usually an error rather than a warning. Since the C backend emits unsigned
+// or explicitly-signed types, it would always get the type of main() wrong.
+// Therefore, we use this function to detect common cases and special-case them.
+bool CWriter::isStandardMain(const FunctionType *FTy) {
+  if (std::find(MainArgCounts.begin(), MainArgCounts.end(), FTy->getNumParams()) == MainArgCounts.end())
+    return false;
+
+  cwriter_assert(FTy->getNumContainedTypes() <= MainArgs.size());
+
+  for (unsigned i = 0; i < FTy->getNumContainedTypes(); i++) {
+    const Type *T = FTy->getContainedType(i);
+    const StringRef CType = MainArgs.begin()[i].first;
+
+    if (CType.equals("int") && !T->isIntegerTy())
+      return false;
+
+    if (CType.equals("char **") &&
+        (!T->isPointerTy() || !T->getPointerElementType()->isPointerTy() ||
+         !T->getPointerElementType()->getPointerElementType()->isIntegerTy(8)))
+      return false;
+  }
+
+  return true;
+}
+
 raw_ostream &
 CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
                             std::pair<AttributeList, CallingConv::ID> Attrs,
                             const std::string &Name,
                             iterator_range<Function::arg_iterator> *ArgList) {
+  bool shouldFixMain = (Name == "main" && isStandardMain(FTy));
+
   AttributeList &PAL = Attrs.first;
 
   if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn)) {
@@ -678,20 +726,25 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     Out << "__noreturn ";
   }
 
-  // Should this function actually return a struct by-value?
-  bool isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
-                        PAL.hasAttribute(2, Attribute::StructRet);
-  // Get the return type for the function.
-  Type *RetTy;
-  if (!isStructReturn)
-    RetTy = FTy->getReturnType();
-  else {
-    // If this is a struct-return function, print the struct-return type.
-    RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
+  bool isStructReturn = false;
+  if (shouldFixMain) {
+    Out << MainArgs.begin()[0].first;
+  } else {
+    // Should this function actually return a struct by-value?
+    isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
+                     PAL.hasAttribute(2, Attribute::StructRet);
+    // Get the return type for the function.
+    Type *RetTy;
+    if (!isStructReturn)
+      RetTy = FTy->getReturnType();
+    else {
+      // If this is a struct-return function, print the struct-return type.
+      RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
+    }
+    printTypeName(Out, RetTy,
+                  /*isSigned=*/
+                  PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
   }
-  printTypeName(Out, RetTy,
-                /*isSigned=*/
-                PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
 
   switch (Attrs.second) {
   case CallingConv::C:
@@ -724,6 +777,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
   // If this is a struct-return function, don't print the hidden
   // struct-return argument.
   if (isStructReturn) {
+    cwriter_assert(!shouldFixMain);
     cwriter_assert(I != E && "Invalid struct return function!");
     ++I;
     ++Idx;
@@ -734,22 +788,31 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
   for (; I != E; ++I) {
     Type *ArgTy = *I;
     if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
+      cwriter_assert(!shouldFixMain);
       cwriter_assert(ArgTy->isPointerTy());
       ArgTy = cast<PointerType>(ArgTy)->getElementType();
     }
     if (PrintedArg)
       Out << ", ";
-    printTypeNameUnaligned(Out, ArgTy,
-                           /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
+    if (shouldFixMain)
+      Out << MainArgs.begin()[Idx].first;
+    else
+      printTypeNameUnaligned(Out, ArgTy,
+                             /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
     PrintedArg = true;
-    ++Idx;
     if (ArgList) {
-      Out << ' ' << GetValueName(ArgName);
+      Out << ' ';
+      if (shouldFixMain)
+        Out << MainArgs.begin()[Idx].second;
+      else
+        Out << GetValueName(ArgName);
       ++ArgName;
     }
+    ++Idx;
   }
 
   if (FTy->isVarArg()) {
+    cwriter_assert(!shouldFixMain);
     if (!PrintedArg) {
       Out << "int"; // dummy argument for empty vaarg functs
       if (ArgList)
@@ -3512,12 +3575,47 @@ void CWriter::printFunction(Function &F) {
   if (F.hasLocalLinkage())
     Out << "static ";
 
+  std::string Name = GetValueName(&F);
+
+  FunctionType *FTy = F.getFunctionType();
+
+  bool shouldFixMain = false;
+  if (Name == "main") {
+    if (!isStandardMain(FTy)) {
+      // Implementations are free to support non-standard signatures for main(),
+      // so it would be unreasonable to make it an outright error.
+      errs() << "CBackend warning: main() has an unrecognized signature. The "
+                "types emitted will not be fixed to match the C standard.\n";
+    } else {
+      shouldFixMain = true;
+    }
+  }
+
   iterator_range<Function::arg_iterator> args = F.args();
-  printFunctionProto(Out, F.getFunctionType(),
+  printFunctionProto(Out, FTy,
                      std::make_pair(F.getAttributes(), F.getCallingConv()),
-                     GetValueName(&F), &args);
+                     Name, &args);
 
   Out << " {\n";
+
+  if (shouldFixMain) {
+    // Cast the arguments to main() to the expected LLVM IR types and names.
+    unsigned Idx = 1;
+    FunctionType::param_iterator I = FTy->param_begin(), E = FTy->param_end();
+    Function::arg_iterator ArgName = args.begin();
+
+    for (; I != E; ++I) {
+      Type *ArgTy = *I;
+      Out << "  ";
+      printTypeName(Out, ArgTy);
+      Out << ' ' << GetValueName(ArgName) << " = (";
+      printTypeName(Out, ArgTy);
+      Out << ")" << MainArgs.begin()[Idx].second << ";\n";
+
+      ++Idx;
+      ++ArgName;
+    }
+  }
 
   // If this is a struct return function, handle the result with magic.
   if (isStructReturn) {
