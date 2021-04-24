@@ -172,6 +172,7 @@ private:
 
   raw_ostream &printFunctionAttributes(raw_ostream &Out, AttributeList Attrs);
 
+  bool isStandardMain(const FunctionType *FTy);
   raw_ostream &
   printFunctionProto(raw_ostream &Out, FunctionType *Ty,
                      std::pair<AttributeList, CallingConv::ID> Attrs,
