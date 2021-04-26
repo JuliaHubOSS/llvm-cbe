@@ -41,7 +41,8 @@ public:
                             ArrayRef<SubtargetFeatureKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr, nullptr),
 #endif
-        Lowering(TM) {}
+        Lowering(TM) {
+  }
   bool enableAtomicExpand() const override;
   const TargetLowering *getTargetLowering() const override;
   const CTargetLowering Lowering;
@@ -70,7 +71,7 @@ public:
 #else
                            MachineModuleInfo *MMI = nullptr
 #endif
-			  ) override;
+                           ) override;
 
   // TargetMachine interface
   const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override;
