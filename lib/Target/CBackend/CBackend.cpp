@@ -15,9 +15,9 @@
 #include "CBackend.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/PatternMatch.h"
-#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
@@ -45,8 +45,8 @@
 
 // On LLVM 10 and later, include intrinsics files.
 #if LLVM_VERSION_MAJOR >= 10
-#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/IntrinsicsPowerPC.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #endif
 
 // Debug output helper
@@ -61,11 +61,12 @@ namespace llvm_cbe {
 using namespace llvm;
 
 static cl::opt<bool> DeclareLocalsLate(
-  "cbe-declare-locals-late",
-  cl::desc(
-    "C backend: Declare local variables at the point they're first assigned, "
-    "if possible, rather than always at the start of the function. Note that "
-    "this is not legal in standard C prior to C99."));
+    "cbe-declare-locals-late",
+    cl::desc("C backend: Declare local variables at the point they're first "
+             "assigned, "
+             "if possible, rather than always at the start of the function. "
+             "Note that "
+             "this is not legal in standard C prior to C99."));
 
 extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
@@ -165,8 +166,7 @@ AllocaInst *CWriter::isDirectAlloca(Value *V) const {
 bool CWriter::isInlineAsm(Instruction &I) const {
   if (CallInst *CI = dyn_cast<CallInst>(&I)) {
     return isa<InlineAsm>(CI->getCalledOperand());
-  }
-  else
+  } else
     return false;
 }
 
@@ -668,22 +668,22 @@ raw_ostream &CWriter::printFunctionDeclaration(
 
 // Commonly accepted types and names for main()'s return type and arguments.
 static const std::initializer_list<std::pair<StringRef, StringRef>> MainArgs = {
-  // Standard C return type.
-  {"int", ""},
-  // Standard C.
-  {"int", "argc"},
-  // Standard C. The canonical form is `*argv[]`, but `**argv` is equivalent
-  // and more convenient here.
-  {"char **", "argv"},
-  // De-facto UNIX standard (not POSIX!) extra argument `*envp[]`.
-  // The C standard mentions this as a "common extension".
-  {"char **", "envp"},
+    // Standard C return type.
+    {"int", ""},
+    // Standard C.
+    {"int", "argc"},
+    // Standard C. The canonical form is `*argv[]`, but `**argv` is equivalent
+    // and more convenient here.
+    {"char **", "argv"},
+    // De-facto UNIX standard (not POSIX!) extra argument `*envp[]`.
+    // The C standard mentions this as a "common extension".
+    {"char **", "envp"},
 };
 // Commonly accepted argument counts for the C main() function.
 static const std::initializer_list<unsigned> MainArgCounts = {
-  0, // Standard C `main(void)`
-  2, // Standard C `main(argc, argv)`
-  3, // De-facto UNIX standard `main(argc, argv, envp)`
+    0, // Standard C `main(void)`
+    2, // Standard C `main(argc, argv)`
+    3, // De-facto UNIX standard `main(argc, argv, envp)`
 };
 
 // C compilers are pedantic about the exact type of main(), and this is
@@ -691,7 +691,8 @@ static const std::initializer_list<unsigned> MainArgCounts = {
 // or explicitly-signed types, it would always get the type of main() wrong.
 // Therefore, we use this function to detect common cases and special-case them.
 bool CWriter::isStandardMain(const FunctionType *FTy) {
-  if (std::find(MainArgCounts.begin(), MainArgCounts.end(), FTy->getNumParams()) == MainArgCounts.end())
+  if (std::find(MainArgCounts.begin(), MainArgCounts.end(),
+                FTy->getNumParams()) == MainArgCounts.end())
     return false;
 
   cwriter_assert(FTy->getNumContainedTypes() <= MainArgs.size());
@@ -741,15 +742,17 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
       // If this is a struct-return function, print the struct-return type.
       RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
     }
-    printTypeName(Out, RetTy,
-                  /*isSigned=*/
-                  PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
+    printTypeName(
+        Out, RetTy,
+        /*isSigned=*/
+        PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
   }
 
   switch (Attrs.second) {
   case CallingConv::C:
     break;
-  // Consider the LLVM fast calling convention as the same as the C calling convention for now.
+  // Consider the LLVM fast calling convention as the same as the C calling
+  // convention for now.
   case CallingConv::Fast:
     break;
   case CallingConv::X86_StdCall:
@@ -797,8 +800,9 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     if (shouldFixMain)
       Out << MainArgs.begin()[Idx].first;
     else
-      printTypeNameUnaligned(Out, ArgTy,
-                             /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
+      printTypeNameUnaligned(
+          Out, ArgTy,
+          /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
     PrintedArg = true;
     if (ArgList) {
       Out << ' ';
@@ -1066,7 +1070,8 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     // TODO: VectorType are valid here, but not supported
     if (!CE->getType()->isIntegerTy() && !CE->getType()->isFloatingPointTy() &&
         !CE->getType()->isPointerTy()) {
-      DBG_ERRS("Unsupported constant type " << *CE->getType() << " in: " << *CE);
+      DBG_ERRS("Unsupported constant type " << *CE->getType()
+                                            << " in: " << *CE);
       errorWithMessage("Unsupported constant type");
     }
     switch (CE->getOpcode()) {
@@ -1317,11 +1322,10 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       // Because of FP precision problems we must load from a stack allocated
       // value that holds the value in hex.
       Out << "(*("
-          << (FPC->getType() == Type::getFloatTy(CPV->getContext())
-                  ? "float"
-                  : FPC->getType() == Type::getDoubleTy(CPV->getContext())
-                        ? "double"
-                        : "long double")
+          << (FPC->getType() == Type::getFloatTy(CPV->getContext()) ? "float"
+              : FPC->getType() == Type::getDoubleTy(CPV->getContext())
+                  ? "double"
+                  : "long double")
           << "*)&FPConstant" << I->second << ')';
     } else {
       double V;
@@ -1581,7 +1585,7 @@ void CWriter::printConstantWithCast(Constant *CPV, unsigned Opcode) {
   // TODO: VectorType are valid here, but not supported
   if (!OpTy->isIntegerTy() && !OpTy->isFloatingPointTy()) {
     DBG_ERRS("Unsupported 'constant with cast' type " << *OpTy
-           << " in: " << *CPV);
+                                                      << " in: " << *CPV);
     errorWithMessage("Unsupported 'constant with cast' type");
   }
 
@@ -2342,7 +2346,7 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
   OutHeaders << "#include <math.h>\n";   // definitions for some math functions
-                                       // and numeric constants
+                                         // and numeric constants
   // Provide a definition for `bool' if not compiling with a C++ compiler.
   OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
   OutHeaders << "\n";
@@ -2840,7 +2844,8 @@ void CWriter::generateHeader(Module &M) {
     // }
     unsigned opcode = (*it).first;
     Type *OpTy = (*it).second;
-    Type *ElemTy = isa<VectorType>(OpTy) ? cast<VectorType>(OpTy)->getElementType() : OpTy;
+    Type *ElemTy =
+        isa<VectorType>(OpTy) ? cast<VectorType>(OpTy)->getElementType() : OpTy;
     bool shouldCast;
     bool isSigned;
     opcodeNeedsCast(opcode, shouldCast, isSigned);
@@ -3186,8 +3191,7 @@ void CWriter::generateHeader(Module &M) {
                       : (ATy ? ATy->getNumElements() : VTy->getNumElements()));
     bool printed = false;
     for (unsigned i = 0; i != e; ++i) {
-      Type *ElTy =
-          STy ? STy->getElementType(i) : nullptr;
+      Type *ElTy = STy ? STy->getElementType(i) : nullptr;
       if (isEmptyType(ElTy))
         Out << " /* ";
       else if (printed)
@@ -3203,8 +3207,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeName(Out, *it);
     Out << " r;";
     for (unsigned i = 0; i != e; ++i) {
-      Type *ElTy =
-          STy ? STy->getElementType(i) : nullptr;
+      Type *ElTy = STy ? STy->getElementType(i) : nullptr;
       if (isEmptyType(ElTy))
         continue;
       if (STy)
@@ -3723,7 +3726,7 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
     // A label immediately before a late variable declaration is problematic,
     // because "a label can only be part of a statement and a declaration is not
     // a statement" (GCC). Adding a ";" is a simple workaround.
-    if (DeclareLocalsLate){
+    if (DeclareLocalsLate) {
       Out << ";";
     }
     Out << "\n";
@@ -3733,7 +3736,9 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E; ++II) {
     DILocation *Loc = (*II).getDebugLoc();
     if (Loc != nullptr && LastAnnotatedSourceLine != Loc->getLine()) {
-      Out << "#line " << Loc->getLine() << " \"" << Loc->getDirectory() << "/" << Loc->getFilename() << "\"" << "\n";
+      Out << "#line " << Loc->getLine() << " \"" << Loc->getDirectory() << "/"
+          << Loc->getFilename() << "\""
+          << "\n";
       LastAnnotatedSourceLine = Loc->getLine();
     }
     if (!isInlinableInst(*II) && !isDirectAlloca(&*II)) {
