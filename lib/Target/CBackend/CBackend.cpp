@@ -3511,6 +3511,10 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
 
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
     Out << getStructName(ST) << ";\n";
+  } else if (auto *FT = dyn_cast<FunctionType>(Ty)) {
+    // Ensure function types which are only directly used by struct types will
+    // get declared.
+    (void)getFunctionName(FT);
   }
 }
 
