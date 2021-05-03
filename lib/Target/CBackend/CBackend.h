@@ -197,6 +197,8 @@ private:
                              std::pair<AttributeList, CallingConv::ID> PAL =
                                  std::make_pair(AttributeList(),
                                                 CallingConv::C));
+  raw_ostream &printTypeNameForAddressableValue(raw_ostream &Out, Type *Ty,
+                                                bool isSigned = false);
   raw_ostream &printTypeNameUnaligned(raw_ostream &Out, Type *Ty,
                                       bool isSigned = false);
   raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
