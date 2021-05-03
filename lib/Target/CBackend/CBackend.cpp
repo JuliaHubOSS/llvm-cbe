@@ -3445,12 +3445,12 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
     FunctionType *FT = F.first;
     std::vector<FunctionType *> FDeps;
     for (const auto P : F.first->params()) {
-      if (P->isPointerTy()) {
-        PointerType *PP = dyn_cast<PointerType>(P);
-        if (PP->getElementType()->isFunctionTy()) {
-          FDeps.push_back(dyn_cast<FunctionType>(PP->getElementType()));
-        }
-      }
+      // Handle arbitrarily deep pointer indirection
+      Type *PP = P;
+      while (PP->isPointerTy())
+        PP = PP->getPointerElementType();
+      if (auto *PPF = dyn_cast<FunctionType>(PP))
+        FDeps.push_back(PPF);
     }
     std::string DeclString;
     raw_string_ostream TmpOut(DeclString);
