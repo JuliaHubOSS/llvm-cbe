@@ -493,6 +493,18 @@ raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
   }
 }
 
+raw_ostream &CWriter::printTypeNameForAddressableValue(raw_ostream &Out,
+                                                       Type *Ty,
+                                                       bool isSigned) {
+  // We can't directly declare a zero-sized variable in C, so we have to
+  // use a single-byte type instead, in case a pointer to it is taken.
+  // We can then fix the pointer type in writeOperand.
+  if (!isEmptyType(Ty))
+    return printTypeName(Out, Ty, isSigned);
+  else
+    return Out << "char /* (empty) */";
+}
+
 // Pass the Type* and the variable name and this prints out the variable
 // declaration.
 raw_ostream &
@@ -1695,8 +1707,16 @@ void CWriter::writeOperandInternal(Value *Operand,
 
 void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
   bool isAddressImplicit = isAddressExposed(Operand);
-  if (isAddressImplicit)
-    Out << "(&"; // Global variables are referenced as their addresses by llvm
+  // Global variables are referenced as their addresses by llvm
+  if (isAddressImplicit) {
+    // We can't directly declare a zero-sized variable in C, so
+    // printTypeNameForAddressableValue uses a single-byte type instead.
+    // We fix up the pointer type here.
+    if (!isEmptyType(Operand->getType()->getPointerElementType()))
+      Out << "(&";
+    else
+      Out << "((void*)&";
+  }
 
   writeOperandInternal(Operand, Context);
 
@@ -2395,8 +2415,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Global Variable Declarations */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (!I->isDeclaration() ||
-          isEmptyType(I->getType()->getPointerElementType()))
+      if (!I->isDeclaration())
         continue;
 
       if (I->hasDLLImportStorageClass())
@@ -2422,7 +2441,8 @@ void CWriter::generateHeader(Module &M) {
         headerUseMsAlign();
         Out << "__MSALIGN__(" << Alignment << ") ";
       }
-      printTypeName(Out, ElTy, false) << ' ' << GetValueName(&*I);
+      printTypeNameForAddressableValue(Out, ElTy, false);
+      Out << ' ' << GetValueName(&*I);
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
 
@@ -3254,7 +3274,7 @@ void CWriter::generateHeader(Module &M) {
 }
 
 void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
-  if (I->isDeclaration() || isEmptyType(I->getType()->getPointerElementType()))
+  if (I->isDeclaration())
     return;
 
   // Ignore special globals, such as debug info.
@@ -3280,7 +3300,8 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
     headerUseMsAlign();
     Out << "__MSALIGN__(" << Alignment << ") ";
   }
-  printTypeName(Out, ElTy, false) << ' ' << GetValueName(I);
+  printTypeNameForAddressableValue(Out, ElTy, false);
+  Out << ' ' << GetValueName(I);
   if (IsOveraligned)
     Out << " __attribute__((aligned(" << Alignment << ")))";
 
@@ -3650,8 +3671,8 @@ void CWriter::printFunction(Function &F) {
         headerUseMsAlign();
         Out << "__MSALIGN__(" << Alignment << ") ";
       }
-      printTypeName(Out, AI->getAllocatedType(), false) << ' ';
-      Out << GetValueName(AI);
+      printTypeNameForAddressableValue(Out, AI->getAllocatedType(), false);
+      Out << ' ' << GetValueName(AI);
       if (IsOveraligned)
         Out << " __attribute__((aligned(" << Alignment << ")))";
       Out << ";    /* Address-exposed local */\n";
