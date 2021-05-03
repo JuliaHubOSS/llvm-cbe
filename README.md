@@ -60,14 +60,14 @@ If you built LLVM yourself, put it in the same folder you built LLVM in:
     cd $HOME/llvm-project/llvm/projects
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd ../build
-    cmake ..
+    cmake -S ..
     make llvm-cbe
 
 If you used your distribution's package, put it wherever you feel like:
 
     git clone https://github.com/JuliaComputing/llvm-cbe
     cd llvm-cbe && mkdir build && cd build
-    cmake ..
+    cmake -S ..
     make llvm-cbe
 
 Step 3: Usage Examples
