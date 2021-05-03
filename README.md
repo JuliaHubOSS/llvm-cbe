@@ -1,7 +1,7 @@
 llvm-cbe
 ========
 
-Resurrected LLVM C backend, with improvements.
+This LLVM C backend has been resurrected by Julia Computing with various improvements.
 
 Installation instructions
 =========================
