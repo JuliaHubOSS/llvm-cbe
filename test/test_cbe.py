@@ -168,6 +168,12 @@ def test_consistent_return_value_c(test_filename, tmpdir, cflags):
     print('regular executable returned', regular_retval)
     assert regular_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
+    # suppress "array subscript -1 is outside array bounds" in test expected
+    # to trigger it
+    if "test_char_sized_ptr_math_decr" in test_filename:
+        # not += to avoid affecting subsequent calls
+        cflags = cflags + ["-Wno-array-bounds"]
+
     cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
