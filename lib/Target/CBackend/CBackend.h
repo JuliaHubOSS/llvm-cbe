@@ -95,6 +95,16 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   unsigned LastAnnotatedSourceLine = 0;
 
   struct {
+    // Standard headers
+    bool Stdarg : 1;
+    bool Setjmp : 1;
+    bool Limits : 1;
+    bool Math : 1;
+
+    // printModuleTypes()
+    bool BitCastUnion : 1;
+
+    // generateCompilerSpecificCode()
     bool BuiltinAlloca : 1;
     bool Unreachable : 1;
     bool NoReturn : 1;
@@ -112,7 +122,6 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool ConstantFloatTy : 1;
     bool ConstantFP80Ty : 1;
     bool ConstantFP128Ty : 1;
-    bool BitCastUnion : 1;
     bool ForceInline : 1;
   } UsedHeaders;
 
@@ -120,6 +129,16 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   void headerUse##Name() { UsedHeaders.Name = true; }                          \
   bool headerInc##Name() const { return UsedHeaders.Name; }
 
+  // Standard headers
+  USED_HEADERS_FLAG(Stdarg)
+  USED_HEADERS_FLAG(Setjmp)
+  USED_HEADERS_FLAG(Limits)
+  USED_HEADERS_FLAG(Math)
+
+  // printModuleTypes()
+  USED_HEADERS_FLAG(BitCastUnion)
+
+  // generateCompilerSpecificCode()
   USED_HEADERS_FLAG(BuiltinAlloca)
   USED_HEADERS_FLAG(Unreachable)
   USED_HEADERS_FLAG(NoReturn)
@@ -137,7 +156,6 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(ConstantFloatTy)
   USED_HEADERS_FLAG(ConstantFP80Ty)
   USED_HEADERS_FLAG(ConstantFP128Ty)
-  USED_HEADERS_FLAG(BitCastUnion)
   USED_HEADERS_FLAG(ForceInline)
 
   llvm::SmallSet<CmpInst::Predicate, 26> FCmpOps;

@@ -2359,14 +2359,19 @@ void CWriter::generateHeader(Module &M) {
     }
   }
 
-  // get declaration for alloca
+  // Include required standard headers
   OutHeaders << "/* Provide Declarations */\n";
-  OutHeaders << "#include <stdarg.h>\n"; // Varargs support
-  OutHeaders << "#include <setjmp.h>\n"; // Unwind support
-  OutHeaders << "#include <limits.h>\n"; // With overflow intrinsics support.
+  if (headerIncStdarg())
+    OutHeaders << "#include <stdarg.h>\n";
+  if (headerIncSetjmp())
+    OutHeaders << "#include <setjmp.h>\n";
+  if (headerIncLimits())
+    OutHeaders << "#include <limits.h>\n";
+  // Support for integers with explicit sizes. This one isn't conditional
+  // because virtually all CBE output will use it.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
-  OutHeaders << "#include <math.h>\n";   // definitions for some math functions
-                                         // and numeric constants
+  if (headerIncMath())
+    OutHeaders << "#include <math.h>\n";
   // Provide a definition for `bool' if not compiling with a C++ compiler.
   OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
   OutHeaders << "\n";
@@ -2493,17 +2498,20 @@ void CWriter::generateHeader(Module &M) {
     }
 
     // Skip a few functions that have already been defined in headers
-    if (I->getName() == "setjmp" || I->getName() == "longjmp" ||
-        I->getName() == "_setjmp" || I->getName() == "siglongjmp" ||
-        I->getName() == "sigsetjmp" || I->getName() == "pow" ||
-        I->getName() == "powf" || I->getName() == "sqrt" ||
-        I->getName() == "sqrtf" || I->getName() == "trunc" ||
-        I->getName() == "truncf" || I->getName() == "rint" ||
-        I->getName() == "rintf" || I->getName() == "floor" ||
-        I->getName() == "floorf" || I->getName() == "ceil" ||
-        I->getName() == "ceilf" || I->getName() == "alloca" ||
-        I->getName() == "_alloca" || I->getName() == "_chkstk" ||
-        I->getName() == "__chkstk" || I->getName() == "___chkstk_ms")
+    if ((headerIncSetjmp() &&
+         (I->getName() == "setjmp" || I->getName() == "longjmp" ||
+          I->getName() == "_setjmp" || I->getName() == "siglongjmp" ||
+          I->getName() == "sigsetjmp")) ||
+        (headerIncMath() &&
+         (I->getName() == "pow" || I->getName() == "powf" ||
+          I->getName() == "sqrt" || I->getName() == "sqrtf" ||
+          I->getName() == "trunc" || I->getName() == "truncf" ||
+          I->getName() == "rint" || I->getName() == "rintf" ||
+          I->getName() == "floor" || I->getName() == "floorf" ||
+          I->getName() == "ceil" || I->getName() == "ceilf")) ||
+        I->getName() == "alloca" || I->getName() == "_alloca" ||
+        I->getName() == "_chkstk" || I->getName() == "__chkstk" ||
+        I->getName() == "___chkstk_ms")
       continue;
 
     if (I->hasDLLImportStorageClass())
@@ -4470,6 +4478,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::sadd_with_overflow:
+      headerUseLimits(); // _MAX and _MIN definitions
       //   r.field0 = a + b;
       //   r.field1 = (b > 0 && a > XX_MAX - b) ||
       //              (b < 0 && a < XX_MIN - b);
@@ -4489,6 +4498,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::ssub_with_overflow:
+      headerUseLimits(); // _MAX and _MIN definitions
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a - b;\n";
       Out << "  r.field1 = (b <= 0 ? a > ";
@@ -4570,18 +4580,22 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::ceil:
+      headerUseMath();
       Out << "  r = ceil" << suffix << "(a);\n";
       break;
 
     case Intrinsic::fabs:
+      headerUseMath();
       Out << "  r = fabs" << suffix << "(a);\n";
       break;
 
     case Intrinsic::floor:
+      headerUseMath();
       Out << "  r = floor" << suffix << "(a);\n";
       break;
 
     case Intrinsic::fma:
+      headerUseMath();
       Out << "  r = fma" << suffix << "(a, b, c);\n";
       break;
 
@@ -4591,18 +4605,22 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
     case Intrinsic::pow:
     case Intrinsic::powi:
+      headerUseMath();
       Out << "  r = pow" << suffix << "(a, b);\n";
       break;
 
     case Intrinsic::rint:
+      headerUseMath();
       Out << "  r = rint" << suffix << "(a);\n";
       break;
 
     case Intrinsic::sqrt:
+      headerUseMath();
       Out << "  r = sqrt" << suffix << "(a);\n";
       break;
 
     case Intrinsic::trunc:
+      headerUseMath();
       Out << "  r = trunc" << suffix << "(a);\n";
       break;
     }
@@ -4840,6 +4858,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::dbg_declare:
     return true; // ignore these intrinsics
   case Intrinsic::vastart:
+    headerUseStdarg();
     Out << "0; ";
 
     Out << "va_start(*(va_list*)";
@@ -4855,6 +4874,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << ')';
     return true;
   case Intrinsic::vaend:
+    headerUseStdarg();
     if (!isa<ConstantPointerNull>(I.getArgOperand(0))) {
       Out << "0; va_end(*(va_list*)";
       writeOperand(I.getArgOperand(0), ContextCasted);
@@ -4864,6 +4884,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     }
     return true;
   case Intrinsic::vacopy:
+    headerUseStdarg();
     Out << "0; ";
     Out << "va_copy(*(va_list*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
@@ -4885,11 +4906,13 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
 // TODO: figure this out.
 #if LLVM_VERSION_MAJOR < 10
   case Intrinsic::setjmp:
+    headerUseSetjmp();
     Out << "setjmp(*(jmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ')';
     return true;
   case Intrinsic::longjmp:
+    headerUseSetjmp();
     Out << "longjmp(*(jmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
@@ -4897,6 +4920,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << ')';
     return true;
   case Intrinsic::sigsetjmp:
+    headerUseSetjmp();
     Out << "sigsetjmp(*(sigjmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ',';
@@ -4904,6 +4928,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << ')';
     return true;
   case Intrinsic::siglongjmp:
+    headerUseSetjmp();
     Out << "siglongjmp(*(sigjmp_buf*)";
     writeOperand(I.getArgOperand(0), ContextCasted);
     Out << ", ";
@@ -5419,6 +5444,8 @@ void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
 
 void CWriter::visitVAArgInst(VAArgInst &I) {
   CurInstr = &I;
+
+  headerUseStdarg();
 
   Out << "va_arg(*(va_list*)";
   writeOperand(I.getOperand(0), ContextCasted);
