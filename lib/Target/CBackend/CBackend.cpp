@@ -5260,29 +5260,30 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
   Type *IntoT = I.getIndexedType();
 
-  // If the first index is 0 (very typical) we can do a number of
-  // simplifications to clean up the code.
+  // The first index of a GEP is special. It does pointer arithmetic without
+  // indexing into the element type.
   Value *FirstOp = I.getOperand();
+  IntoT = I.getIndexedType();
+  ++I;
   if (!isa<Constant>(FirstOp) || !cast<Constant>(FirstOp)->isNullValue()) {
-    // First index isn't simple, print it the hard way.
     writeOperand(Ptr);
+    Out << '[';
+    writeOperandWithCast(FirstOp, Instruction::GetElementPtr);
+    Out << ']';
   } else {
-    IntoT = I.getIndexedType();
-    ++I; // Skip the zero index.
-
-    // Okay, emit the first operand. If Ptr is something that is already address
-    // exposed, like a global, avoid emitting (&foo)[0], just emit foo instead.
+    // When the first index is 0 (very common) we can simplify it.
     if (isAddressExposed(Ptr)) {
+      // Print P rather than (&P)[0]
       writeOperandInternal(Ptr);
     } else if (I != E && I.isStruct()) {
-      // If we didn't already emit the first operand, see if we can print it as
-      // P->f instead of "P[0].f"
+      // If the second index is a struct index, print P->f instead of P[0].f
       writeOperand(Ptr);
       Out << "->field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
+      // Eat the struct index
       IntoT = I.getIndexedType();
-      ++I; // eat the struct index as well.
+      ++I;
     } else {
-      // Instead of emitting P[0][1], emit (*P)[1], which is more idiomatic.
+      // Print (*P)[1] instead of P[0][1] (more idiomatic)
       Out << "(*";
       writeOperand(Ptr);
       Out << ")";
