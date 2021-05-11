@@ -1290,8 +1290,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     unsigned ActiveBits = CI->getValue().getMinSignedBits();
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
-    } else if (Context != ContextNormal && ActiveBits < 64 &&
-               Ty->getPrimitiveSizeInBits() < 64 &&
+    } else if (Context != ContextNormal && Ty->getPrimitiveSizeInBits() <= 64 &&
                ActiveBits < Ty->getPrimitiveSizeInBits()) {
       if (ActiveBits >= 32)
         Out << "INT64_C(";
