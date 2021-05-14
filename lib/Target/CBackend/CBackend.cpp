@@ -895,7 +895,7 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
   // As a special case, print the array as a string if it is an array of
   // ubytes or an array of sbytes with positive values.
   ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C);
-  if (!CDS || !CDS->isCString())
+  if (!CDS || !CDS->isString())
     return false;
   if (Context != ContextStatic)
     return false; // TODO
@@ -906,8 +906,14 @@ bool CWriter::printConstantString(Constant *C, enum OperandContext Context) {
 
   StringRef Bytes = CDS->getAsString();
 
-  // Do not include the last character, which we know is null
-  for (unsigned i = 0, e = Bytes.size() - 1; i < e; ++i) {
+  unsigned length = Bytes.size();
+  // We can skip the last character only if it is an implied null.
+  // Beware: C does not force character (i.e. (u)int8_t here) arrays to have a
+  // null terminator, but if the length is not specified it will imply one!
+  if (length >= 1 && Bytes[length - 1] == '\0')
+    length--;
+
+  for (unsigned i = 0; i < length; ++i) {
     unsigned char C = Bytes[i];
 
     // Print it out literally if it is a printable character.  The only thing
