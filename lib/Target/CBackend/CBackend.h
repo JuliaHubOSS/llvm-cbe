@@ -285,6 +285,7 @@ private:
   bool printConstantString(Constant *C, enum OperandContext Context);
 
   bool isEmptyType(Type *Ty) const;
+  Type *skipEmptyArrayTypes(Type *Ty) const;
   bool isAddressExposed(Value *V) const;
   bool isInlinableInst(Instruction &I) const;
   AllocaInst *isDirectAlloca(Value *V) const;
