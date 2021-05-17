@@ -93,6 +93,12 @@ enum UnaryOps {
   }
 #endif
 
+static bool isConstantNull(Value *V) {
+  if (Constant *C = dyn_cast<Constant>(V))
+    return C->isNullValue();
+  return false;
+}
+
 static bool isEmptyType(Type *Ty) {
   if (StructType *STy = dyn_cast<StructType>(Ty))
     return STy->getNumElements() == 0 ||
@@ -108,6 +114,14 @@ static bool isEmptyType(Type *Ty) {
 }
 
 bool CWriter::isEmptyType(Type *Ty) const { return llvm_cbe::isEmptyType(Ty); }
+
+/// Peel off outer array types which have zero elements.
+/// This is useful for pointers types. It isn't reasonable for values.
+Type *CWriter::skipEmptyArrayTypes(Type *Ty) const {
+  while (Ty->isArrayTy() && Ty->getArrayNumElements() == 0)
+    Ty = Ty->getArrayElementType();
+  return Ty;
+}
 
 /// isAddressExposed - Return true if the specified value's name needs to
 /// have its address taken in order to get a C value of the correct type.
@@ -530,6 +544,7 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
 
   case Type::PointerTyID: {
     Type *ElTy = Ty->getPointerElementType();
+    ElTy = skipEmptyArrayTypes(ElTy);
     return printTypeName(Out, ElTy, false) << '*';
   }
 
@@ -5295,7 +5310,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   Value *FirstOp = I.getOperand();
   IntoT = I.getIndexedType();
   ++I;
-  if (!isa<Constant>(FirstOp) || !cast<Constant>(FirstOp)->isNullValue()) {
+  if (!isConstantNull(FirstOp)) {
     writeOperand(Ptr);
     Out << '[';
     writeOperandWithCast(FirstOp, Instruction::GetElementPtr);
@@ -5321,26 +5336,42 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   }
 
   for (; I != E; ++I) {
+    Value *Opnd = I.getOperand();
+
     cwriter_assert(
-        I.getOperand()
+        Opnd
             ->getType()
             ->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid,
                               // but we don't support it here
+
     if (I.isStruct()) {
-      Out << ".field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
+      Out << ".field" << cast<ConstantInt>(Opnd)->getZExtValue();
     } else if (IntoT->isArrayTy()) {
-      Out << ".array[";
-      writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
-      Out << ']';
+      // Zero-element array types are either skipped or, for pointers, peeled
+      // off by skipEmptyArrayTypes. In this latter case, we can translate
+      // zero-element array indexing as pointer arithmetic.
+      if (IntoT->getArrayNumElements() == 0) {
+        if (!isConstantNull(Opnd)) {
+          // TODO: The operator precedence here is only correct if there are no
+          //       subsequent indexable types other than zero-element arrays.
+          cwriter_assert(skipEmptyArrayTypes(IntoT)->isSingleValueType());
+          Out << " + (";
+          writeOperandWithCast(Opnd, Instruction::GetElementPtr);
+          Out << ')';
+        }
+      } else {
+        Out << ".array[";
+        writeOperandWithCast(Opnd, Instruction::GetElementPtr);
+        Out << ']';
+      }
     } else if (!IntoT->isVectorTy()) {
       Out << '[';
-      writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
+      writeOperandWithCast(Opnd, Instruction::GetElementPtr);
       Out << ']';
     } else {
       // If the last index is into a vector, then print it out as "+j)".  This
       // works with the 'LastIndexIsVector' code above.
-      if (isa<Constant>(I.getOperand()) &&
-          cast<Constant>(I.getOperand())->isNullValue()) {
+      if (!isConstantNull(Opnd)) {
         Out << "))"; // avoid "+0".
       } else {
         Out << ")+(";
