@@ -398,7 +398,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   if (RelaxAll) {
     if (FileType != CodeGenFileType::CGFT_ObjectFile)
 #else
-  {
+  if (RelaxAll) {
     if (FileType != TargetMachine::CGFT_ObjectFile)
 #endif
       errs() << argv[0]
