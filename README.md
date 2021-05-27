@@ -111,7 +111,7 @@ derivatives: `apt install libgtest-dev`).
 
 Other tests:
 
-First, compile llvm-cbe, and install pytest. Then:
+First, compile llvm-cbe, and install pytest (e.g. `pip install pytest`). Then:
 
 ```sh
     $ cd $HOME/llvm-project/llvm/projects/llvm-cbe
@@ -119,3 +119,5 @@ First, compile llvm-cbe, and install pytest. Then:
 ```
 
 You might have to adjust the llvm-cbe and lli paths in that configuration.
+
+If you want the tests to run faster, installing `pytest-xdist` will allow you to run the test suite in parallel, e.g. `pytest -n 4` if you want to use 4 cores.
