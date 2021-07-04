@@ -105,7 +105,7 @@ static bool isEmptyType(Type *Ty) {
            std::all_of(STy->element_begin(), STy->element_end(), isEmptyType);
 
   if (VectorType *VTy = dyn_cast<VectorType>(Ty))
-    return VTy->getNumElements() == 0 || isEmptyType(VTy->getElementType());
+    return VTy->getElementCount().isZero() || isEmptyType(VTy->getElementType());
 
   if (ArrayType *ATy = dyn_cast<ArrayType>(Ty))
     return ATy->getNumElements() == 0 || isEmptyType(ATy->getElementType());
@@ -277,7 +277,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
     VectorType *VTy = cast<VectorType>(Ty);
     cwriter_assert(VTy->getNumElements() != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
-    return Out << "x" << VTy->getNumElements();
+    return Out << "x" << VTy->getElementCount().getValue();
   }
 
   case Type::ArrayTyID: {
@@ -331,7 +331,7 @@ std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
     Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
   }
   printTypeName(VectorInnards, VT->getElementType(), false);
-  return "struct l_vector_" + utostr(VT->getNumElements()) + '_' +
+  return "struct l_vector_" + utostr(VT->getElementCount().getValue()) + '_' +
          CBEMangle(VectorInnards.str());
 }
 
@@ -873,7 +873,7 @@ raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out,
   // Vectors are printed like arrays
   Out << getVectorName(VTy, false) << " {\n  ";
   printTypeName(Out, VTy->getElementType());
-  Out << " vector[" << utostr(VTy->getNumElements())
+  Out << " vector[" << utostr(VTy->getElementCount().getValue())
       << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy)
       << ")));\n";
   return Out;
@@ -1290,7 +1290,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       printTypeString(Out, VT, false);
       Out << "(";
       Constant *Zero = Constant::getNullValue(VT->getElementType());
-      unsigned NumElts = VT->getNumElements();
+      unsigned NumElts = VT->getElementCount().getValue();
       for (unsigned i = 0; i != NumElts; ++i) {
         if (i)
           Out << ", ";
@@ -1485,7 +1485,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       cwriter_assert(isa<ConstantAggregateZero>(CPV) || isa<UndefValue>(CPV));
       Constant *CZ = Constant::getNullValue(VT->getElementType());
       printConstant(CZ, Context);
-      for (unsigned i = 1, e = VT->getNumElements(); i != e; ++i) {
+      for (unsigned i = 1, e = VT->getElementCount().getValue(); i != e; ++i) {
         Out << ", ";
         printConstant(CZ, Context);
       }
@@ -1689,7 +1689,7 @@ void CWriter::writeInstComputationInline(Instruction &I) {
   Type *Ty = I.getType();
   if (Ty->isIntegerTy()) {
     IntegerType *ITy = static_cast<IntegerType *>(Ty);
-    if (!ITy->isPowerOf2ByteWidth())
+    //if (!ITy->isPowerOf2ByteWidth())
       mask = ITy->getBitMask();
   }
 
@@ -2311,7 +2311,7 @@ bool CWriter::doInitialization(Module &M) {
 #endif
   TAsm = new CBEMCAsmInfo();
   MRI = new MCRegisterInfo();
-  TCtx = new MCContext(TAsm, MRI, nullptr);
+  TCtx = new MCContext(llvm::Triple(TheModule->getTargetTriple()),TAsm, MRI, nullptr);
   return false;
 }
 
@@ -2646,9 +2646,7 @@ void CWriter::generateHeader(Module &M) {
     if (isa<VectorType>(*it))
       printTypeNameUnaligned(
           Out,
-          VectorType::get(Type::getInt1Ty((*it)->getContext()),
-                          cast<VectorType>(*it)->getNumElements()),
-          false);
+          VectorType::get(Type::getInt1Ty((*it)->getContext()),cast<VectorType>(*it)->getElementCount()),false);
     else
       Out << "bool";
     Out << " condition, ";
@@ -2659,7 +2657,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeNameUnaligned(Out, *it, false);
     Out << " r;\n";
     if (isa<VectorType>(*it)) {
-      unsigned n, l = cast<VectorType>(*it)->getNumElements();
+      unsigned n, l = cast<VectorType>(*it)->getElementCount().getValue();
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = condition.vector[" << n
             << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
@@ -2687,9 +2685,10 @@ void CWriter::generateHeader(Module &M) {
     //   };
     //   return c;
     // }
-    unsigned n, l = (*it).second->getNumElements();
+    auto ECount = (*it).second->getElementCount();
+    unsigned n, l = ECount.getValue();
     VectorType *RTy =
-        VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
+        VectorType::get(Type::getInt1Ty((*it).second->getContext()), ECount);
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
@@ -2818,7 +2817,7 @@ void CWriter::generateHeader(Module &M) {
       Out << "  ";
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
-      unsigned n, l = cast<VectorType>(DstTy)->getNumElements();
+      unsigned n, l = cast<VectorType>(DstTy)->getElementCount().getValue();
       cwriter_assert(cast<VectorType>(SrcTy)->getNumElements() == l);
       for (n = 0; n < l; n++) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
@@ -2927,13 +2926,13 @@ void CWriter::generateHeader(Module &M) {
     unsigned mask = 0;
     if (ElemTy->isIntegerTy()) {
       IntegerType *ITy = static_cast<IntegerType *>(ElemTy);
-      if (!ITy->isPowerOf2ByteWidth())
+      //if (!ITy->isPowerOf2ByteWidth())
         mask = ITy->getBitMask();
     }
 
     if (isa<VectorType>(OpTy)) {
       Out << " r;\n";
-      unsigned n, l = cast<VectorType>(OpTy)->getNumElements();
+      unsigned n, l = cast<VectorType>(OpTy)->getElementCount().getValue();
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = ";
         if (mask)
@@ -3236,7 +3235,7 @@ void CWriter::generateHeader(Module &M) {
     ArrayType *ATy = dyn_cast<ArrayType>(*it);
     VectorType *VTy = dyn_cast<VectorType>(*it);
     unsigned e = (STy ? STy->getNumElements()
-                      : (ATy ? ATy->getNumElements() : VTy->getNumElements()));
+                      : (ATy ? ATy->getNumElements() : VTy->getElementCount().getValue()));
     bool printed = false;
     for (unsigned i = 0; i != e; ++i) {
       Type *ElTy = STy ? STy->getElementType(i) : nullptr;
@@ -4427,7 +4426,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
   if (isa<VectorType>(retT)) {
     // this looks general, but is only actually used for ctpop, ctlz, cttz
-    Type **devecFunParams = (Type **)alloca(sizeof(Type *) * numParams);
+    Type **devecFunParams = (Type **)_alloca(sizeof(Type *) * numParams);
     for (i = 0; i < numParams; i++) {
       devecFunParams[(int)i] = funT->params()[(int)i]->getScalarType();
     }
@@ -5434,7 +5433,7 @@ void CWriter::visitStoreInst(StoreInst &I) {
   Value *Operand = I.getOperand(0);
   unsigned BitMask = 0;
   if (IntegerType *ITy = dyn_cast<IntegerType>(Operand->getType()))
-    if (!ITy->isPowerOf2ByteWidth())
+    //if (!ITy->isPowerOf2ByteWidth())
       // We have a bit width that doesn't match an even power-of-2 byte
       // size. Consequently we must & the value with the type's bit mask
       BitMask = ITy->getBitMask();
@@ -5542,8 +5541,8 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   Out << "(";
 
   Constant *Zero = Constant::getNullValue(EltTy);
-  unsigned NumElts = VT->getNumElements();
-  unsigned NumInputElts = InputVT->getNumElements(); // n
+  unsigned NumElts = VT->getElementCount().getValue();
+  unsigned NumInputElts = InputVT->getElementCount().getValue(); // n
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i)
       Out << ", ";
