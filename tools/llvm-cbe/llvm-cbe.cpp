@@ -185,9 +185,9 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
 
   // Open the file.
   std::error_code error;
-  sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
+  sys::fs::OpenFlags OpenFlags = sys::fs::OF_None;
   if (Binary)
-    OpenFlags |= sys::fs::F_Text;
+    OpenFlags |= sys::fs::OF_Text;
   ToolOutputFile *FDOut =
       new ToolOutputFile(OutputFilename.c_str(), error, OpenFlags);
   if (error) {
@@ -337,7 +337,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
     Options.FloatABIType = codegen::getFloatABIForCalls();
   Options.NoZerosInBSS = codegen::getDontPlaceZerosInBSS();
   Options.GuaranteedTailCallOpt = codegen::getEnableGuaranteedTailCallOpt();
+#if LLVM_VERSION_MAJOR < 12
   Options.StackAlignmentOverride = codegen::getOverrideStackAlignment();
+#endif
 #else
   Options.AllowFPOpFusion = FuseFPOps;
   Options.UnsafeFPMath = EnableUnsafeFPMath;

@@ -31,9 +31,9 @@ public:
 class CTargetSubtargetInfo : public TargetSubtargetInfo {
 public:
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
-                       StringRef FS)
+                       StringRef TuneCPU,StringRef FS)
 #if LLVM_VERSION_MAJOR >= 9
-      : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
+      : TargetSubtargetInfo(TT, CPU,TuneCPU, FS, ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
 #else
@@ -57,7 +57,7 @@ public:
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
                           RM.hasValue() ? RM.getValue() : Reloc::Static,
                           CM.hasValue() ? CM.getValue() : CodeModel::Small, OL),
-        SubtargetInfo(*this, TT, CPU, FS) {}
+        SubtargetInfo(*this, TT, CPU,"", FS) {}
 
   /// Add passes to the specified pass manager to get the specified file
   /// emitted.  Typically this will involve several steps of code generation.
