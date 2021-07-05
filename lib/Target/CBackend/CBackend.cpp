@@ -74,7 +74,12 @@ extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
 }
-
+#if LLVM_VERSION_MAJOR >= 12
+bool IsPowerOfTwo(unsigned long x)
+{
+  return (x & (x - 1)) == 0;
+}
+#endif
 char CWriter::ID = 0;
 
 // extra (invalid) Ops tags for tracking unary ops as a special case of the
@@ -1691,7 +1696,11 @@ void CWriter::writeInstComputationInline(Instruction &I) {
   Type *Ty = I.getType();
   if (Ty->isIntegerTy()) {
     IntegerType *ITy = static_cast<IntegerType *>(Ty);
-    //if (!ITy->isPowerOf2ByteWidth())
+#if LLVM_VERSION_MAJOR <= 10
+    if (!ITy->isPowerOf2ByteWidth())
+#else
+    if (!IsPowerOfTwo(ITy->getBitWidth()))
+#endif
       mask = ITy->getBitMask();
   }
 
@@ -2928,7 +2937,11 @@ void CWriter::generateHeader(Module &M) {
     unsigned mask = 0;
     if (ElemTy->isIntegerTy()) {
       IntegerType *ITy = static_cast<IntegerType *>(ElemTy);
-      //if (!ITy->isPowerOf2ByteWidth())
+#if LLVM_VERSION_MAJOR <= 10
+      if (!ITy->isPowerOf2ByteWidth())
+#else
+      if (!IsPowerOfTwo(ITy->getBitWidth()))
+#endif
         mask = ITy->getBitMask();
     }
 
@@ -5435,7 +5448,11 @@ void CWriter::visitStoreInst(StoreInst &I) {
   Value *Operand = I.getOperand(0);
   unsigned BitMask = 0;
   if (IntegerType *ITy = dyn_cast<IntegerType>(Operand->getType()))
-    //if (!ITy->isPowerOf2ByteWidth())
+#if LLVM_VERSION_MAJOR <= 10
+    if (!ITy->isPowerOf2ByteWidth())
+#else
+    if (!IsPowerOfTwo(ITy->getBitWidth()))
+#endif
       // We have a bit width that doesn't match an even power-of-2 byte
       // size. Consequently we must & the value with the type's bit mask
       BitMask = ITy->getBitMask();
