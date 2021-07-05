@@ -194,7 +194,7 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
 #if LLVM_VERSION_MAJOR > 10
     OpenFlags |= sys::fs::OF_Text;
 #else
-  OpenFlags |= sys::fs::F_Text;
+    OpenFlags |= sys::fs::F_Text;
 #endif
   ToolOutputFile *FDOut =
       new ToolOutputFile(OutputFilename.c_str(), error, OpenFlags);
