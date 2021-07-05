@@ -30,12 +30,23 @@ public:
 
 class CTargetSubtargetInfo : public TargetSubtargetInfo {
 public:
+#if LLVM_VERSION_MAJOR >= 12
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef TuneCPU,StringRef FS)
+#else
+  CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
+                       StringRef FS)
+#endif
 #if LLVM_VERSION_MAJOR >= 9
+#if LLVM_VERSION_MAJOR >= 12
       : TargetSubtargetInfo(TT, CPU,TuneCPU, FS, ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
+#else
+      : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
+                            ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
+                            nullptr, nullptr, nullptr, nullptr),
+#endif
 #else
       : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetFeatureKV>(), nullptr, nullptr,
@@ -57,7 +68,11 @@ public:
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
                           RM.hasValue() ? RM.getValue() : Reloc::Static,
                           CM.hasValue() ? CM.getValue() : CodeModel::Small, OL),
+#if LLVM_VERSION_MAJOR >= 12
         SubtargetInfo(*this, TT, CPU,"", FS) {}
+#else
+        SubtargetInfo(*this, TT, CPU, FS) {}
+#endif
 
   /// Add passes to the specified pass manager to get the specified file
   /// emitted.  Typically this will involve several steps of code generation.

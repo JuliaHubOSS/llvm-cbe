@@ -2331,7 +2331,11 @@ bool CWriter::doInitialization(Module &M) {
 #endif
   TAsm = new CBEMCAsmInfo();
   MRI = new MCRegisterInfo();
+#if LLVM_VERSION_MAJOR > 12
   TCtx = new MCContext(llvm::Triple(TheModule->getTargetTriple()),TAsm, MRI, nullptr);
+#else
+  TCtx = new MCContext(TAsm, MRI, nullptr);
+#endif
   return false;
 }
 
