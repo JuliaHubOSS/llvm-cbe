@@ -42,7 +42,9 @@
 #ifdef setjmp
 #undef setjmp
 #endif
-
+#ifdef _MSC_VER
+#define alloca _alloca
+#endif
 // On LLVM 10 and later, include intrinsics files.
 #if LLVM_VERSION_MAJOR >= 10
 #include "llvm/IR/IntrinsicsPowerPC.h"
@@ -4426,7 +4428,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
   if (isa<VectorType>(retT)) {
     // this looks general, but is only actually used for ctpop, ctlz, cttz
-    Type **devecFunParams = (Type **)_alloca(sizeof(Type *) * numParams);
+    Type **devecFunParams = (Type **)alloca(sizeof(Type *) * numParams);
     for (i = 0; i < numParams; i++) {
       devecFunParams[(int)i] = funT->params()[(int)i]->getScalarType();
     }
