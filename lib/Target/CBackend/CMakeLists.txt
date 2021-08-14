@@ -17,4 +17,5 @@ add_llvm_target(CBackendCodeGen
   CBackend.cpp
   CTargetMachine.cpp
   TopologicalSorter.cpp
+  TargetInfo/CBackendTargetInfo.cpp
   )
