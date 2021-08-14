@@ -626,7 +626,7 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out,
 raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
                                               AttributeList Attrs) {
   SmallVector<std::string, 5> AttrsToPrint;
-  for (const auto &FnAttr : Attrs.getFnAttributes()) {
+  for (const auto &FnAttr : Attrs.getFnAttrs()) {
     if (FnAttr.isEnumAttribute() || FnAttr.isIntAttribute()) {
       switch (FnAttr.getKindAsEnum()) {
       case Attribute::AttrKind::AlwaysInline:
@@ -5670,7 +5670,7 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
   Out << ")";
 }
 
-LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
+[[noreturn]] void CWriter::errorWithMessage(const char *message) {
 #ifndef NDEBUG
   errs() << message;
   errs() << " in: ";
