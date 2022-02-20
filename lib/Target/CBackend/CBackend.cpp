@@ -831,6 +831,9 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 
   for (; I != E; ++I) {
     Type *ArgTy = *I;
+    if (ArgTy->isMetadataTy())
+      continue;
+
     if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
       cwriter_assert(!shouldFixMain);
       cwriter_assert(ArgTy->isPointerTy());
@@ -3509,14 +3512,16 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   // printed in the correct order.
   Out << "\n/* Types Declarations */\n";
 
-  // forward-declare all structs here first
-
+  // Collect types referenced by structs and global functions, and
+  // forward-declare the structs.
   {
     std::set<Type *> TypesPrinted;
     for (auto it = TypedefDeclTypes.begin(), end = TypedefDeclTypes.end();
          it != end; ++it) {
       forwardDeclareStructs(Out, *it, TypesPrinted);
     }
+    for (const Function &F : *TheModule)
+      forwardDeclareStructs(Out, F.getFunctionType(), TypesPrinted);
   }
 
   Out << "\n/* Function definitions */\n";
@@ -3600,6 +3605,10 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
 
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
     Out << getStructName(ST) << ";\n";
+  // Since function declarations come before the definitions of array-wrapper
+  // structs, it is sometimes necessary to forward-declare those.
+  } else if (auto *AT = dyn_cast<ArrayType>(Ty)) {
+    Out << getArrayName(AT) << ";\n";
   } else if (auto *FT = dyn_cast<FunctionType>(Ty)) {
     // Ensure function types which are only directly used by struct types will
     // get declared.
