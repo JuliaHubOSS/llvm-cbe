@@ -74,7 +74,7 @@ extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
 }
-#if LLVM_VERSION_MAJOR >= 12
+#if LLVM_VERSION_MAJOR > 10
 bool IsPowerOfTwo(unsigned long x)
 {
   return (x & (x - 1)) == 0;
