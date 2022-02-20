@@ -288,7 +288,11 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
 #endif
   {
     TypedefDeclTypes.insert(Ty);
+#if LLVM_VERSION_MAJOR > 10
+    FixedVectorType *VTy = cast<FixedVectorType>(Ty);
+#else
     VectorType *VTy = cast<VectorType>(Ty);
+#endif
     cwriter_assert(VTy->getNumElements() != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
     return Out << "x" << NumberOfElements(VTy);
@@ -1483,7 +1487,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   case Type::VectorTyID:
 #endif
   {
+#if LLVM_VERSION_MAJOR > 10
+    FixedVectorType *VT = cast<FixedVectorType>(CPV->getType());
+#else
     VectorType *VT = cast<VectorType>(CPV->getType());
+#endif
     cwriter_assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (Context != ContextStatic) {
       CtorDeclTypes.insert(VT);
@@ -2858,7 +2866,11 @@ void CWriter::generateHeader(Module &M) {
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
       unsigned n, l = NumberOfElements(cast<VectorType>(DstTy));
+#if LLVM_VERSION_MAJOR > 10
+      cwriter_assert(cast<FixedVectorType>(SrcTy)->getNumElements() == l);
+#else
       cwriter_assert(cast<VectorType>(SrcTy)->getNumElements() == l);
+#endif
       for (n = 0; n < l; n++) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
