@@ -3294,7 +3294,7 @@ void CWriter::generateHeader(Module &M) {
                       : (ATy ? ATy->getNumElements() : NumberOfElements(VTy)));
     bool printed = false;
     for (unsigned i = 0; i != e; ++i) {
-      Type *ElTy = STy ? STy->getElementType(i) : nullptr;
+      Type *ElTy = STy ? STy->getElementType(i) : (*it)->getContainedType(0);
       if (isEmptyType(ElTy))
         Out << " /* ";
       else if (printed)
@@ -3310,7 +3310,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeName(Out, *it);
     Out << " r;";
     for (unsigned i = 0; i != e; ++i) {
-      Type *ElTy = STy ? STy->getElementType(i) : nullptr;
+      Type *ElTy = STy ? STy->getElementType(i) : (*it)->getContainedType(0);
       if (isEmptyType(ElTy))
         continue;
       if (STy)
