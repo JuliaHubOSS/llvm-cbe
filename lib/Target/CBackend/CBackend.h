@@ -68,7 +68,6 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   const Instruction *CurInstr = nullptr;
 
   IDMap<const ConstantFP *> FPConstantMap;
-  std::set<const Argument *> ByValParams;
 
   IDMap<const Value *> AnonValueNumbers;
 
