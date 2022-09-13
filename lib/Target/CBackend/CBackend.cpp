@@ -280,6 +280,10 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
 
   case Type::X86_MMXTyID:
     return Out << (isSigned ? "i32y2" : "u32y2");
+
+  case Type::FunctionTyID:
+    return Out << getFunctionName(cast<FunctionType>(Ty));
+
 #if LLVM_VERSION_MAJOR > 10
   case Type::FixedVectorTyID:
   case Type::ScalableVectorTyID:
