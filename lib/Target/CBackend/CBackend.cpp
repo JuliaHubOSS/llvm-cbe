@@ -2481,6 +2481,9 @@ void CWriter::generateHeader(Module &M) {
       if (!I->isDeclaration())
         continue;
 
+      if (I->isConstant())
+        Out << "const ";
+
       if (I->hasDLLImportStorageClass())
         Out << "__declspec(dllimport) ";
       else if (I->hasDLLExportStorageClass())
@@ -3374,6 +3377,9 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
 
   if (I->hasLocalLinkage())
     Out << "static ";
+
+  if (I->isConstant())
+    Out << "const ";
 
   // Thread Local Storage
   if (I->isThreadLocal())
