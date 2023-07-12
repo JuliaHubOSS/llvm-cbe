@@ -15,10 +15,10 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LLVM_TOOL_DIR = os.environ.get(
     'LLVMToolDir',
-    os.path.join(TEST_DIR, '..', '..', '..', '..', 'build', 'bin'))
+    os.path.join(TEST_DIR, '..', 'build', 'tools', 'llvm-cbe'))
 
 LLVM_CBE_PATH = os.path.join(LLVM_TOOL_DIR, 'llvm-cbe')
-LLI_PATH = os.path.join(LLVM_TOOL_DIR, 'lli')
+LLI_PATH = 'lli'
 
 CBE_FLAGS = [
     # Harder to get right than early declarations, so more value to test it.
@@ -41,6 +41,8 @@ GCCFLAGS = COMMON_CFLAGS + [
     '-Wno-unused-but-set-variable',
     '-Wno-builtin-declaration-mismatch',
     '-Wno-error=builtin-declaration-mismatch',
+    '-Wno-discarded-qualifiers',
+    '-Wno-packed-not-aligned',
     '-latomic',
 ]
 

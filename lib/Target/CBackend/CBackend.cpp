@@ -31,8 +31,8 @@
 #include "TopologicalSorter.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
-
 #include <iostream>
 #include <malloc.h>
 
@@ -2046,6 +2046,12 @@ static void defineAttributeWeak(raw_ostream &Out) {
       << "#else\n"
       << "#define __ATTRIBUTE_WEAK__\n"
       << "#endif\n\n";
+  // For MSVC, use the `inline` specifier instead.
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __MSVC_INLINE__ inline\n";
+  Out << "#else\n";
+  Out << "#define __MSVC_INLINE__\n";
+  Out << "#endif\n";
 }
 
 static void defineHidden(raw_ostream &Out) {
@@ -2669,7 +2675,8 @@ void CWriter::generateHeader(Module &M) {
     if (I->hasExternalWeakLinkage())
       Out << "extern ";
     if (I->hasLinkOnceLinkage()) {
-      Out << "inline ";
+      headerUseAttributeWeak();
+      Out << "__MSVC_INLINE__ ";
     }
     printFunctionProto(Out, &*I);
     printFunctionAttributes(Out, I->getAttributes());
@@ -3757,6 +3764,9 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
     // Ensure function types which are only directly used by struct types will
     // get declared.
     (void)getFunctionName(FT);
+  } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
+    // Print vector type out.
+    Out << getVectorName(VT) << ";\n";
   }
 }
 
