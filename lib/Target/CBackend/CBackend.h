@@ -112,7 +112,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool Hidden : 1;
     bool AttributeList : 1;
     bool UnalignedLoad : 1;
-    bool MsAlign : 1;
+    bool Aligns : 1;
     bool NanInf : 1;
     bool Int128 : 1;
     bool ThreadFence : 1;
@@ -146,7 +146,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(Hidden)
   USED_HEADERS_FLAG(AttributeList)
   USED_HEADERS_FLAG(UnalignedLoad)
-  USED_HEADERS_FLAG(MsAlign)
+  USED_HEADERS_FLAG(Aligns)
   USED_HEADERS_FLAG(NanInf)
   USED_HEADERS_FLAG(Int128)
   USED_HEADERS_FLAG(ThreadFence)
@@ -216,8 +216,6 @@ private:
                                                 CallingConv::C));
   raw_ostream &printTypeNameForAddressableValue(raw_ostream &Out, Type *Ty,
                                                 bool isSigned = false);
-  raw_ostream &printTypeNameUnaligned(raw_ostream &Out, Type *Ty,
-                                      bool isSigned = false);
   raw_ostream &printSimpleType(raw_ostream &Out, Type *Ty, bool isSigned);
   raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
@@ -227,7 +225,7 @@ private:
                                   std::make_pair(AttributeList(),
                                                  CallingConv::C));
   std::string getArrayName(ArrayType *AT);
-  std::string getVectorName(VectorType *VT, bool Aligned);
+  std::string getVectorName(VectorType *VT);
 
   enum OperandContext {
     ContextNormal,
@@ -336,7 +334,12 @@ private:
     errorWithMessage("unsupported LLVM instruction");
   }
 
-  LLVM_ATTRIBUTE_NORETURN void errorWithMessage(const char *message);
+#if LLVM_VERSION_MAJOR >= 16
+  [[noreturn]]
+#else
+  LLVM_ATTRIBUTE_NORETURN
+#endif
+  void errorWithMessage(const char *message);
 
   bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
   bool canDeclareLocalLate(Instruction &I);

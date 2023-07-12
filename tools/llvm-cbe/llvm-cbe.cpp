@@ -13,7 +13,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <llvm/Config/llvm-config.h>
+#if LLVM_VERSION_MAJOR >= 16
+#else
 #include "llvm/ADT/Triple.h"
+#endif
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #if LLVM_VERSION_MAJOR > 10
@@ -32,6 +36,9 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
+#if LLVM_VERSION_MAJOR >= 16
+#include "llvm/MC/MCTargetOptionsCommandFlags.h"
+#endif
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Pass.h"
 #if LLVM_VERSION_MAJOR >= 10
@@ -47,7 +54,11 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
+#if LLVM_VERSION_MAJOR >= 16
+#include "llvm/MC/TargetRegistry.h"
+#else
 #include "llvm/Support/TargetRegistry.h"
+#endif
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"

@@ -1,6 +1,13 @@
+add_llvm_component_group(CBackend)
+
 add_subdirectory(TargetInfo)
 
-set(LLVM_LINK_COMPONENTS
+add_llvm_target(CBackendCodeGen
+  CBackend.cpp
+  CTargetMachine.cpp
+  TopologicalSorter.cpp
+
+  LINK_COMPONENTS
   Analysis
   CBackendInfo
   CodeGen
@@ -11,10 +18,10 @@ set(LLVM_LINK_COMPONENTS
   Target
   SelectionDAG
   TransformUtils
-  )
 
-add_llvm_target(CBackendCodeGen
-  CBackend.cpp
-  CTargetMachine.cpp
-  TopologicalSorter.cpp
+  DEPENDS
+  intrinsics_gen
+
+  ADD_TO_COMPONENT
+  CBackend
   )

@@ -62,12 +62,25 @@ public:
 class CTargetMachine : public LLVMTargetMachine {
 public:
   CTargetMachine(const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
-                 const TargetOptions &Options, Optional<Reloc::Model> RM,
-                 Optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
+                 const TargetOptions &Options,
+#if LLVM_VERSION_MAJOR >= 16
+                 std::optional<Reloc::Model> RM,
+                 std::optional<CodeModel::Model> CM,
+#else
+                 llvm:Optional<Reloc::Model> RM,
+                 llvm:Optional<CodeModel::Model> CM,
+#endif
+                 CodeGenOpt::Level OL,
                  bool /*JIT*/)
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
+#if LLVM_VERSION_MAJOR >= 16
+                          RM.value_or(Reloc::Static),
+                          CM.value_or(CodeModel::Small),
+#else
                           RM.hasValue() ? RM.getValue() : Reloc::Static,
-                          CM.hasValue() ? CM.getValue() : CodeModel::Small, OL),
+                          CM.hasValue() ? CM.getValue() : CodeModel::Small,
+#endif
+                          OL),
 #if LLVM_VERSION_MAJOR >= 12
         SubtargetInfo(*this, TT, CPU,"", FS) {}
 #else
