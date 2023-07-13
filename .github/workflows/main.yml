@@ -46,8 +46,8 @@ jobs:
 
       - name: Install PyTest
         run: |
-          pip install --target=${{ runner.temp }}/pytest pytest pytest-xdist
-          echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
+          pip install pytest pytest-xdist
+          echo '${{ env.PYTHONUSERBASE }}/bin/' >> $GITHUB_PATH
 
       - name: Build
         run: |
@@ -75,8 +75,8 @@ jobs:
 
       - name: Install PyTest
         run: |
-          pip install --target=${{ runner.temp }}\pytest pytest pytest-xdist
-          echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
+          pip install pytest pytest-xdist
+          echo '${{ env.PYTHONUSERBASE }}/bin/' >> $GITHUB_PATH
 
       - name: Build
         run: |
