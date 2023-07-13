@@ -61,7 +61,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout LLVM
-      - uses: actions/checkout@master
+        uses: actions/checkout@master
         with:
           name: llvm/llvm-project
           ref: refs/heads/llvmorg-16.0.6
