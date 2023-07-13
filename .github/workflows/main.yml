@@ -1,0 +1,66 @@
+name: Build and Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup LLVM (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 16 all
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 160
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
+          sudo update-alternatives --install /usr/bin/lli clang /usr/bin/lli-16 160
+
+      - name: Setup LLVM (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.6/LLVM-16.0.6-win64.exe -OutFile ${{ runner.temp }}\LLVM.exe
+          ${{ runner.temp }}\LLVM.exe /S /D=C:\LLVM
+          $env:GITHUB_PATH='C:\LLVM;'+$env:GITHUB_PATH
+
+      - name: Setup LLVM (MacOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          brew install llvm@16
+          echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
+          echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
+
+      - name: Install PyTest
+        run: pip install pytest pytest-xdist
+
+      - name: Build
+        run: |
+          mkdir build
+          cmake -S . -B build
+          cmake --build build
+
+      - name: Test
+        run: pytest -n 32
