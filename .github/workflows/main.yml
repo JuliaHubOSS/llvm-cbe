@@ -45,12 +45,9 @@ jobs:
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
 
       - name: Install PyTest
-        shell: pwsh
         run: |
-          pip install pytest pytest-xdist
-          $pipPackagePath = (pip show pytest | Select-String 'Location: (.*)').Matches[0].Groups[1].Value
-          Write-Host "Found pip package path $pipPackagePath"
-          Add-Content -Value $pipPackagePath -Path $env:GITHUB_PATH -Encoding utf8
+          pip install pytest pytest-xdist --target=${{ runner.temp }}/pytest
+          echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
 
       - name: Build
         run: |
@@ -78,14 +75,13 @@ jobs:
 
       - name: Install PyTest
         run: |
-          pip install pytest pytest-xdist
-          $pipPackagePath = (pip show pytest | Select-String 'Location: (.*)').Matches[0].Groups[1].Value
-          echo "$pipPackagePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          pip install pytest pytest-xdist --target=${{ runner.temp }}/pytest
+          echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
 
       - name: Build
         run: |
           mkdir build
-          cmake -S . -B build -G Ninja -DLLVM_INCLUDE_TESTS=On
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On
           ninja -C build lli
           ninja -C build llvm-cbe
 
