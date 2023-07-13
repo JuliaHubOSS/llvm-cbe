@@ -53,6 +53,11 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   // Lower atomic operations to libcalls
   PM.add(createAtomicExpandPass());
 
+#if LLVM_VERSION_MAJOR >= 16
+  // Lower vector operations into shuffle sequences
+  PM.add(createExpandReductionsPass());
+#endif
+
   PM.add(new llvm_cbe::CWriter(Out));
   return false;
 }

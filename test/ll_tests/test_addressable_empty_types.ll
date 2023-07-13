@@ -15,11 +15,11 @@
 @constant4 = constant %veryEmptyStruct zeroinitializer
 @constant5 = constant %extremelyEmptyArray zeroinitializer
 
-@global1 = global %emptyStruct zeroinitializer, align 16
-@global2 = global %emptyArray zeroinitializer, align 8
-@global3 = global %veryEmptyArray zeroinitializer, align 4
-@global4 = global %veryEmptyStruct zeroinitializer, align 2
-@global5 = global %extremelyEmptyArray zeroinitializer, align 1
+@global1 = private global %emptyStruct zeroinitializer, align 16
+@global2 = private global %emptyArray zeroinitializer, align 8
+@global3 = private global %veryEmptyArray zeroinitializer, align 4
+@global4 = private global %veryEmptyStruct zeroinitializer, align 2
+@global5 = private global %extremelyEmptyArray zeroinitializer, align 1
 
 define i32 @main() {
   %alloca1 = alloca %emptyStruct, align 1

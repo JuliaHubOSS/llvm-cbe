@@ -6,6 +6,8 @@ from glob import glob
 from subprocess import call, Popen, PIPE
 import pytest
 
+USE_MSVC = os.name == 'nt'
+
 # This configuration assumes that you are using the system LLVM.
 # And that you created a subdir "build" to compile this from.
 # In other cases, please modify the lines below.
@@ -21,6 +23,7 @@ LLI_PATH = 'lli'
 CBE_FLAGS = [
     # Harder to get right than early declarations, so more value to test it.
     '-cbe-declare-locals-late',
+    '-opaque-pointers=0'
 ]
 
 COMMON_CFLAGS = [
@@ -38,6 +41,8 @@ GCCFLAGS = COMMON_CFLAGS + [
     '-Wno-unused-but-set-variable',
     '-Wno-builtin-declaration-mismatch',
     '-Wno-error=builtin-declaration-mismatch',
+    '-Wno-discarded-qualifiers',
+    '-Wno-packed-not-aligned',
     '-latomic',
 ]
 
@@ -46,6 +51,21 @@ CLANGPP = 'clang++'
 CLANGFLAGS = COMMON_CFLAGS + [
     '-Wno-error=unused-variable',
     '-Wno-unused-variable',
+    '-Wno-pointer-to-int-cast',
+    '-Wno-unused-but-set-variable',
+    '-Xclang',
+    '-no-opaque-pointers',
+]
+
+MSVC = 'cl'
+MSVCFLAGS = [
+    '/std:c17',     # Use C17 standard.
+    '/experimental:c11atomics', # Enable C11 atomics support.
+    '/W4',          # "Informational" warning level.
+    '/wd4115',      # Type declared in paren: In C this places it in the global namespace, which is what we want.
+    '/wd4189',      # Variable is initialized but never refernced.
+    '/wd4245',      # Signed/unsigned mismatch.
+    '/nologo',
 ]
 
 # exit code used by tests to indicate success
@@ -54,18 +74,21 @@ TEST_SUCCESS_EXIT_CODE = 6
 TEST_XFAIL_EXIT_CODE = 25
 
 
-def check_no_output(args):
-    proc = Popen(args, stdout=PIPE, stderr=PIPE)
+def check_no_output(args, cwd):
+    proc = Popen(args, cwd=cwd, stdout=PIPE, stderr=PIPE)
     out, err = proc.communicate()
 
-    if out or err:
+    if (out and not USE_MSVC) or err or proc.returncode:
         out = out.decode("utf-8")
         err = err.decode("utf-8")
 
         msg_stream = io.StringIO()
-        print(f"Got unexpected output from process", file=msg_stream)
+        print(f"Got unexpected output or exit code from process", file=msg_stream)
 
         print(f"args: {args}", file=msg_stream)
+        print(file=msg_stream)
+
+        print(f"exit code: {proc.returncode}", file=msg_stream)
         print(file=msg_stream)
 
         print(f"stdout:", file=msg_stream)
@@ -78,26 +101,24 @@ def check_no_output(args):
 
         raise Exception(msg_stream.getvalue())
 
-    assert not proc.returncode, f"process exit code {proc.returncode}"
-
-
-def _compile_c(compiler, flags, c_filename, output_filename):
-    check_no_output([compiler, c_filename, '-o', output_filename] + flags)
-    return output_filename
-
 
 def compile_gcc(c_filename, output_filename, flags=None):
     flags = flags or []
-    return _compile_c(GCC, GCCFLAGS + flags, c_filename, output_filename)
+    check_no_output([GCC, c_filename, '-o', output_filename] + GCCFLAGS + flags, os.path.dirname(output_filename))
+    return output_filename
+
+
+def compile_msvc(c_filename, output_filename, flags=None):
+    flags = flags or []
+    atomic_library_file = os.path.join(TEST_DIR, '..', 'runtime', 'windows', 'atomics.c')
+    check_no_output([MSVC, c_filename, atomic_library_file, '/Fe:' + str(output_filename)] + MSVCFLAGS + flags, os.path.dirname(output_filename))
+    return output_filename
 
 
 def compile_clang(c_filename, output_filename, flags=None, cplusplus=False):
     flags = flags or []
-    return _compile_c(
-        CLANGPP if cplusplus else CLANG,
-        CLANGFLAGS + flags,
-        c_filename,
-        output_filename)
+    check_no_output([CLANGPP if cplusplus else CLANG, c_filename, '-o', output_filename] + CLANGFLAGS + flags, os.path.dirname(output_filename))
+    return output_filename
 
 
 def compile_to_ir(c_filename, ir_filename, flags=None, cplusplus=False):
@@ -108,7 +129,7 @@ def compile_to_ir(c_filename, ir_filename, flags=None, cplusplus=False):
 
 
 def run_llvm_cbe(ir_filename, c_filename):
-    check_no_output([LLVM_CBE_PATH, ir_filename, *CBE_FLAGS, '-o', c_filename])
+    check_no_output([LLVM_CBE_PATH, ir_filename, *CBE_FLAGS, '-o', c_filename], os.path.dirname(ir_filename))
     return c_filename
 
 
@@ -170,11 +191,15 @@ def test_consistent_return_value_c(test_filename, tmpdir, cflags):
 
     # suppress "array subscript -1 is outside array bounds" in test expected
     # to trigger it
-    if "test_char_sized_ptr_math_decr" in test_filename:
+    if not USE_MSVC and "test_char_sized_ptr_math_decr" in test_filename:
         # not += to avoid affecting subsequent calls
         cflags = cflags + ["-Wno-array-bounds"]
 
-    cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
+    if USE_MSVC:
+        map_flags = {'-O3': '-O2', '-O0': '-Od'}
+        cbe_exe = compile_msvc(cbe_c, tmpdir / 'cbe.exe', flags=[f if f not in map_flags else map_flags[f] for f in cflags])
+    else:
+        cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
     assert cbe_retval == regular_retval
@@ -201,7 +226,10 @@ def test_consistent_return_value_ll(test_filename, tmpdir):
     assert lli_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
     cbe_c = run_llvm_cbe(test_filename, tmpdir / 'cbe.c')
-    cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe')
+    if USE_MSVC:
+        cbe_exe = compile_msvc(cbe_c, tmpdir / 'cbe.exe')
+    else:
+        cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe')
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
     assert cbe_retval == lli_retval

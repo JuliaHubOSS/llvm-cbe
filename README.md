@@ -6,7 +6,7 @@ This LLVM C backend has been resurrected by Julia Computing with various improve
 Installation instructions
 =========================
 
-This version of the LLVM C backend works with LLVM 10.0, and has preliminary support for LLVM 11.0.
+This version of the LLVM C backend works with LLVM 10.0 and 16.0, other version of LLVM may work but are untested.
 
 Step 1: Installing LLVM
 =======================

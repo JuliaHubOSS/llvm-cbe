@@ -22,14 +22,19 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MathExtras.h"
+#if LLVM_VERSION_MAJOR >= 16
+#include "llvm/MC/TargetRegistry.h"
+#else
 #include "llvm/Support/TargetRegistry.h"
+#endif
 
 #include "TopologicalSorter.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
-
 #include <iostream>
+#include <malloc.h>
 
 // Jackson Korba 9/29/14
 #ifndef DEBUG_TYPE
@@ -82,7 +87,9 @@ bool IsPowerOfTwo(unsigned long x)
 #endif
 
 unsigned int NumberOfElements(VectorType *TheType) {
-#if LLVM_VERSION_MAJOR >= 12
+#if LLVM_VERSION_MAJOR >= 16
+  return TheType->getElementCount().getFixedValue();
+#elif LLVM_VERSION_MAJOR >= 12
   return TheType->getElementCount().getValue();
 #else
   return TheType->getNumElements();
@@ -253,7 +260,11 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
 
   if (Ty->isPointerTy()) {
     Out << "p";
+#if LLVM_VERSION_MAJOR >= 16
+    return printTypeString(Out, Ty->getNonOpaquePointerElementType(), isSigned);
+#else
     return printTypeString(Out, Ty->getPointerElementType(), isSigned);
+#endif
   }
 
   switch (Ty->getTypeID()) {
@@ -343,15 +354,11 @@ std::string CWriter::getArrayName(ArrayType *AT) {
          CBEMangle(ArrayInnards.str());
 }
 
-std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
+std::string CWriter::getVectorName(VectorType *VT) {
   std::string astr;
   raw_string_ostream VectorInnards(astr);
   // Vectors are handled like arrays
   cwriter_assert(!isEmptyType(VT));
-  if (Aligned) {
-    headerUseMsAlign();
-    Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
-  }
   printTypeName(VectorInnards, VT->getElementType(), false);
   return "struct l_vector_" + utostr(NumberOfElements(VT)) + '_' +
          CBEMangle(VectorInnards.str());
@@ -565,7 +572,11 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
   }
 
   case Type::PointerTyID: {
+#if LLVM_VERSION_MAJOR >= 16
+    Type *ElTy = Ty->getNonOpaquePointerElementType();
+#else
     Type *ElTy = Ty->getPointerElementType();
+#endif
     ElTy = skipEmptyArrayTypes(ElTy);
     return printTypeName(Out, ElTy, false) << '*';
   }
@@ -582,25 +593,13 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
 #endif
   {
     TypedefDeclTypes.insert(Ty);
-    return Out << getVectorName(cast<VectorType>(Ty), true);
+    return Out << getVectorName(cast<VectorType>(Ty));
   }
 
   default:
     DBG_ERRS("Unexpected type: " << *Ty);
     errorWithMessage("unexpected type");
   }
-}
-
-raw_ostream &CWriter::printTypeNameUnaligned(raw_ostream &Out, Type *Ty,
-                                             bool isSigned) {
-  if (VectorType *VTy = dyn_cast<VectorType>(Ty)) {
-    // MSVC doesn't handle __declspec(align) on parameters,
-    // but we specify it for Vector (hoping the compiler will vectorize it)
-    // so we need to avoid it sometimes
-    TypedefDeclTypes.insert(VTy);
-    return Out << getVectorName(VTy, false);
-  }
-  return printTypeName(Out, Ty, isSigned);
 }
 
 raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out,
@@ -634,7 +633,11 @@ raw_ostream &CWriter::printStructDeclaration(raw_ostream &Out,
 raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
                                               AttributeList Attrs) {
   SmallVector<std::string, 5> AttrsToPrint;
+#if LLVM_VERSION_MAJOR >= 16
+  for (const auto &FnAttr : Attrs.getFnAttrs()) {
+#else
   for (const auto &FnAttr : Attrs.getFnAttributes()) {
+#endif
     if (FnAttr.isEnumAttribute() || FnAttr.isIntAttribute()) {
       switch (FnAttr.getKindAsEnum()) {
       case Attribute::AttrKind::AlwaysInline:
@@ -671,10 +674,18 @@ raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
         break;
       case Attribute::AttrKind::AllocSize: {
         const auto AllocSize = FnAttr.getAllocSizeArgs();
+#if LLVM_VERSION_MAJOR >= 16
+        if (AllocSize.second.has_value()) {
+#else
         if (AllocSize.second.hasValue()) {
+#endif
           AttrsToPrint.push_back(
               "alloc_size(" + std::to_string(AllocSize.first) + "," +
+#if LLVM_VERSION_MAJOR >= 16
+              std::to_string(AllocSize.second.value()) + ")");
+#else
               std::to_string(AllocSize.second.getValue()) + ")");
+#endif
         } else {
           AttrsToPrint.push_back("alloc_size(" +
                                  std::to_string(AllocSize.first) + ")");
@@ -754,8 +765,13 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
       return false;
 
     if (CType.equals("char **") &&
+#if LLVM_VERSION_MAJOR >= 16
+        (!T->isPointerTy() || !T->getNonOpaquePointerElementType()->isPointerTy() ||
+         !T->getNonOpaquePointerElementType()->getNonOpaquePointerElementType()->isIntegerTy(8)))
+#else
         (!T->isPointerTy() || !T->getPointerElementType()->isPointerTy() ||
          !T->getPointerElementType()->getPointerElementType()->isIntegerTy(8)))
+#endif
       return false;
   }
 
@@ -771,7 +787,11 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 
   AttributeList &PAL = Attrs.first;
 
+#if LLVM_VERSION_MAJOR >= 16
+  if (PAL.hasAttributeAtIndex(AttributeList::FunctionIndex, Attribute::NoReturn)) {
+#else
   if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn)) {
+#endif
     headerUseNoReturn();
     Out << "__noreturn ";
   }
@@ -781,20 +801,33 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     Out << MainArgs.begin()[0].first;
   } else {
     // Should this function actually return a struct by-value?
+#if LLVM_VERSION_MAJOR >= 16
+    isStructReturn = PAL.hasAttributeAtIndex(1, Attribute::StructRet) ||
+                     PAL.hasAttributeAtIndex(2, Attribute::StructRet);
+#else
     isStructReturn = PAL.hasAttribute(1, Attribute::StructRet) ||
                      PAL.hasAttribute(2, Attribute::StructRet);
+#endif
     // Get the return type for the function.
     Type *RetTy;
     if (!isStructReturn)
       RetTy = FTy->getReturnType();
     else {
       // If this is a struct-return function, print the struct-return type.
+#if LLVM_VERSION_MAJOR >= 16
+      RetTy = cast<PointerType>(FTy->getParamType(0))->getNonOpaquePointerElementType();
+#else
       RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
+#endif
     }
     printTypeName(
         Out, RetTy,
         /*isSigned=*/
+#if LLVM_VERSION_MAJOR >= 16
+        PAL.hasAttributeAtIndex(AttributeList::ReturnIndex, Attribute::SExt));
+#else
         PAL.hasAttribute(AttributeList::ReturnIndex, Attribute::SExt));
+#endif
   }
 
   switch (Attrs.second) {
@@ -842,19 +875,31 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     if (ArgTy->isMetadataTy())
       continue;
 
+#if LLVM_VERSION_MAJOR >= 16
+    if (PAL.hasAttributeAtIndex(Idx, Attribute::ByVal)) {
+#else
     if (PAL.hasAttribute(Idx, Attribute::ByVal)) {
+#endif
       cwriter_assert(!shouldFixMain);
       cwriter_assert(ArgTy->isPointerTy());
+#if LLVM_VERSION_MAJOR >= 16
+      ArgTy = cast<PointerType>(ArgTy)->getNonOpaquePointerElementType();
+#else
       ArgTy = cast<PointerType>(ArgTy)->getElementType();
+#endif
     }
     if (PrintedArg)
       Out << ", ";
     if (shouldFixMain)
       Out << MainArgs.begin()[Idx].first;
     else
-      printTypeNameUnaligned(
+      printTypeName(
           Out, ArgTy,
+#if LLVM_VERSION_MAJOR >= 16
+          /*isSigned=*/PAL.hasAttributeAtIndex(Idx, Attribute::SExt));
+#else
           /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
+#endif
     PrintedArg = true;
     if (ArgList) {
       Out << ' ';
@@ -896,11 +941,16 @@ raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out,
                                              VectorType *VTy) {
   cwriter_assert(!isEmptyType(VTy));
   // Vectors are printed like arrays
-  Out << getVectorName(VTy, false) << " {\n  ";
+  Out << getVectorName(VTy) << " {\n  ";
   printTypeName(Out, VTy->getElementType());
+  headerUseAligns();
   Out << " vector[" << utostr(NumberOfElements(VTy))
-      << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy)
-      << ")));\n";
+#if LLVM_VERSION_MAJOR >= 16
+      << "];\n} __POSTFIXALIGN__(" << TD->getABITypeAlign(VTy).value()
+#else
+      << "];\n} __POSTFIXALIGN__(" << TD->getABITypeAlignment(VTy)
+#endif
+      << ");\n";
   return Out;
 }
 
@@ -1334,7 +1384,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 
   if (ConstantInt *CI = dyn_cast<ConstantInt>(CPV)) {
     Type *Ty = CI->getType();
+#if LLVM_VERSION_MAJOR >= 16
+    unsigned ActiveBits = CI->getValue().getSignificantBits();
+#else
     unsigned ActiveBits = CI->getValue().getMinSignedBits();
+#endif
     if (Ty == Type::getInt1Ty(CPV->getContext())) {
       Out << (CI->getZExtValue() ? '1' : '0');
     } else if (Context != ContextNormal && Ty->getPrimitiveSizeInBits() <= 64 &&
@@ -1413,7 +1467,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         // We need to grab the first part of the FP #
         char Buffer[100];
 
+#if LLVM_VERSION_MAJOR >= 16
+        uint64_t ll = llvm::bit_cast<uint64_t>(V);
+#else
         uint64_t ll = DoubleToBits(V);
+#endif
         sprintf(Buffer, "0x%llx", static_cast<long long>(ll));
 
         std::string Num(&Buffer[0], &Buffer[6]);
@@ -1767,7 +1825,11 @@ void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
     // We can't directly declare a zero-sized variable in C, so
     // printTypeNameForAddressableValue uses a single-byte type instead.
     // We fix up the pointer type here.
+#if LLVM_VERSION_MAJOR >= 16
+    if (!isEmptyType(Operand->getType()->getNonOpaquePointerElementType()))
+#else
     if (!isEmptyType(Operand->getType()->getPointerElementType()))
+#endif
       Out << "(&";
     else
       Out << "((void*)&";
@@ -1984,6 +2046,12 @@ static void defineAttributeWeak(raw_ostream &Out) {
       << "#else\n"
       << "#define __ATTRIBUTE_WEAK__\n"
       << "#endif\n\n";
+  // For MSVC, use the `inline` specifier instead.
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __MSVC_INLINE__ inline\n";
+  Out << "#else\n";
+  Out << "#define __MSVC_INLINE__\n";
+  Out << "#endif\n";
 }
 
 static void defineHidden(raw_ostream &Out) {
@@ -2019,11 +2087,13 @@ static void defineUnalignedLoad(raw_ostream &Out) {
   Out << "#endif\n\n";
 }
 
-static void defineMsAlign(raw_ostream &Out) {
+static void defineAligns(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
-  Out << "#define __MSALIGN__(X) __declspec(align(X))\n";
+  Out << "#define __PREFIXALIGN__(X) __declspec(align(X))\n";
+  Out << "#define __POSTFIXALIGN__(X)\n";
   Out << "#else\n";
-  Out << "#define __MSALIGN__(X)\n";
+  Out << "#define __PREFIXALIGN__(X)\n";
+  Out << "#define __POSTFIXALIGN__(X) __attribute__((aligned(X)))\n";
   Out << "#endif\n\n";
 }
 
@@ -2314,8 +2384,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineAttributeList(Out);
   if (headerIncUnalignedLoad())
     defineUnalignedLoad(Out);
-  if (headerIncMsAlign())
-    defineMsAlign(Out);
+  if (headerIncAligns())
+    defineAligns(Out);
   if (headerIncNanInf())
     defineNanInf(Out);
   if (headerIncInt128())
@@ -2469,7 +2539,11 @@ void CWriter::generateHeader(Module &M) {
     // Ignore special globals, such as debug info.
     if (getGlobalVariableClass(&*I))
       continue;
+#if LLVM_VERSION_MAJOR >= 16
+    printTypeName(NullOut, I->getType()->getNonOpaquePointerElementType(), false);
+#else
     printTypeName(NullOut, I->getType()->getElementType(), false);
+#endif
   }
   printModuleTypes(Out);
 
@@ -2499,18 +2573,28 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
+#if LLVM_VERSION_MAJOR >= 16
+      Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+#else
       Type *ElTy = I->getType()->getElementType();
+#endif
       unsigned Alignment = I->getAlignment();
       bool IsOveraligned =
+#if LLVM_VERSION_MAJOR >= 16
+          Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
+#else
           Alignment && Alignment > TD->getABITypeAlignment(ElTy);
+#endif
       if (IsOveraligned) {
-        headerUseMsAlign();
-        Out << "__MSALIGN__(" << Alignment << ") ";
+        headerUseAligns();
+        Out << "__PREFIXALIGN__(" << Alignment << ") ";
       }
       printTypeNameForAddressableValue(Out, ElTy, false);
       Out << ' ' << GetValueName(&*I);
-      if (IsOveraligned)
-        Out << " __attribute__((aligned(" << Alignment << ")))";
+      if (IsOveraligned) {
+        headerUseAligns();
+        Out << " __POSTFIXALIGN__(" << Alignment << ")";
+      }
 
       if (I->hasExternalWeakLinkage()) {
         headerUseExternalWeak();
@@ -2553,6 +2637,12 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::rint:
       case Intrinsic::sqrt:
       case Intrinsic::trunc:
+#if LLVM_VERSION_MAJOR >= 16
+      case Intrinsic::umax:
+      case Intrinsic::umin:
+      case Intrinsic::maximum:
+      case Intrinsic::minimum:
+#endif
         intrinsicsToDefine.push_back(&*I);
         continue;
       }
@@ -2584,6 +2674,10 @@ void CWriter::generateHeader(Module &M) {
       Out << "static ";
     if (I->hasExternalWeakLinkage())
       Out << "extern ";
+    if (I->hasLinkOnceLinkage()) {
+      headerUseAttributeWeak();
+      Out << "__MSVC_INLINE__ ";
+    }
     printFunctionProto(Out, &*I);
     printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
@@ -2623,8 +2717,13 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Alias Declarations */\n";
     for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end(); I != E;
          ++I) {
+#if LLVM_VERSION_MAJOR >= 16
+      cwriter_assert(!I->isDeclaration() &&
+                     !isEmptyType(I->getType()->getNonOpaquePointerElementType()));
+#else
       cwriter_assert(!I->isDeclaration() &&
                      !isEmptyType(I->getType()->getPointerElementType()));
+#endif
       if (I->hasLocalLinkage())
         continue; // Internal Global
 
@@ -2637,19 +2736,28 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
+#if LLVM_VERSION_MAJOR >= 16
+      Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+      unsigned Alignment = I->getAliaseeObject()->getAlignment();
+      bool IsOveraligned =
+          Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
+#else
       Type *ElTy = I->getType()->getElementType();
       unsigned Alignment = I->getBaseObject()->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlignment(ElTy);
+#endif
       if (IsOveraligned) {
-        headerUseMsAlign();
-        Out << "__MSALIGN__(" << Alignment << ") ";
+        headerUseAligns();
+        Out << "__PREFIXALIGN__(" << Alignment << ") ";
       }
       // GetValueName would resolve the alias, which is not what we want,
       // so use getName directly instead (assuming that the Alias has a name...)
       printTypeName(Out, ElTy, false) << " *" << I->getName();
-      if (IsOveraligned)
-        Out << " __attribute__((aligned(" << Alignment << ")))";
+      if (IsOveraligned) {
+        headerUseAligns();
+        Out << " __POSTFIXALIGN__(" << Alignment << ")";
+      }
 
       if (I->hasExternalWeakLinkage()) {
         headerUseExternalWeak();
@@ -2680,19 +2788,19 @@ void CWriter::generateHeader(Module &M) {
     //   return r;
     // }
     Out << "static __forceinline ";
-    printTypeNameUnaligned(Out, *it, false);
+    printTypeName(Out, *it, false);
     Out << " llvm_select_";
     printTypeString(Out, *it, false);
     Out << "(";
     if (isa<VectorType>(*it))
 #if LLVM_VERSION_MAJOR >= 12
-      printTypeNameUnaligned(
+      printTypeName(
           Out,
           VectorType::get(Type::getInt1Ty((*it)->getContext()),
                           cast<VectorType>(*it)->getElementCount()),
           false);
 #else
-      printTypeNameUnaligned(
+      printTypeName(
           Out,
           VectorType::get(Type::getInt1Ty((*it)->getContext()),
                           cast<VectorType>(*it)->getNumElements()),
@@ -2701,11 +2809,11 @@ void CWriter::generateHeader(Module &M) {
     else
       Out << "bool";
     Out << " condition, ";
-    printTypeNameUnaligned(Out, *it, false);
+    printTypeName(Out, *it, false);
     Out << " iftrue, ";
-    printTypeNameUnaligned(Out, *it, false);
+    printTypeName(Out, *it, false);
     Out << " ifnot) {\n  ";
-    printTypeNameUnaligned(Out, *it, false);
+    printTypeName(Out, *it, false);
     Out << " r;\n";
     if (isa<VectorType>(*it)) {
       unsigned n, l = NumberOfElements(cast<VectorType>(*it));
@@ -2755,9 +2863,9 @@ void CWriter::generateHeader(Module &M) {
     Out << getCmpPredicateName(Pred) << "_";
     printTypeString(Out, (*it).second, isSigned);
     Out << "(";
-    printTypeNameUnaligned(Out, (*it).second, isSigned);
+    printTypeName(Out, (*it).second, isSigned);
     Out << " l, ";
-    printTypeNameUnaligned(Out, (*it).second, isSigned);
+    printTypeName(Out, (*it).second, isSigned);
     Out << " r) {\n  ";
     printTypeName(Out, RTy, isSigned);
     Out << " c;\n";
@@ -2858,7 +2966,7 @@ void CWriter::generateHeader(Module &M) {
     Out << "_";
     printTypeString(Out, DstTy, false);
     Out << "(";
-    printTypeNameUnaligned(Out, SrcTy, SrcSigned);
+    printTypeName(Out, SrcTy, SrcSigned);
     Out << " in) {\n";
     if (opcode == Instruction::BitCast) {
       Out << "  union {\n    ";
@@ -2961,21 +3069,21 @@ void CWriter::generateHeader(Module &M) {
       Out << " llvm_neg_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeNameUnaligned(Out, OpTy, isSigned);
+      printTypeName(Out, OpTy, isSigned);
       Out << " a) {\n  ";
     } else if (opcode == BinaryNot) {
       Out << " llvm_not_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeNameUnaligned(Out, OpTy, isSigned);
+      printTypeName(Out, OpTy, isSigned);
       Out << " a) {\n  ";
     } else {
       Out << " llvm_" << Instruction::getOpcodeName(opcode) << "_";
       printTypeString(Out, OpTy, false);
       Out << "(";
-      printTypeNameUnaligned(Out, OpTy, isSigned);
+      printTypeName(Out, OpTy, isSigned);
       Out << " a, ";
-      printTypeNameUnaligned(Out, OpTy, isSigned);
+      printTypeName(Out, OpTy, isSigned);
       Out << " b) {\n  ";
     }
 
@@ -3305,7 +3413,7 @@ void CWriter::generateHeader(Module &M) {
         Out << " /* ";
       else if (printed)
         Out << ", ";
-      printTypeNameUnaligned(Out, ElTy);
+      printTypeName(Out, ElTy);
       Out << " x" << i;
       if (isEmptyType(ElTy))
         Out << " */";
@@ -3385,17 +3493,25 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
   if (I->isThreadLocal())
     Out << "__thread ";
 
+#if LLVM_VERSION_MAJOR >= 16
+  Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+  unsigned Alignment = I->getAlignment();
+  bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
+#else
   Type *ElTy = I->getType()->getElementType();
   unsigned Alignment = I->getAlignment();
   bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(ElTy);
+#endif
   if (IsOveraligned) {
-    headerUseMsAlign();
-    Out << "__MSALIGN__(" << Alignment << ") ";
+    headerUseAligns();
+    Out << "__PREFIXALIGN__(" << Alignment << ") ";
   }
   printTypeNameForAddressableValue(Out, ElTy, false);
   Out << ' ' << GetValueName(I);
-  if (IsOveraligned)
-    Out << " __attribute__((aligned(" << Alignment << ")))";
+  if (IsOveraligned) {
+    headerUseAligns();
+    Out << " __POSTFIXALIGN__(" << Alignment << ")";
+  }
 
   if (I->hasLinkOnceLinkage())
     Out << " __attribute__((common))";
@@ -3563,7 +3679,11 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
       // Handle arbitrarily deep pointer indirection
       Type *PP = P;
       while (PP->isPointerTy())
+#if LLVM_VERSION_MAJOR >= 16
+        PP = PP->getNonOpaquePointerElementType();
+#else
         PP = PP->getPointerElementType();
+#endif
       if (auto *PPF = dyn_cast<FunctionType>(PP))
         FDeps.push_back(PPF);
     }
@@ -3589,6 +3709,15 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
       Sorter.addEdge(I, TopologicalSortMap[Dependencies[J]]);
     }
   }
+#if LLVM_VERSION_MAJOR >= 16
+  std::optional<std::vector<int>> TopologicalSortResult = Sorter.sort();
+  if (!TopologicalSortResult.has_value()) {
+    errorWithMessage("Cyclic dependencies in function definitions");
+  }
+  for (const auto I : TopologicalSortResult.value()) {
+    Out << FunctionTypeDefinitions[I].NameToPrint << "\n";
+  }
+#else
   Optional<std::vector<int>> TopologicalSortResult = Sorter.sort();
   if (!TopologicalSortResult.hasValue()) {
     errorWithMessage("Cyclic dependencies in function definitions");
@@ -3596,6 +3725,7 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   for (const auto I : TopologicalSortResult.getValue()) {
     Out << FunctionTypeDefinitions[I].NameToPrint << "\n";
   }
+#endif
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
@@ -3634,6 +3764,9 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
     // Ensure function types which are only directly used by struct types will
     // get declared.
     (void)getFunctionName(FT);
+  } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
+    // Print vector type out.
+    Out << getVectorName(VT) << ";\n";
   }
 }
 
@@ -3745,8 +3878,13 @@ void CWriter::printFunction(Function &F) {
 
   // If this is a struct return function, handle the result with magic.
   if (isStructReturn) {
+#if LLVM_VERSION_MAJOR >= 16
+    Type *StructTy =
+        cast<PointerType>(F.arg_begin()->getType())->getNonOpaquePointerElementType();
+#else
     Type *StructTy =
         cast<PointerType>(F.arg_begin()->getType())->getElementType();
+#endif
     Out << "  ";
     printTypeName(Out, StructTy, false)
         << " StructReturn;  /* Struct return temporary */\n";
@@ -3761,18 +3899,26 @@ void CWriter::printFunction(Function &F) {
   // print local variable information for the function
   for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I) {
     if (AllocaInst *AI = isDirectAlloca(&*I)) {
+#if LLVM_VERSION_MAJOR >= 16
+      unsigned Alignment = AI->getAlign().value();
+      bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(
+                                                        AI->getAllocatedType()).value();
+#else
       unsigned Alignment = AI->getAlignment();
       bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(
                                                         AI->getAllocatedType());
+#endif
       Out << "  ";
       if (IsOveraligned) {
-        headerUseMsAlign();
-        Out << "__MSALIGN__(" << Alignment << ") ";
+        headerUseAligns();
+        Out << "__PREFIXALIGN__(" << Alignment << ") ";
       }
       printTypeNameForAddressableValue(Out, AI->getAllocatedType(), false);
       Out << ' ' << GetValueName(AI);
-      if (IsOveraligned)
-        Out << " __attribute__((aligned(" << Alignment << ")))";
+      if (IsOveraligned) {
+        headerUseAligns();
+        Out << " __POSTFIXALIGN__(" << Alignment << ")";
+      }
       Out << ";    /* Address-exposed local */\n";
       PrintedVar = true;
     } else if (!isEmptyType(I->getType()) && !isInlinableInst(*I)) {
@@ -3858,9 +4004,17 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E; ++II) {
     DILocation *Loc = (*II).getDebugLoc();
-    if (Loc != nullptr && LastAnnotatedSourceLine != Loc->getLine()) {
-      Out << "#line " << Loc->getLine() << " \"" << Loc->getDirectory() << "/"
-          << Loc->getFilename() << "\""
+    if (Loc != nullptr && Loc->getLine() != 0 && LastAnnotatedSourceLine != Loc->getLine()) {
+      std::string Directory = Loc->getDirectory().str();
+      std::replace(Directory.begin(), Directory.end(), '\\', '/');
+      std::string Filename = Loc->getFilename().str();
+      std::replace(Filename.begin(), Filename.end(), '\\', '/');
+
+      if (!Directory.empty() && Directory[Directory.size() - 1] != '/' && !Filename.empty() && Filename[0] != '/')
+        Directory.push_back('/');
+
+      Out << "#line " << Loc->getLine() << " \"" << Directory
+          << Filename << "\""
           << "\n";
       LastAnnotatedSourceLine = Loc->getLine();
     }
@@ -4503,7 +4657,11 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     }
     FunctionType *devecFunT = FunctionType::get(
         funT->getReturnType()->getScalarType(),
+#if LLVM_VERSION_MAJOR >= 16
+        ArrayRef(devecFunParams, numParams), funT->isVarArg());
+#else
         makeArrayRef(devecFunParams, numParams), funT->isVarArg());
+#endif
     printIntrinsicDefinition(devecFunT, Opcode, OpName + "_devec", Out);
   }
 
@@ -4529,7 +4687,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     case Intrinsic::powi:
       break;
     }
-    printTypeNameUnaligned(Out, funT->getParamType(i), isSigned);
+    printTypeName(Out, funT->getParamType(i), isSigned);
     Out << " " << (char)('a' + i);
     if (i != numParams - 1)
       Out << ", ";
@@ -4645,6 +4803,18 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
         Out << ")";
       Out << ";\n";
       break;
+
+#if LLVM_VERSION_MAJOR >= 16
+      case Intrinsic::umax:
+      case Intrinsic::maximum:
+      Out << "  r = a > b ? a : b;\n";
+      break;
+
+      case Intrinsic::umin:
+      case Intrinsic::minimum:
+      Out << "  r = a < b ? a : b;\n";
+      break;
+#endif
     }
 
   } else {
@@ -4780,6 +4950,12 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::stackprotector:
           case Intrinsic::dbg_value:
           case Intrinsic::dbg_declare:
+#if LLVM_VERSION_MAJOR >= 16
+          case Intrinsic::umax:
+          case Intrinsic::umin:
+          case Intrinsic::maximum:
+          case Intrinsic::minimum:
+#endif
             // We directly implement these intrinsics
             break;
 
@@ -4833,7 +5009,11 @@ void CWriter::visitCallInst(CallInst &I) {
   Value *Callee = I.getCalledOperand();
 
   PointerType *PTy = cast<PointerType>(Callee->getType());
+#if LLVM_VERSION_MAJOR >= 16
+  FunctionType *FTy = cast<FunctionType>(PTy->getNonOpaquePointerElementType());
+#else
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
+#endif
 
   // If this is a call to a struct-return function, assign to the first
   // parameter instead of passing it to the call.
@@ -4875,7 +5055,11 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((";
+#if LLVM_VERSION_MAJOR >= 16
+    printTypeName(Out, I.getCalledOperand()->getType()->getNonOpaquePointerElementType(),
+#else
     printTypeName(Out, I.getCalledOperand()->getType()->getPointerElementType(),
+#endif
                   false, std::make_pair(PAL, I.getCallingConv()));
     Out << "*)(void*)";
   }
@@ -4918,13 +5102,21 @@ void CWriter::visitCallInst(CallInst &I) {
     if (ArgNo < NumDeclaredParams &&
         (*AI)->getType() != FTy->getParamType(ArgNo)) {
       Out << '(';
-      printTypeNameUnaligned(
+      printTypeName(
           Out, FTy->getParamType(ArgNo),
+#if LLVM_VERSION_MAJOR >= 16
+          /*isSigned=*/PAL.hasAttributeAtIndex(ArgNo + 1, Attribute::SExt));
+#else
           /*isSigned=*/PAL.hasAttribute(ArgNo + 1, Attribute::SExt));
+#endif
       Out << ')';
     }
     // Check if the argument is expected to be passed by value.
+#if LLVM_VERSION_MAJOR >= 16
+    if (I.getAttributes().hasAttributeAtIndex(ArgNo + 1, Attribute::ByVal))
+#else
     if (I.getAttributes().hasAttribute(ArgNo + 1, Attribute::ByVal))
+#endif
       writeOperandDeref(*AI);
     else
       writeOperand(*AI, ContextCasted);
@@ -5126,6 +5318,12 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::sqrt:
   case Intrinsic::trap:
   case Intrinsic::trunc:
+#if LLVM_VERSION_MAJOR >= 16
+  case Intrinsic::umax:
+  case Intrinsic::umin:
+  case Intrinsic::maximum:
+  case Intrinsic::minimum:
+#endif
     return false; // these use the normal function call emission
   }
 }
@@ -5331,7 +5529,11 @@ void CWriter::visitAllocaInst(AllocaInst &I) {
   Out << '(';
   printTypeName(Out, I.getType());
   Out << ") alloca(sizeof(";
+#if LLVM_VERSION_MAJOR >= 16
+  printTypeName(Out, I.getAllocatedType());
+#else
   printTypeName(Out, I.getType()->getElementType());
+#endif
   if (I.isArrayAllocation()) {
     Out << ") * (";
     writeOperand(I.getArraySize(), ContextCasted);
@@ -5462,8 +5664,13 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
     return;
   }
 
+#if LLVM_VERSION_MAJOR >= 16
+  bool IsUnaligned =
+      Alignment && Alignment < TD->getABITypeAlign(OperandType).value();
+#else
   bool IsUnaligned =
       Alignment && Alignment < TD->getABITypeAlignment(OperandType);
+#endif
 
   if (!IsUnaligned) {
     Out << '*';
@@ -5475,7 +5682,7 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
   } else if (IsUnaligned) {
     headerUseUnalignedLoad();
     Out << "__UNALIGNED_LOAD__(";
-    printTypeNameUnaligned(Out, OperandType, false);
+    printTypeName(Out, OperandType, false);
     if (IsVolatile)
       Out << " volatile";
     Out << ", " << Alignment << ", ";
@@ -5492,14 +5699,22 @@ void CWriter::visitLoadInst(LoadInst &I) {
   CurInstr = &I;
 
   writeMemoryAccess(I.getOperand(0), I.getType(), I.isVolatile(),
+#if LLVM_VERSION_MAJOR >= 16
+                    I.getAlign().value());
+#else
                     I.getAlignment());
+#endif
 }
 
 void CWriter::visitStoreInst(StoreInst &I) {
   CurInstr = &I;
 
   writeMemoryAccess(I.getPointerOperand(), I.getOperand(0)->getType(),
+#if LLVM_VERSION_MAJOR >= 16
+                    I.isVolatile(), I.getAlign().value());
+#else
                     I.isVolatile(), I.getAlignment());
+#endif
   Out << " = ";
   Value *Operand = I.getOperand(0);
   unsigned BitMask = 0;
@@ -5666,7 +5881,11 @@ void CWriter::visitInsertValueInst(InsertValueInst &IVI) {
   for (const unsigned *b = IVI.idx_begin(), *i = b, *e = IVI.idx_end(); i != e;
        ++i) {
     Type *IndexedTy = ExtractValueInst::getIndexedType(
+#if LLVM_VERSION_MAJOR >= 16
+        IVI.getOperand(0)->getType(), ArrayRef(b, i));
+#else
         IVI.getOperand(0)->getType(), makeArrayRef(b, i));
+#endif
     cwriter_assert(IndexedTy);
     if (IndexedTy->isArrayTy())
       Out << ".array[" << *i << "]";
@@ -5690,7 +5909,11 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
     for (const unsigned *b = EVI.idx_begin(), *i = b, *e = EVI.idx_end();
          i != e; ++i) {
       Type *IndexedTy = ExtractValueInst::getIndexedType(
+#if LLVM_VERSION_MAJOR >= 16
+          EVI.getOperand(0)->getType(), ArrayRef(b, i));
+#else
           EVI.getOperand(0)->getType(), makeArrayRef(b, i));
+#endif
       if (IndexedTy->isArrayTy())
         Out << ".array[" << *i << "]";
       else
@@ -5700,7 +5923,12 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
   Out << ")";
 }
 
-LLVM_ATTRIBUTE_NORETURN void CWriter::errorWithMessage(const char *message) {
+#if LLVM_VERSION_MAJOR >= 16
+[[noreturn]]
+#else
+LLVM_ATTRIBUTE_NORETURN
+#endif
+void CWriter::errorWithMessage(const char *message) {
 #ifndef NDEBUG
   errs() << message;
   errs() << " in: ";
