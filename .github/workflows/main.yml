@@ -36,13 +36,15 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
           sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-16 160
 
-      - name: Setup LLVM (MacOS)
+      - name: Setup LLVM and GCC (MacOS)
         if: ${{ runner.os == 'macOS' }}
         run: |
           brew install llvm@16
           echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
           echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
+          cd /usr/local/bin
+          ln -s gcc-11 gcc
 
       - name: Update Python
         uses: actions/setup-python@v4
@@ -62,10 +64,7 @@ jobs:
 
       - name: Test
         run: |
-          if [[ "${{ runner.os }}" == "macOS" ]]
-          then
-            alias gcc='gcc-11'
-          fi
+          gcc --version
           pytest -n 32
 
 # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
