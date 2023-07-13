@@ -43,7 +43,6 @@ jobs:
           echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
           echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
-          alias gcc='gcc-11'
 
       - name: Update Python
         uses: actions/setup-python@v4
@@ -62,7 +61,12 @@ jobs:
           cmake --build build
 
       - name: Test
-        run: pytest -n 32
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]
+          then
+            alias gcc='gcc-11'
+          fi
+          pytest -n 32
 
 # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
   build-windows:
@@ -93,9 +97,7 @@ jobs:
         run: |
           mkdir build
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          ninja -C build llvm-tblgen
-          ninja -C build lli
-          ninja -C build llvm-cbe
+          cmake --build build
 
       - name: Test
         run: pytest -n 32
