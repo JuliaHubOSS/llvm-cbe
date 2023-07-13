@@ -45,10 +45,7 @@ jobs:
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
 
       - name: Install PyTest
-        run: |
-          printenv
-          pip install pytest pytest-xdist
-          echo '${{ env.PYTHONUSERBASE }}/bin/' >> $GITHUB_PATH
+        run: python -m pip install pytest pytest-xdist
 
       - name: Build
         run: |
@@ -75,15 +72,13 @@ jobs:
           path: ${{ github.workspace }}/llvm/projects/llvm-cbe
 
       - name: Install PyTest
-        run: |
-          pip install pytest pytest-xdist
-          echo '${{ env.PYTHONUSERBASE }}/bin/' >> $GITHUB_PATH
+        run: pip install pytest pytest-xdist
 
       - name: Build
         run: |
           mkdir build
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          ninja -C build llvm-tablegen
+          ninja -C build llvm-tblgen
           ninja -C build lli
           ninja -C build llvm-cbe
 
