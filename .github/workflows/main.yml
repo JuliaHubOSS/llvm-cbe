@@ -65,7 +65,7 @@ jobs:
       - name: Test
         run: |
           gcc --version
-          pytest -n 32
+          pytest -n 16
 
 # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
   build-windows:
@@ -95,8 +95,9 @@ jobs:
       - name: Build
         run: |
           mkdir build
-          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          cmake --build build
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
+          ninja -C build lli
+          ninja -C build llvm-cbe
 
       - name: Test
-        run: pytest -n 32
+        run: pytest -n 16
