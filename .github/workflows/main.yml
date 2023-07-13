@@ -38,7 +38,7 @@ jobs:
           sudo ./llvm.sh 16 all
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 160
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
-          sudo update-alternatives --install /usr/bin/lli clang /usr/bin/lli-16 160
+          sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-16 160
 
       - name: Setup LLVM (Windows)
         if: ${{ runner.os == 'Windows' }}
@@ -62,7 +62,7 @@ jobs:
       - name: Build
         run: |
           mkdir build
-          cmake -S . -B build
+          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On
           cmake --build build
 
       - name: Test
