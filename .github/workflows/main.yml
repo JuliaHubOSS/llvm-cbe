@@ -43,6 +43,7 @@ jobs:
           echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
           echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
+          alias gcc='gcc-11'
 
       - name: Update Python
         uses: actions/setup-python@v4
