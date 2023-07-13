@@ -19,7 +19,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: windows-latest
           - os: ubuntu-latest
           - os: macos-latest
     runs-on: ${{ matrix.os }}
@@ -47,6 +46,7 @@ jobs:
           Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.6/LLVM-16.0.6-win64.exe -OutFile ${{ runner.temp }}\LLVM.exe
           ${{ runner.temp }}\LLVM.exe /S /D=C:\LLVM
           $env:GITHUB_PATH='C:\LLVM;'+$env:GITHUB_PATH
+          echo "BUILD_VERSION=$version" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup LLVM (MacOS)
         if: ${{ runner.os == 'macOS' }}
