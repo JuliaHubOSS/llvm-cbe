@@ -46,7 +46,7 @@ jobs:
 
       - name: Install PyTest
         run: |
-          pip install pytest pytest-xdist --target=${{ runner.temp }}/pytest
+          pip install --target=${{ runner.temp }}/pytest pytest pytest-xdist
           echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
 
       - name: Build
@@ -75,13 +75,13 @@ jobs:
 
       - name: Install PyTest
         run: |
-          pip install pytest pytest-xdist --target=${{ runner.temp }}/pytest
+          pip install --target=${{ runner.temp }}\pytest pytest pytest-xdist
           echo "${{ runner.temp }}/pytest" >> $GITHUB_PATH
 
       - name: Build
         run: |
           mkdir build
-          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=RelWithDebInfo
           ninja -C build lli
           ninja -C build llvm-cbe
 
