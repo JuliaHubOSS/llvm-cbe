@@ -45,7 +45,11 @@ jobs:
           echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
 
       - name: Install PyTest
-        run: pip install pytest pytest-xdist
+        shell: pwsh
+        run: |
+          pip install pytest pytest-xdist
+          $pipPackagePath = (pip show pytest | Select-String 'Location: (.*)').Matches[0].Groups[1].Value
+          echo "$pipPackagePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build
         run: |
@@ -64,7 +68,7 @@ jobs:
         uses: actions/checkout@master
         with:
           name: llvm/llvm-project
-          ref: refs/heads/llvmorg-16.0.6
+          ref: llvmorg-16.0.6
 
       - name: Checkout
         uses: actions/checkout@v3
@@ -72,7 +76,10 @@ jobs:
           path: ${{ github.workspace }}/llvm/projects/llvm-cbe
 
       - name: Install PyTest
-        run: pip install pytest pytest-xdist
+        run: |
+          pip install pytest pytest-xdist
+          $pipPackagePath = (pip show pytest | Select-String 'Location: (.*)').Matches[0].Groups[1].Value
+          echo "$pipPackagePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build
         run: |
