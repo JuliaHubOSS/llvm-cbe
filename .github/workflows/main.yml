@@ -46,6 +46,7 @@ jobs:
 
       - name: Install PyTest
         run: |
+          printenv
           pip install pytest pytest-xdist
           echo '${{ env.PYTHONUSERBASE }}/bin/' >> $GITHUB_PATH
 
@@ -82,6 +83,7 @@ jobs:
         run: |
           mkdir build
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          ninja -C build llvm-tablegen
           ninja -C build lli
           ninja -C build llvm-cbe
 
