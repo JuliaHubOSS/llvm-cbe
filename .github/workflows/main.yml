@@ -122,8 +122,7 @@ jobs:
           # Delete the 'projects' directory to force llvm-cbe to be rebuilt.
           if (Test-Path '${{ github.workspace }}\build\projects') { del '${{ github.workspace }}\build\projects' -Recurse -Force }
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
-          ninja -C build lli
-          ninja -C build llvm-cbe
+          cmake --build build
 
       - name: Test
         shell: pwsh
