@@ -98,7 +98,7 @@ jobs:
           $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
           Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
-          Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=${{ parameters.buildArchitecture }} -host_arch=x64'
+          Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
           mkdir build
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
           ninja -C build lli
