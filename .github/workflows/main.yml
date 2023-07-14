@@ -118,7 +118,9 @@ jobs:
           Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
           Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
           cd ${{ github.workspace }}
-          if (!(Test-Path build)) { mkdir build }
+          if (!(Test-Path '${{ github.workspace }}\build\')) { mkdir '${{ github.workspace }}\build' }
+          # Delete the 'projects' directory to force llvm-cbe to be rebuilt.
+          if (Test-Path '${{ github.workspace }}\build\projects') { del '${{ github.workspace }}\build\projects' -Recurse -Force }
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
           ninja -C build lli
           ninja -C build llvm-cbe
