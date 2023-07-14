@@ -108,7 +108,7 @@ jobs:
           key: llvm-${{ env.LLVM_TAG }}-${{ env.ImageVersion }}-${{ github.ref }}
           # If we haven't cached a build for this branch yet, try the one from main.
           restore-keys: |
-            llvm-${{ env.LLVM_TAG }}-${{ env.ImageVersion }}-main
+            llvm-${{ env.LLVM_TAG }}-${{ env.ImageVersion }}-refs/heads/main
 
       - name: Build
         shell: pwsh
