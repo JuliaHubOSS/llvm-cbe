@@ -75,9 +75,8 @@ jobs:
       LLVM_TAG: llvmorg-16.0.6
     steps:
       - name: Capture runner image version
-        run: |
-          printenv
-          echo "ImageVersion=$ImageVersion" >> $GITHUB_ENV
+        shell: pwsh
+        run: Add-Content -Value "ImageVersion=$ImageVersion" -File $env:GITHUB_ENV
 
       - name: Checkout LLVM
         id: checkout-llvm
