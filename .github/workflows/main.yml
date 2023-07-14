@@ -76,7 +76,7 @@ jobs:
     steps:
       - name: Capture runner image version
         shell: pwsh
-        run: Add-Content -Value "ImageVersion=$ImageVersion" -Path $env:GITHUB_ENV
+        run: Add-Content -Value "ImageVersion=$env:ImageVersion" -Path $env:GITHUB_ENV
 
       - name: Checkout LLVM
         id: checkout-llvm
