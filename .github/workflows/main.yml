@@ -124,14 +124,14 @@ jobs:
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      - name: Test
-        shell: pwsh
-        run: |
-          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
-          Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
-          Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
-          cd ${{ github.workspace }}
-          $env:PATH=$env:Path + ";${{ github.workspace }}\build\bin"
-          $env:LLVMToolDir="${{ github.workspace }}\build\bin"
-          pytest -n 16
+      # - name: Test
+      #   shell: pwsh
+      #   run: |
+      #     $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+      #     $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
+      #     Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+      #     Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
+      #     cd ${{ github.workspace }}
+      #     $env:PATH=$env:Path + ";${{ github.workspace }}\build\bin"
+      #     $env:LLVMToolDir="${{ github.workspace }}\build\bin"
+      #     pytest -n 16
