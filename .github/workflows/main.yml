@@ -126,7 +126,7 @@ jobs:
           $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
           Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
           Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
-          cd ${{ github.workspace }}
-          $env:PATH=(Join-Path $visualStudioInstallationPath 'VC\Tools\Llvm\x64\bin') + ";" + $env:Path + ";${{ github.workspace }}\build\bin"
+          cd (Join-Path '${{ github.workspace }}' 'llvm\projects\llvm-cbe')
+          $env:PATH=$env:Path + ";${{ github.workspace }}\build\bin"
           $env:LLVMToolDir="${{ github.workspace }}\build\bin"
           pytest -n 16
