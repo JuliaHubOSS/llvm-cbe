@@ -72,7 +72,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     env:
-      LLVM_TAG: llvmorg-16.0.6
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Capture runner image version
         shell: pwsh
@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@master
         with:
           repository: llvm/llvm-project
-          ref: ${{ env.LLVM_TAG }}
+          ref: llvmorg-16.0.6
 
       - name: Checkout
         uses: actions/checkout@v3
@@ -100,15 +100,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-xdist
 
-      - name: Cache LLVM build
-        id: cache-llvm
-        uses: actions/cache@v3
-        with:
-          path: ${{ github.workspace }}\build
-          key: llvm-${{ env.LLVM_TAG }}-${{ env.ImageVersion }}-${{ github.ref }}
-          # If we haven't cached a build for this branch yet, try the one from main.
-          restore-keys: |
-            llvm-${{ env.LLVM_TAG }}-${{ env.ImageVersion }}-refs/heads/main
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Build
         shell: pwsh
@@ -121,8 +114,12 @@ jobs:
           if (!(Test-Path '${{ github.workspace }}\build\')) { mkdir '${{ github.workspace }}\build' }
           # Delete the 'projects' directory to force llvm-cbe to be rebuilt.
           if (Test-Path '${{ github.workspace }}\build\projects') { del '${{ github.workspace }}\build\projects' -Recurse -Force }
-          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build build
+
+      - name: Cache stats
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Test
         shell: pwsh
