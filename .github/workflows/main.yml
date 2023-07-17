@@ -100,8 +100,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-xdist
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.3
+      # - name: Run sccache-cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Build
         shell: pwsh
@@ -112,12 +112,13 @@ jobs:
           Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
           cd ${{ github.workspace }}
           if (!(Test-Path '${{ github.workspace }}\build\')) { mkdir '${{ github.workspace }}\build' }
-          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          # cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      - name: Cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
+      # - name: Cache stats
+      #   shell: bash
+      #   run: ${SCCACHE_PATH} --show-stats
 
       - name: Test
         shell: pwsh
