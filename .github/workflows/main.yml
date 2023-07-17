@@ -112,8 +112,6 @@ jobs:
           Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
           cd ${{ github.workspace }}
           if (!(Test-Path '${{ github.workspace }}\build\')) { mkdir '${{ github.workspace }}\build' }
-          # Delete the 'projects' directory to force llvm-cbe to be rebuilt.
-          if (Test-Path '${{ github.workspace }}\build\projects') { del '${{ github.workspace }}\build\projects' -Recurse -Force }
           cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build build
 
