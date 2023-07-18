@@ -28,8 +28,6 @@
 #include "llvm/Support/TargetRegistry.h"
 #endif
 
-#include "TopologicalSorter.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -203,12 +201,11 @@ Type *CWriter::skipEmptyArrayTypes(Type *Ty) const {
   return Ty;
 }
 
-#if LLVM_VERSION_MAJOR >= 16
-/// isAddressExposed - Return the internal type if the specified value's name
-/// needs to have its address taken in order to get a C value of the correct
-/// type. This happens for global variables, byval parameters, and direct
-/// allocas.
-std::optional<Type *> CWriter::isAddressExposed(Value *V) const {
+/// tryGetTypeOfAddressExposedValue - Return the internal type if the specified
+/// value's name needs to have its address taken in order to get a C value of
+/// the correct type. This happens for global variables, byval parameters, and
+/// direct allocas.
+std::optional<Type *> CWriter::tryGetTypeOfAddressExposedValue(Value *V) const {
   if (Argument *A = dyn_cast<Argument>(V)) {
     if (A->hasByValAttr()) {
       return std::optional(A->getParamByValType());
@@ -223,18 +220,6 @@ std::optional<Type *> CWriter::isAddressExposed(Value *V) const {
     return std::nullopt;
   }
 }
-#else
-/// isAddressExposed - Return true if the specified value's name needs to
-/// have its address taken in order to get a C value of the correct type.
-/// This happens for global variables, byval parameters, and direct allocas.
-bool CWriter::isAddressExposed(Value *V) const {
-  if (Argument *A = dyn_cast<Argument>(V))
-    return A->hasByValAttr();
-  else
-    return isa<GlobalVariable>(V) || isDirectAlloca(V);
-}
-
-#endif
 
 // isInlinableInst - Attempt to inline instructions into their uses to build
 // trees as much as possible.  To do this, we have to consistently decide
@@ -341,13 +326,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   }
 
   if (Ty->isPointerTy()) {
-    Out << "p";
-#if LLVM_VERSION_MAJOR >= 16
-    // TODO: nonopaque
-    return Out;
-#else
-    return printTypeString(Out, Ty->getPointerElementType(), isSigned);
-#endif
+    return Out << "ptr";
   }
 
   switch (Ty->getTypeID()) {
@@ -653,13 +632,7 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
   }
 
   case Type::PointerTyID: {
-#if LLVM_VERSION_MAJOR >= 16
     return Out << "void*";
-#else
-    Type *ElTy = Ty->getPointerElementType();
-    ElTy = skipEmptyArrayTypes(ElTy);
-    return printTypeName(Out, ElTy, false) << '*';
-#endif
   }
 
   case Type::ArrayTyID: {
@@ -843,13 +816,7 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
     if (CType.equals("int") && !T->isIntegerTy())
       return false;
 
-    if (CType.equals("char **") &&
-#if LLVM_VERSION_MAJOR >= 16
-      !T->isPointerTy())
-#else
-      !T->isPointerTy() || !T->getPointerElementType()->isPointerTy() ||
-         !T->getPointerElementType()->getPointerElementType()->isIntegerTy(8))
-#endif
+    if (CType.equals("char **") && !T->isPointerTy())
       return false;
   }
 
@@ -890,11 +857,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionInfoVariant FIV, const std
       RetTy = GetReturnType(FIV);
     else {
       // If this is a struct-return function, print the struct-return type.
-#if LLVM_VERSION_MAJOR >= 16
       RetTy = GetParamStructRetType(FIV);
-#else
-      RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
-#endif
     }
     printTypeName(
         Out, RetTy,
@@ -1199,8 +1162,6 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
   case Instruction::FPExt:
   case Instruction::FPTrunc: // For these the DstTy sign doesn't matter
     Out << '(';
-    if (DstTy->isOpaquePointerTy())
-      llvm_unreachable("Should never cast to an opaque pointer");
     printTypeName(Out, DstTy);
     Out << ')';
     break;
@@ -1707,13 +1668,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 
   case Type::PointerTyID:
     if (isa<ConstantPointerNull>(CPV)) {
-      Out << "((";
-#if LLVM_VERSION_MAJOR >= 16
-      Out << "void*";
-#else
-      printTypeName(Out, CPV->getType()); // sign doesn't matter
-#endif
-      Out << ")/*NULL*/0)";
+      Out << "((void*)/*NULL*/0)";
       break;
     } else if (GlobalValue *GV = dyn_cast<GlobalValue>(CPV)) {
       writeOperand(GV);
@@ -1903,8 +1858,7 @@ void CWriter::writeOperandInternal(Value *Operand,
 }
 
 void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
-#if LLVM_VERSION_MAJOR >= 16
-  std::optional<Type *> InnerType = isAddressExposed(Operand);
+  std::optional<Type *> InnerType = tryGetTypeOfAddressExposedValue(Operand);
   bool isAddressImplicit = InnerType.has_value();
   // Global variables are referenced as their addresses by llvm
   if (isAddressImplicit) {
@@ -1916,19 +1870,6 @@ void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
     else
       Out << "((void*)&";
   }
-#else
-    bool isAddressImplicit = isAddressExposed(Operand);
-    // Global variables are referenced as their addresses by llvm
-    if (isAddressImplicit) {
-      // We can't directly declare a zero-sized variable in C, so
-      // printTypeNameForAddressableValue uses a single-byte type instead.
-      // We fix up the pointer type here.
-    if (!isEmptyType(Operand->getType()->getPointerElementType()))
-      Out << "(&";
-    else
-      Out << "((void*)&";
-  }
-#endif
 
   writeOperandInternal(Operand, Context);
 
@@ -1940,7 +1881,7 @@ void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
 /// operand with '*'.  This is equivalent to printing '*' then using
 /// writeOperand, but avoids excess syntax in some cases.
 void CWriter::writeOperandDeref(Value *Operand) {
-  if (isAddressExposed(Operand)) {
+  if (tryGetTypeOfAddressExposedValue(Operand)) {
     // Already something with an address exposed.
     writeOperandInternal(Operand);
   } else {
@@ -2552,6 +2493,7 @@ bool CWriter::doFinalization(Module &M) {
   FPConstantMap.clear();
   AnonValueNumbers.clear();
   UnnamedStructIDs.clear();
+  UnnamedFunctionIDs.clear();
   TypedefDeclTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
@@ -2633,11 +2575,7 @@ void CWriter::generateHeader(Module &M) {
     // Ignore special globals, such as debug info.
     if (getGlobalVariableClass(&*I))
       continue;
-#if LLVM_VERSION_MAJOR >= 16
     printTypeName(NullOut, I->getValueType(), false);
-#else
-    printTypeName(NullOut, I->getType()->getElementType(), false);
-#endif
   }
   printModuleTypes(Out);
 
@@ -2667,11 +2605,7 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-#if LLVM_VERSION_MAJOR >= 16
       Type *ElTy = I->getValueType();
-#else
-      Type *ElTy = I->getType()->getElementType();
-#endif
       unsigned Alignment = I->getAlignment();
       bool IsOveraligned =
 #if LLVM_VERSION_MAJOR >= 16
@@ -2811,13 +2745,8 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Alias Declarations */\n";
     for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end(); I != E;
          ++I) {
-#if LLVM_VERSION_MAJOR >= 16
       cwriter_assert(!I->isDeclaration() &&
                      !isEmptyType(I->getValueType()));
-#else
-      cwriter_assert(!I->isDeclaration() &&
-                     !isEmptyType(I->getType()->getPointerElementType()));
-#endif
       if (I->hasLocalLinkage())
         continue; // Internal Global
 
@@ -2830,17 +2759,10 @@ void CWriter::generateHeader(Module &M) {
       if (I->isThreadLocal())
         Out << "__thread ";
 
-#if LLVM_VERSION_MAJOR >= 16
       Type *ElTy = I->getValueType();
       unsigned Alignment = I->getAliaseeObject()->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
-#else
-      Type *ElTy = I->getType()->getElementType();
-      unsigned Alignment = I->getBaseObject()->getAlignment();
-      bool IsOveraligned =
-          Alignment && Alignment > TD->getABITypeAlignment(ElTy);
-#endif
       if (IsOveraligned) {
         headerUseAligns();
         Out << "__PREFIXALIGN__(" << Alignment << ") ";
@@ -3587,15 +3509,9 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
   if (I->isThreadLocal())
     Out << "__thread ";
 
-#if LLVM_VERSION_MAJOR >= 16
   Type *ElTy = I->getValueType();
   unsigned Alignment = I->getAlignment();
   bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
-#else
-  Type *ElTy = I->getType()->getElementType();
-  unsigned Alignment = I->getAlignment();
-  bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(ElTy);
-#endif
   if (IsOveraligned) {
     headerUseAligns();
     Out << "__PREFIXALIGN__(" << Alignment << ") ";
@@ -3758,66 +3674,11 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
 
   Out << "\n/* Function definitions */\n";
 
-  struct FunctionDefinition {
-    FunctionType *FT;
-    std::vector<FunctionType *> Dependencies;
-    std::string NameToPrint;
-  };
-
-  std::vector<FunctionDefinition> FunctionTypeDefinitions;
-  // Copy Function Types into indexable container
+  // Print types used as function pointers.
   for (auto &I : UnnamedFunctionIDs) {
     FunctionInfoVariant FIV = I.first;
-    std::vector<FunctionType *> FDeps;
-#if LLVM_VERSION_MAJOR < 16
-    for (const auto P : F.first->params()) {
-      // Handle arbitrarily deep pointer indirection
-      Type *PP = P;
-      while (PP->isPointerTy())
-        PP = PP->getPointerElementType();
-      if (auto *PPF = dyn_cast<FunctionType>(PP))
-        FDeps.push_back(PPF);
-    }
-#endif
-    std::string DeclString;
-    raw_string_ostream TmpOut(DeclString);
-    printFunctionDeclaration(TmpOut, FIV, getFunctionName(FIV));
-    TmpOut.flush();
-    FunctionTypeDefinitions.emplace_back(
-        FunctionDefinition{GetFunctionType(FIV), FDeps, DeclString});
+    printFunctionDeclaration(Out, FIV, getFunctionName(FIV));
   }
-
-  // Sort function types
-  TopologicalSorter Sorter(FunctionTypeDefinitions.size());
-  DenseMap<FunctionType *, int> TopologicalSortMap;
-  // Add Vertices
-  for (unsigned I = 0; I < FunctionTypeDefinitions.size(); I++) {
-    TopologicalSortMap[FunctionTypeDefinitions[I].FT] = I;
-  }
-  // Add Edges
-  for (unsigned I = 0; I < FunctionTypeDefinitions.size(); I++) {
-    const auto &Dependencies = FunctionTypeDefinitions[I].Dependencies;
-    for (unsigned J = 0; J < Dependencies.size(); J++) {
-      Sorter.addEdge(I, TopologicalSortMap[Dependencies[J]]);
-    }
-  }
-#if LLVM_VERSION_MAJOR >= 16
-  std::optional<std::vector<int>> TopologicalSortResult = Sorter.sort();
-  if (!TopologicalSortResult.has_value()) {
-    errorWithMessage("Cyclic dependencies in function definitions");
-  }
-  for (const auto I : TopologicalSortResult.value()) {
-    Out << FunctionTypeDefinitions[I].NameToPrint << "\n";
-  }
-#else
-  Optional<std::vector<int>> TopologicalSortResult = Sorter.sort();
-  if (!TopologicalSortResult.hasValue()) {
-    errorWithMessage("Cyclic dependencies in function definitions");
-  }
-  for (const auto I : TopologicalSortResult.getValue()) {
-    Out << FunctionTypeDefinitions[I].NameToPrint << "\n";
-  }
-#endif
 
   // We may have collected some intrinsic prototypes to emit.
   // Emit them now, before the function that uses them is emitted
@@ -5095,13 +4956,6 @@ void CWriter::visitCallInst(CallInst &I) {
 
   Value *Callee = I.getCalledOperand();
 
-#if LLVM_VERSION_MAJOR >= 16
-  FunctionType *FTy = I.getFunctionType();
-#else
-  PointerType *PTy = cast<PointerType>(Callee->getType());
-  FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
-#endif
-
   // If this is a call to a struct-return function, assign to the first
   // parameter instead of passing it to the call.
   const AttributeList &PAL = I.getAttributes();
@@ -5138,14 +4992,9 @@ void CWriter::visitCallInst(CallInst &I) {
 
   if (NeedsCast) {
     // Ok, just cast the pointer type.
-    Out << "((";
-#if LLVM_VERSION_MAJOR >= 16
-    Out << getFunctionName(&I);
-#else
-    printTypeName(Out, I.getCalledOperand()->getType()->getPointerElementType(),
-                  false, std::make_pair(PAL, I.getCallingConv()));
-#endif
-    Out << "*)(void*)";
+    Out << "(("
+      << getFunctionName(&I)
+      << "*)(void*)";
   }
   writeOperand(Callee, ContextCasted);
   if (NeedsCast)
@@ -5154,6 +5003,7 @@ void CWriter::visitCallInst(CallInst &I) {
   Out << '(';
 
   bool PrintedArg = false;
+  FunctionType *FTy = I.getFunctionType();
   if (FTy->isVarArg() && !FTy->getNumParams()) {
     Out << "0 /*dummy arg*/";
     PrintedArg = true;
@@ -5634,12 +5484,6 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     return;
   }
 
-  // If the operand is a cast to a pointer, then ignore it.
-  CastInst *CI = dyn_cast<CastInst>(Ptr);
-  if ((CI != nullptr) && CI->getType()->isPointerTy()) {
-    Ptr = CI->getOperand(0);
-  }
-
   Out << "(&";
 
   // The first index of a GEP is special. It does pointer arithmetic without
@@ -5660,7 +5504,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     Out << ']';
   } else {
     // When the first index is 0 (very common) we can simplify it.
-    if (isAddressExposed(Ptr)) {
+    if (tryGetTypeOfAddressExposedValue(Ptr)) {
       // Print P rather than (&P)[0]
       writeOperandInternal(Ptr);
     } else if (I != E && I.isStruct()) {
@@ -5743,7 +5587,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
 void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
                                 bool IsVolatile, unsigned Alignment /*bytes*/) {
-  auto ActualType = isAddressExposed(Operand);
+  auto ActualType = tryGetTypeOfAddressExposedValue(Operand);
   if (ActualType.has_value() && !IsVolatile) {
     if (ActualType.value() != OperandType) {
       Out << "*((";

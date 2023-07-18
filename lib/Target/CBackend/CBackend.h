@@ -37,10 +37,8 @@
 #include "llvm/Transforms/Scalar.h"
 
 #include <set>
-#if LLVM_VERSION_MAJOR >= 16
 #include <optional>
 #include <variant>
-#endif
 
 #include "IDMap.h"
 
@@ -273,11 +271,7 @@ private:
 
   bool isEmptyType(Type *Ty) const;
   Type *skipEmptyArrayTypes(Type *Ty) const;
-  #if LLVM_VERSION_MAJOR >= 16
-  std::optional<Type *> isAddressExposed(Value *V) const;
-  #else
-  bool isAddressExposed(Value *V) const;
-  #endif
+  std::optional<Type *> tryGetTypeOfAddressExposedValue(Value *V) const;
   bool isInlinableInst(Instruction &I) const;
   AllocaInst *isDirectAlloca(Value *V) const;
   bool isInlineAsm(Instruction &I) const;
