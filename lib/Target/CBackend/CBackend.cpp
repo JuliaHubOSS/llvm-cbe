@@ -32,7 +32,6 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
-#include <malloc.h>
 
 // Some ms header decided to define setjmp as _setjmp, undo this for this file
 // since we don't need it
@@ -40,6 +39,7 @@
 #undef setjmp
 #endif
 #ifdef _MSC_VER
+#include <malloc.h>
 #define alloca _alloca
 #endif
 
