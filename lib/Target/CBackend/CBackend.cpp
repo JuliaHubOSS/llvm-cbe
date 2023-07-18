@@ -5490,9 +5490,6 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
   // indexing into the element type.
   Value *FirstOp = I.getOperand();
   Type *IntoT = I.getIndexedType();
-  if (IntoT->isPointerTy()) {
-    llvm_unreachable("GetElementPtr indexing into a pointer");
-  }
   ++I;
   if (!isConstantNull(FirstOp)) {
     Out << "((";
