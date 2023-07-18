@@ -1,6 +1,7 @@
 name: Build and Test
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -96,7 +97,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-xdist
 
-      - name: Run sccache-cache
+      - name: Initialize LLVM build cache
         uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Build
