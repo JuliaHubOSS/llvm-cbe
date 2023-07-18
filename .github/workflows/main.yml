@@ -1,0 +1,124 @@
+name: Build and Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - "main"
+
+permissions:
+  contents: read
+
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup LLVM (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 16 all
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 160
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
+          sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-16 160
+
+      - name: Setup LLVM and GCC (MacOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          brew install llvm@16
+          echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
+          echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
+          cd /usr/local/bin
+          ln -s gcc-11 gcc
+
+      - name: Update Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install PyTest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-xdist
+
+      - name: Build
+        run: |
+          mkdir build
+          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On
+          cmake --build build
+
+      - name: Test
+        run: |
+          gcc --version
+          pytest -n 16
+
+  # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
+  build-windows:
+    runs-on: windows-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Checkout LLVM
+        id: checkout-llvm
+        uses: actions/checkout@master
+        with:
+          repository: llvm/llvm-project
+          ref: llvmorg-16.0.6
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          path: ${{ github.workspace }}/llvm/projects/llvm-cbe
+
+      - name: Update Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install PyTest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-xdist
+
+      - name: Initialize LLVM build cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
+          Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
+          cd ${{ github.workspace }}
+          if (!(Test-Path '${{ github.workspace }}\build\')) { mkdir '${{ github.workspace }}\build' }
+          cmake -S llvm -B build -G Ninja -DLLVM_INCLUDE_TESTS=On -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          cmake --build build
+
+      - name: Test
+        shell: pwsh
+        run: |
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $visualStudioInstallationPath = & $vsWhere -latest -property installationPath
+          Import-Module (Join-Path $visualStudioInstallationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $visualStudioInstallationPath -DevCmdArguments '-arch=x64 -host_arch=x64'
+          cd (Join-Path '${{ github.workspace }}' 'llvm\projects\llvm-cbe')
+          $env:PATH=$env:Path + ";${{ github.workspace }}\build\bin"
+          $env:LLVMToolDir="${{ github.workspace }}\build\bin"
+          pytest -n 16

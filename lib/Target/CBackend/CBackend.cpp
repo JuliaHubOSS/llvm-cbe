@@ -34,7 +34,6 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
-#include <malloc.h>
 
 // Jackson Korba 9/29/14
 #ifndef DEBUG_TYPE
@@ -48,6 +47,7 @@
 #undef setjmp
 #endif
 #ifdef _MSC_VER
+#include <malloc.h>
 #define alloca _alloca
 #endif
 // On LLVM 10 and later, include intrinsics files.
