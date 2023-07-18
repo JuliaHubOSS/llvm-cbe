@@ -75,6 +75,65 @@ static cl::opt<bool> DeclareLocalsLate(
              "Note that "
              "this is not legal in standard C prior to C99."));
 
+template <typename TReturn, typename... TArgs>
+TReturn VisitFunctionInfoVariant(TReturn(Function::*FunctionOverload)(TArgs...) const,
+  TReturn(CallInst::*CallInstOverload)(TArgs...) const, FunctionInfoVariant FIV, TArgs... Args) {
+  if (auto F = std::get_if<const Function *>(&FIV)) {
+      return (*F->*FunctionOverload)(Args...);
+  } else if (auto CI = std::get_if<const CallInst *>(&FIV)) {
+      return (*CI->*CallInstOverload)(Args...);
+  } else {
+    llvm_unreachable("Unexpected type in a FunctionInfoVariant");
+  }
+}
+
+auto TryAsFunction(FunctionInfoVariant FIV) {
+  auto F = std::get_if<const Function *>(&FIV);
+  return F == nullptr ? std::nullopt : std::optional(*F);
+}
+
+auto GetFunctionType(FunctionInfoVariant FIV) {
+  return VisitFunctionInfoVariant(
+    &Function::getFunctionType,
+    &CallInst::getFunctionType,
+    FIV);
+}
+
+auto GetAttributes(FunctionInfoVariant FIV) {
+  return VisitFunctionInfoVariant(
+    &Function::getAttributes,
+    &CallInst::getAttributes,
+    FIV);
+}
+
+auto GetReturnType(FunctionInfoVariant FIV) {
+  return VisitFunctionInfoVariant(
+    &Function::getReturnType,
+    &CallInst::getType,
+    FIV);
+}
+
+auto GetParamStructRetType(FunctionInfoVariant FIV) {
+  return VisitFunctionInfoVariant(
+    &Function::getParamStructRetType,
+    &CallInst::getParamStructRetType,
+    FIV, 0u);
+}
+
+auto GetParamByValType(FunctionInfoVariant FIV, unsigned ArgNo) {
+  return VisitFunctionInfoVariant(
+    &Function::getParamByValType,
+    &CallInst::getParamByValType,
+    FIV, ArgNo);
+}
+
+auto GetCallingConv(FunctionInfoVariant FIV) {
+  return VisitFunctionInfoVariant(
+    &Function::getCallingConv,
+    &CallInst::getCallingConv,
+    FIV);
+}
+
 extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
@@ -144,6 +203,27 @@ Type *CWriter::skipEmptyArrayTypes(Type *Ty) const {
   return Ty;
 }
 
+#if LLVM_VERSION_MAJOR >= 16
+/// isAddressExposed - Return the internal type if the specified value's name
+/// needs to have its address taken in order to get a C value of the correct
+/// type. This happens for global variables, byval parameters, and direct
+/// allocas.
+std::optional<Type *> CWriter::isAddressExposed(Value *V) const {
+  if (Argument *A = dyn_cast<Argument>(V)) {
+    if (A->hasByValAttr()) {
+      return std::optional(A->getParamByValType());
+    } else {
+      return std::nullopt;
+    }
+  } else if (GlobalValue *GV = dyn_cast<GlobalValue>(V)) {
+    return std::optional(GV->getValueType());
+  } else if (AllocaInst *AI = isDirectAlloca(V)) {
+    return std::optional(AI->getAllocatedType());
+  } else {
+    return std::nullopt;
+  }
+}
+#else
 /// isAddressExposed - Return true if the specified value's name needs to
 /// have its address taken in order to get a C value of the correct type.
 /// This happens for global variables, byval parameters, and direct allocas.
@@ -153,6 +233,8 @@ bool CWriter::isAddressExposed(Value *V) const {
   else
     return isa<GlobalVariable>(V) || isDirectAlloca(V);
 }
+
+#endif
 
 // isInlinableInst - Attempt to inline instructions into their uses to build
 // trees as much as possible.  To do this, we have to consistently decide
@@ -261,7 +343,8 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   if (Ty->isPointerTy()) {
     Out << "p";
 #if LLVM_VERSION_MAJOR >= 16
-    return printTypeString(Out, Ty->getNonOpaquePointerElementType(), isSigned);
+    // TODO: nonopaque
+    return Out;
 #else
     return printTypeString(Out, Ty->getPointerElementType(), isSigned);
 #endif
@@ -293,7 +376,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
     return Out << (isSigned ? "i32y2" : "u32y2");
 
   case Type::FunctionTyID:
-    return Out << getFunctionName(cast<FunctionType>(Ty));
+    llvm_unreachable("printTypeString should never be called with a function type");
 
 #if LLVM_VERSION_MAJOR > 10
   case Type::FixedVectorTyID:
@@ -337,9 +420,8 @@ std::string CWriter::getStructName(StructType *ST) {
 }
 
 std::string
-CWriter::getFunctionName(FunctionType *FT,
-                         std::pair<AttributeList, CallingConv::ID> PAL) {
-  unsigned id = UnnamedFunctionIDs.getOrInsert(std::make_pair(FT, PAL));
+CWriter::getFunctionName(FunctionInfoVariant FIV) {
+  unsigned id = UnnamedFunctionIDs.getOrInsert(FIV);
   return "l_fptr_" + utostr(id);
 }
 
@@ -563,8 +645,7 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
 
   switch (Ty->getTypeID()) {
   case Type::FunctionTyID: {
-    FunctionType *FTy = cast<FunctionType>(Ty);
-    return Out << getFunctionName(FTy, PAL);
+    llvm_unreachable("printTypeName should never be called with a function type");
   }
   case Type::StructTyID: {
     TypedefDeclTypes.insert(Ty);
@@ -573,12 +654,12 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
 
   case Type::PointerTyID: {
 #if LLVM_VERSION_MAJOR >= 16
-    Type *ElTy = Ty->getNonOpaquePointerElementType();
+    return Out << "void*";
 #else
     Type *ElTy = Ty->getPointerElementType();
-#endif
     ElTy = skipEmptyArrayTypes(ElTy);
     return printTypeName(Out, ElTy, false) << '*';
+#endif
   }
 
   case Type::ArrayTyID: {
@@ -718,11 +799,9 @@ raw_ostream &CWriter::printFunctionAttributes(raw_ostream &Out,
   return Out;
 }
 
-raw_ostream &CWriter::printFunctionDeclaration(
-    raw_ostream &Out, FunctionType *Ty,
-    std::pair<AttributeList, CallingConv::ID> PAL) {
+raw_ostream &CWriter::printFunctionDeclaration(raw_ostream &Out, FunctionInfoVariant FIV, const std::string_view Name) {
   Out << "typedef ";
-  printFunctionProto(Out, Ty, PAL, getFunctionName(Ty, PAL), nullptr);
+  printFunctionProto(Out, FIV, Name);
   return Out << ";\n";
 }
 
@@ -766,11 +845,10 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
 
     if (CType.equals("char **") &&
 #if LLVM_VERSION_MAJOR >= 16
-        (!T->isPointerTy() || !T->getNonOpaquePointerElementType()->isPointerTy() ||
-         !T->getNonOpaquePointerElementType()->getNonOpaquePointerElementType()->isIntegerTy(8)))
+      !T->isPointerTy())
 #else
-        (!T->isPointerTy() || !T->getPointerElementType()->isPointerTy() ||
-         !T->getPointerElementType()->getPointerElementType()->isIntegerTy(8)))
+      !T->isPointerTy() || !T->getPointerElementType()->isPointerTy() ||
+         !T->getPointerElementType()->getPointerElementType()->isIntegerTy(8))
 #endif
       return false;
   }
@@ -779,13 +857,11 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
 }
 
 raw_ostream &
-CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
-                            std::pair<AttributeList, CallingConv::ID> Attrs,
-                            const std::string &Name,
-                            iterator_range<Function::arg_iterator> *ArgList) {
+CWriter::printFunctionProto(raw_ostream &Out, FunctionInfoVariant FIV, const std::string_view Name) {
+  FunctionType *FTy = GetFunctionType(FIV);
   bool shouldFixMain = (Name == "main" && isStandardMain(FTy));
 
-  AttributeList &PAL = Attrs.first;
+  AttributeList PAL = GetAttributes(FIV);
 
 #if LLVM_VERSION_MAJOR >= 16
   if (PAL.hasAttributeAtIndex(AttributeList::FunctionIndex, Attribute::NoReturn)) {
@@ -811,11 +887,11 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     // Get the return type for the function.
     Type *RetTy;
     if (!isStructReturn)
-      RetTy = FTy->getReturnType();
+      RetTy = GetReturnType(FIV);
     else {
       // If this is a struct-return function, print the struct-return type.
 #if LLVM_VERSION_MAJOR >= 16
-      RetTy = cast<PointerType>(FTy->getParamType(0))->getNonOpaquePointerElementType();
+      RetTy = GetParamStructRetType(FIV);
 #else
       RetTy = cast<PointerType>(FTy->getParamType(0))->getElementType();
 #endif
@@ -830,7 +906,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 #endif
   }
 
-  switch (Attrs.second) {
+  switch (GetCallingConv(FIV)) {
   case CallingConv::C:
     break;
   // Consider the LLVM fast calling convention as the same as the C calling
@@ -847,31 +923,33 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     Out << " __thiscall";
     break;
   default:
-    DBG_ERRS("Unhandled calling convention " << Attrs.second);
+    DBG_ERRS("Unhandled calling convention " << GetCallingConv(FIV));
     errorWithMessage("Encountered Unhandled Calling Convention");
     break;
   }
   Out << ' ' << Name << '(';
 
   unsigned Idx = 1;
+  unsigned ParameterIndex = 0;
   bool PrintedArg = false;
-  FunctionType::param_iterator I = FTy->param_begin(), E = FTy->param_end();
-  Function::arg_iterator ArgName =
-      ArgList ? ArgList->begin() : Function::arg_iterator();
+  std::optional<Function::const_arg_iterator> ArgName{};
+  if (auto F = TryAsFunction(FIV)) {
+    ArgName = F.value()->args().begin();
+  }
 
   // If this is a struct-return function, don't print the hidden
   // struct-return argument.
   if (isStructReturn) {
     cwriter_assert(!shouldFixMain);
-    cwriter_assert(I != E && "Invalid struct return function!");
-    ++I;
+    cwriter_assert(ParameterIndex != FTy->getNumParams() && "Invalid struct return function!");
+    ++ParameterIndex;
     ++Idx;
-    if (ArgList)
-      ++ArgName;
+    if (ArgName)
+      ++ArgName.value();
   }
 
-  for (; I != E; ++I) {
-    Type *ArgTy = *I;
+  for (; ParameterIndex != FTy->getNumParams(); ++ParameterIndex) {
+    Type *ArgTy = FTy->getContainedType(Idx);
     if (ArgTy->isMetadataTy())
       continue;
 
@@ -883,7 +961,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
       cwriter_assert(!shouldFixMain);
       cwriter_assert(ArgTy->isPointerTy());
 #if LLVM_VERSION_MAJOR >= 16
-      ArgTy = cast<PointerType>(ArgTy)->getNonOpaquePointerElementType();
+      ArgTy = GetParamByValType(FIV, ParameterIndex);
 #else
       ArgTy = cast<PointerType>(ArgTy)->getElementType();
 #endif
@@ -901,13 +979,13 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
           /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
 #endif
     PrintedArg = true;
-    if (ArgList) {
+    if (ArgName) {
       Out << ' ';
       if (shouldFixMain)
         Out << MainArgs.begin()[Idx].second;
       else
-        Out << GetValueName(ArgName);
-      ++ArgName;
+        Out << GetValueName(ArgName.value());
+      ++ArgName.value();
     }
     ++Idx;
   }
@@ -916,7 +994,7 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     cwriter_assert(!shouldFixMain);
     if (!PrintedArg) {
       Out << "int"; // dummy argument for empty vaarg functs
-      if (ArgList)
+      if (ArgName)
         Out << " vararg_dummy_arg";
     }
     Out << ", ...";
@@ -1121,6 +1199,8 @@ void CWriter::printCast(unsigned opc, Type *SrcTy, Type *DstTy) {
   case Instruction::FPExt:
   case Instruction::FPTrunc: // For these the DstTy sign doesn't matter
     Out << '(';
+    if (DstTy->isOpaquePointerTy())
+      llvm_unreachable("Should never cast to an opaque pointer");
     printTypeName(Out, DstTy);
     Out << ')';
     break;
@@ -1628,7 +1708,11 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
   case Type::PointerTyID:
     if (isa<ConstantPointerNull>(CPV)) {
       Out << "((";
+#if LLVM_VERSION_MAJOR >= 16
+      Out << "void*";
+#else
       printTypeName(Out, CPV->getType()); // sign doesn't matter
+#endif
       Out << ")/*NULL*/0)";
       break;
     } else if (GlobalValue *GV = dyn_cast<GlobalValue>(CPV)) {
@@ -1727,10 +1811,10 @@ void CWriter::printConstantWithCast(Constant *CPV, unsigned Opcode) {
     printConstant(CPV, ContextCasted);
 }
 
-std::string CWriter::GetValueName(Value *Operand) {
+std::string CWriter::GetValueName(const Value *Operand) {
 
   // Resolve potential alias.
-  if (GlobalAlias *GA = dyn_cast<GlobalAlias>(Operand)) {
+  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(Operand)) {
     Operand = GA->getAliasee();
   }
 
@@ -1819,21 +1903,32 @@ void CWriter::writeOperandInternal(Value *Operand,
 }
 
 void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
-  bool isAddressImplicit = isAddressExposed(Operand);
+#if LLVM_VERSION_MAJOR >= 16
+  std::optional<Type *> InnerType = isAddressExposed(Operand);
+  bool isAddressImplicit = InnerType.has_value();
   // Global variables are referenced as their addresses by llvm
   if (isAddressImplicit) {
     // We can't directly declare a zero-sized variable in C, so
     // printTypeNameForAddressableValue uses a single-byte type instead.
     // We fix up the pointer type here.
-#if LLVM_VERSION_MAJOR >= 16
-    if (!isEmptyType(Operand->getType()->getNonOpaquePointerElementType()))
-#else
-    if (!isEmptyType(Operand->getType()->getPointerElementType()))
-#endif
+    if (!isEmptyType(*InnerType))
       Out << "(&";
     else
       Out << "((void*)&";
   }
+#else
+    bool isAddressImplicit = isAddressExposed(Operand);
+    // Global variables are referenced as their addresses by llvm
+    if (isAddressImplicit) {
+      // We can't directly declare a zero-sized variable in C, so
+      // printTypeNameForAddressableValue uses a single-byte type instead.
+      // We fix up the pointer type here.
+    if (!isEmptyType(Operand->getType()->getPointerElementType()))
+      Out << "(&";
+    else
+      Out << "((void*)&";
+  }
+#endif
 
   writeOperandInternal(Operand, Context);
 
@@ -2457,7 +2552,6 @@ bool CWriter::doFinalization(Module &M) {
   FPConstantMap.clear();
   AnonValueNumbers.clear();
   UnnamedStructIDs.clear();
-  UnnamedFunctionIDs.clear();
   TypedefDeclTypes.clear();
   SelectDeclTypes.clear();
   CmpDeclTypes.clear();
@@ -2540,7 +2634,7 @@ void CWriter::generateHeader(Module &M) {
     if (getGlobalVariableClass(&*I))
       continue;
 #if LLVM_VERSION_MAJOR >= 16
-    printTypeName(NullOut, I->getType()->getNonOpaquePointerElementType(), false);
+    printTypeName(NullOut, I->getValueType(), false);
 #else
     printTypeName(NullOut, I->getType()->getElementType(), false);
 #endif
@@ -2574,7 +2668,7 @@ void CWriter::generateHeader(Module &M) {
         Out << "__thread ";
 
 #if LLVM_VERSION_MAJOR >= 16
-      Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+      Type *ElTy = I->getValueType();
 #else
       Type *ElTy = I->getType()->getElementType();
 #endif
@@ -2678,7 +2772,7 @@ void CWriter::generateHeader(Module &M) {
       headerUseAttributeWeak();
       Out << "__MSVC_INLINE__ ";
     }
-    printFunctionProto(Out, &*I);
+    printFunctionProto(Out, &*I, GetValueName(&*I));
     printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
       headerUseAttributeWeak();
@@ -2719,7 +2813,7 @@ void CWriter::generateHeader(Module &M) {
          ++I) {
 #if LLVM_VERSION_MAJOR >= 16
       cwriter_assert(!I->isDeclaration() &&
-                     !isEmptyType(I->getType()->getNonOpaquePointerElementType()));
+                     !isEmptyType(I->getValueType()));
 #else
       cwriter_assert(!I->isDeclaration() &&
                      !isEmptyType(I->getType()->getPointerElementType()));
@@ -2737,7 +2831,7 @@ void CWriter::generateHeader(Module &M) {
         Out << "__thread ";
 
 #if LLVM_VERSION_MAJOR >= 16
-      Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+      Type *ElTy = I->getValueType();
       unsigned Alignment = I->getAliaseeObject()->getAlignment();
       bool IsOveraligned =
           Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
@@ -3494,7 +3588,7 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
     Out << "__thread ";
 
 #if LLVM_VERSION_MAJOR >= 16
-  Type *ElTy = I->getType()->getNonOpaquePointerElementType();
+  Type *ElTy = I->getValueType();
   unsigned Alignment = I->getAlignment();
   bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
 #else
@@ -3658,7 +3752,8 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
       forwardDeclareStructs(Out, *it, TypesPrinted);
     }
     for (const Function &F : *TheModule)
-      forwardDeclareStructs(Out, F.getFunctionType(), TypesPrinted);
+      for (auto I = F.getValueType()->subtype_begin(); I != F.getValueType()->subtype_end(); ++I)
+        forwardDeclareStructs(Out, *I, TypesPrinted);
   }
 
   Out << "\n/* Function definitions */\n";
@@ -3672,27 +3767,24 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   std::vector<FunctionDefinition> FunctionTypeDefinitions;
   // Copy Function Types into indexable container
   for (auto &I : UnnamedFunctionIDs) {
-    const auto &F = I.first;
-    FunctionType *FT = F.first;
+    FunctionInfoVariant FIV = I.first;
     std::vector<FunctionType *> FDeps;
+#if LLVM_VERSION_MAJOR < 16
     for (const auto P : F.first->params()) {
       // Handle arbitrarily deep pointer indirection
       Type *PP = P;
       while (PP->isPointerTy())
-#if LLVM_VERSION_MAJOR >= 16
-        PP = PP->getNonOpaquePointerElementType();
-#else
         PP = PP->getPointerElementType();
-#endif
       if (auto *PPF = dyn_cast<FunctionType>(PP))
         FDeps.push_back(PPF);
     }
+#endif
     std::string DeclString;
     raw_string_ostream TmpOut(DeclString);
-    printFunctionDeclaration(TmpOut, F.first, F.second);
+    printFunctionDeclaration(TmpOut, FIV, getFunctionName(FIV));
     TmpOut.flush();
     FunctionTypeDefinitions.emplace_back(
-        FunctionDefinition{FT, FDeps, DeclString});
+        FunctionDefinition{GetFunctionType(FIV), FDeps, DeclString});
   }
 
   // Sort function types
@@ -3731,7 +3823,7 @@ void CWriter::printModuleTypes(raw_ostream &Out) {
   // Emit them now, before the function that uses them is emitted
   for (auto &F : prototypesToGen) {
     Out << '\n';
-    printFunctionProto(Out, F);
+    printFunctionProto(Out, F, GetValueName(F));
     Out << ";\n";
   }
 
@@ -3761,9 +3853,7 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
   } else if (auto *AT = dyn_cast<ArrayType>(Ty)) {
     Out << getArrayName(AT) << ";\n";
   } else if (auto *FT = dyn_cast<FunctionType>(Ty)) {
-    // Ensure function types which are only directly used by struct types will
-    // get declared.
-    (void)getFunctionName(FT);
+    llvm_unreachable("forwardDeclareStructs should never be called with a function type");
   } else if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
     // Print vector type out.
     Out << getVectorName(VT) << ";\n";
@@ -3850,10 +3940,7 @@ void CWriter::printFunction(Function &F) {
     }
   }
 
-  iterator_range<Function::arg_iterator> args = F.args();
-  printFunctionProto(Out, FTy,
-                     std::make_pair(F.getAttributes(), F.getCallingConv()),
-                     Name, &args);
+  printFunctionProto(Out, &F, Name);
 
   Out << " {\n";
 
@@ -3861,6 +3948,7 @@ void CWriter::printFunction(Function &F) {
     // Cast the arguments to main() to the expected LLVM IR types and names.
     unsigned Idx = 1;
     FunctionType::param_iterator I = FTy->param_begin(), E = FTy->param_end();
+    iterator_range<Function::arg_iterator> args = F.args();
     Function::arg_iterator ArgName = args.begin();
 
     for (; I != E; ++I) {
@@ -3879,8 +3967,7 @@ void CWriter::printFunction(Function &F) {
   // If this is a struct return function, handle the result with magic.
   if (isStructReturn) {
 #if LLVM_VERSION_MAJOR >= 16
-    Type *StructTy =
-        cast<PointerType>(F.arg_begin()->getType())->getNonOpaquePointerElementType();
+    Type *StructTy = F.getParamStructRetType(0);
 #else
     Type *StructTy =
         cast<PointerType>(F.arg_begin()->getType())->getElementType();
@@ -3890,8 +3977,8 @@ void CWriter::printFunction(Function &F) {
         << " StructReturn;  /* Struct return temporary */\n";
 
     Out << "  ";
-    printTypeName(Out, F.arg_begin()->getType(), false);
-    Out << GetValueName(F.arg_begin()) << " = &StructReturn;\n";
+    printTypeName(Out, StructTy, false) << "* "
+      << GetValueName(F.arg_begin()) << " = &StructReturn;\n";
   }
 
   bool PrintedVar = false;
@@ -5008,17 +5095,16 @@ void CWriter::visitCallInst(CallInst &I) {
 
   Value *Callee = I.getCalledOperand();
 
-  PointerType *PTy = cast<PointerType>(Callee->getType());
 #if LLVM_VERSION_MAJOR >= 16
-  FunctionType *FTy = cast<FunctionType>(PTy->getNonOpaquePointerElementType());
+  FunctionType *FTy = I.getFunctionType();
 #else
+  PointerType *PTy = cast<PointerType>(Callee->getType());
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
 #endif
 
   // If this is a call to a struct-return function, assign to the first
   // parameter instead of passing it to the call.
   const AttributeList &PAL = I.getAttributes();
-  bool hasByVal = I.hasByValArgument();
   bool isStructRet = I.hasStructRetAttr();
   if (isStructRet) {
     writeOperandDeref(I.getArgOperand(0));
@@ -5028,11 +5114,9 @@ void CWriter::visitCallInst(CallInst &I) {
   if (I.isTailCall())
     Out << " /*tail*/ ";
 
-  // If this is an indirect call to a struct return function, we need to cast
-  // the pointer. Ditto for indirect calls with byval arguments.
-  bool NeedsCast =
-      (hasByVal || isStructRet || I.getCallingConv() != CallingConv::C) &&
-      !isa<Function>(Callee);
+  // If we are calling anything other than a function, then we need to cast
+  // since it will be an opaque pointer.
+  bool NeedsCast = !isa<Function>(Callee);
 
   // GCC is a real PITA.  It does not permit codegening casts of functions to
   // function pointers if they are in a call (it generates a trap instruction
@@ -5056,11 +5140,11 @@ void CWriter::visitCallInst(CallInst &I) {
     // Ok, just cast the pointer type.
     Out << "((";
 #if LLVM_VERSION_MAJOR >= 16
-    printTypeName(Out, I.getCalledOperand()->getType()->getNonOpaquePointerElementType(),
+    Out << getFunctionName(&I);
 #else
     printTypeName(Out, I.getCalledOperand()->getType()->getPointerElementType(),
-#endif
                   false, std::make_pair(PAL, I.getCallingConv()));
+#endif
     Out << "*)(void*)";
   }
   writeOperand(Callee, ContextCasted);
@@ -5550,41 +5634,28 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     return;
   }
 
-  // Find out if the last index is into a vector.  If so, we have to print this
-  // specially.  Since vectors can't have elements of indexable type, only the
-  // last index could possibly be of a vector element.
-  VectorType *LastIndexIsVector = 0;
-  {
-    for (gep_type_iterator TmpI = I; TmpI != E; ++TmpI)
-      LastIndexIsVector = dyn_cast<VectorType>(TmpI.getIndexedType());
+  // If the operand is a cast to a pointer, then ignore it.
+  CastInst *CI = dyn_cast<CastInst>(Ptr);
+  if ((CI != nullptr) && CI->getType()->isPointerTy()) {
+    Ptr = CI->getOperand(0);
   }
 
-  Out << "(";
-
-  // If the last index is into a vector, we can't print it as &a[i][j] because
-  // we can't index into a vector with j in GCC.  Instead, emit this as
-  // (((float*)&a[i])+j)
-  // TODO: this is no longer true now that we don't represent vectors using
-  // gcc-extentions
-  if (LastIndexIsVector) {
-    Out << "((";
-    printTypeName(Out,
-                  PointerType::getUnqual(LastIndexIsVector->getElementType()));
-    Out << ")(";
-  }
-
-  Out << '&';
-
-  Type *IntoT = I.getIndexedType();
+  Out << "(&";
 
   // The first index of a GEP is special. It does pointer arithmetic without
   // indexing into the element type.
   Value *FirstOp = I.getOperand();
-  IntoT = I.getIndexedType();
+  Type *IntoT = I.getIndexedType();
+  if (IntoT->isPointerTy()) {
+    llvm_unreachable("GetElementPtr indexing into a pointer");
+  }
   ++I;
   if (!isConstantNull(FirstOp)) {
+    Out << "((";
+    printTypeName(Out, IntoT);
+    Out << "*)";
     writeOperand(Ptr);
-    Out << '[';
+    Out << ")[";
     writeOperandWithCast(FirstOp, Instruction::GetElementPtr);
     Out << ']';
   } else {
@@ -5594,16 +5665,30 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
       writeOperandInternal(Ptr);
     } else if (I != E && I.isStruct()) {
       // If the second index is a struct index, print P->f instead of P[0].f
+      Out << "((";
+      printTypeName(Out, I.getStructType());
+      Out << "*)";
       writeOperand(Ptr);
-      Out << "->field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
+      Out << ")->field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
       // Eat the struct index
-      IntoT = I.getIndexedType();
       ++I;
     } else {
       // Print (*P)[1] instead of P[0][1] (more idiomatic)
-      Out << "(*";
+      Out << "(*((";
+      if (isEmptyType(IntoT)) {
+        if (VectorType *VT = dyn_cast<VectorType>(IntoT)) {
+          printTypeName(Out, VT->getElementType());
+        } else if (ArrayType *AT = dyn_cast<ArrayType>(IntoT)) {
+          printTypeName(Out, AT->getElementType());
+        } else {
+          llvm_unreachable("Unknown empty type");
+        }
+      } else {
+        printTypeName(Out, IntoT);
+      }
+      Out << "*)";
       writeOperand(Ptr);
-      Out << ")";
+      Out << "))";
     }
   }
 
@@ -5641,8 +5726,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
       writeOperandWithCast(Opnd, Instruction::GetElementPtr);
       Out << ']';
     } else {
-      // If the last index is into a vector, then print it out as "+j)".  This
-      // works with the 'LastIndexIsVector' code above.
+      // If the last index is into a vector, then print it out as "+j)".
       if (!isConstantNull(Opnd)) {
         Out << "))"; // avoid "+0".
       } else {
@@ -5659,8 +5743,17 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
 
 void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
                                 bool IsVolatile, unsigned Alignment /*bytes*/) {
-  if (isAddressExposed(Operand) && !IsVolatile) {
+  auto ActualType = isAddressExposed(Operand);
+  if (ActualType.has_value() && !IsVolatile) {
+    if (ActualType.value() != OperandType) {
+      Out << "*((";
+      printTypeName(Out, OperandType, false);
+      Out << "*)&";
+    }
     writeOperandInternal(Operand);
+    if (ActualType.value() != OperandType) {
+      Out << ")";
+    }
     return;
   }
 
@@ -5672,20 +5765,20 @@ void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
       Alignment && Alignment < TD->getABITypeAlignment(OperandType);
 #endif
 
-  if (!IsUnaligned) {
-    Out << '*';
-    if (IsVolatile) {
-      Out << "(volatile ";
-      printTypeName(Out, OperandType, false);
-      Out << "*)";
-    }
-  } else if (IsUnaligned) {
+  if (IsUnaligned) {
     headerUseUnalignedLoad();
     Out << "__UNALIGNED_LOAD__(";
     printTypeName(Out, OperandType, false);
     if (IsVolatile)
       Out << " volatile";
     Out << ", " << Alignment << ", ";
+  } else {
+    Out << "*(";
+    if (IsVolatile) {
+      Out << "volatile ";
+    }
+    printTypeName(Out, OperandType, false);
+    Out << "*)";
   }
 
   writeOperand(Operand);
