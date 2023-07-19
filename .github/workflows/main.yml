@@ -58,6 +58,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-xdist
 
+      - name: Check formatting
+        if: ${{ runner.os == 'Linux' }}
+        run: find . -iname '*.h' -o -iname '*.cpp' | xargs clang-format -Werror --dry-run --style=LLVM --verbose
+
       - name: Build
         run: |
           mkdir build
@@ -68,10 +72,6 @@ jobs:
         run: |
           gcc --version
           pytest -n 16
-
-      - name: Check formatting
-        if: ${{ runner.os == 'Linux' }}
-        run: find . -iname '*.h' -o -iname '*.cpp' | xargs clang-format -Werror --dry-run --style=LLVM --verbose
 
   # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
   build-windows:
