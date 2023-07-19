@@ -27,6 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Check formatting
+        run: find . -iname '*.h' -o -iname '*.cpp' | xargs clang-format -Werror --dry-run --format=LLVM --verbose
+
       - name: Setup LLVM (Linux)
         if: ${{ runner.os == 'Linux' }}
         run: |
