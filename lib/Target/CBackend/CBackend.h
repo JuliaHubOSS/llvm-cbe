@@ -36,8 +36,8 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Transforms/Scalar.h"
 
-#include <set>
 #include <optional>
+#include <set>
 #include <variant>
 
 #include "IDMap.h"
@@ -193,10 +193,12 @@ private:
   raw_ostream &printFunctionAttributes(raw_ostream &Out, AttributeList Attrs);
 
   bool isStandardMain(const FunctionType *FTy);
-  raw_ostream &printFunctionProto(raw_ostream &Out, FunctionInfoVariant FIV, const std::string_view Name);
+  raw_ostream &printFunctionProto(raw_ostream &Out, FunctionInfoVariant FIV,
+                                  const std::string_view Name);
 
-  raw_ostream &
-  printFunctionDeclaration(raw_ostream &Out, FunctionInfoVariant FIV, const std::string_view Name);
+  raw_ostream &printFunctionDeclaration(raw_ostream &Out,
+                                        FunctionInfoVariant FIV,
+                                        const std::string_view Name);
   raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
   raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
   raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
@@ -327,7 +329,8 @@ private:
 #else
   LLVM_ATTRIBUTE_NORETURN
 #endif
-  void errorWithMessage(const char *message);
+  void
+  errorWithMessage(const char *message);
 
   bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
   bool canDeclareLocalLate(Instruction &I);
