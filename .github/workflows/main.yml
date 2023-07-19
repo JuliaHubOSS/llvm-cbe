@@ -27,9 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Check formatting
-        run: find . -iname '*.h' -o -iname '*.cpp' | xargs clang-format -Werror --dry-run --style=LLVM --verbose
-
       - name: Setup LLVM (Linux)
         if: ${{ runner.os == 'Linux' }}
         run: |
@@ -39,6 +36,7 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 160
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
           sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-16 160
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 160
 
       - name: Setup LLVM and GCC (MacOS)
         if: ${{ runner.os == 'macOS' }}
@@ -70,6 +68,10 @@ jobs:
         run: |
           gcc --version
           pytest -n 16
+
+      - name: Check formatting
+        if: ${{ runner.os == 'Linux' }}
+        run: find . -iname '*.h' -o -iname '*.cpp' | xargs clang-format -Werror --dry-run --style=LLVM --verbose
 
   # The llvm-dev package doesn't exist for Windows, so we need to build LLVM ourselves.
   build-windows:
