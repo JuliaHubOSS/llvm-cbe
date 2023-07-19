@@ -60,10 +60,10 @@ static cl::opt<bool> DeclareLocalsLate(
              "Note that "
              "this is not legal in standard C prior to C99."));
 
-template <typename TReturn, typename... TArgs>
-TReturn
+template <typename TReturn, typename TCallInst, typename... TArgs>
+std::enable_if_t<std::is_base_of_v<TCallInst, CallInst>, TReturn>
 VisitFunctionInfoVariant(TReturn (Function::*FunctionOverload)(TArgs...) const,
-                         TReturn (CallInst::*CallInstOverload)(TArgs...) const,
+                         TReturn (TCallInst::*CallInstOverload)(TArgs...) const,
                          FunctionInfoVariant FIV, TArgs... Args) {
   if (auto F = std::get_if<const Function *>(&FIV)) {
     return (*F->*FunctionOverload)(Args...);
