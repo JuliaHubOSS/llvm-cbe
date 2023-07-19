@@ -13,20 +13,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <llvm/Config/llvm-config.h>
-#if LLVM_VERSION_MAJOR >= 16
-#else
 #include "llvm/ADT/Triple.h"
-#endif
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#if LLVM_VERSION_MAJOR > 10
 #include "llvm/CodeGen/CommandFlags.h"
-#elif LLVM_VERSION_MAJOR >= 7
-#include "llvm/CodeGen/CommandFlags.inc"
-#else
-#include "llvm/CodeGen/CommandFlags.def"
-#endif
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -36,14 +26,11 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
-#if LLVM_VERSION_MAJOR >= 16
-#include "llvm/MC/MCTargetOptionsCommandFlags.h"
-#endif
-#include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Pass.h"
-#if LLVM_VERSION_MAJOR >= 10
 #include "llvm/InitializePasses.h"
-#endif
+#include "llvm/MC/MCTargetOptionsCommandFlags.h"
+#include "llvm/MC/SubtargetFeature.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
@@ -54,20 +41,14 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
-#if LLVM_VERSION_MAJOR >= 16
-#include "llvm/MC/TargetRegistry.h"
-#else
-#include "llvm/Support/TargetRegistry.h"
-#endif
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include <llvm/Config/llvm-config.h>
 #include <memory>
 using namespace llvm;
 
-#if LLVM_VERSION_MAJOR > 10
 static codegen::RegisterCodeGenFlags CGF;
-#endif
 
 extern "C" void LLVMInitializeCBackendTarget();
 extern "C" void LLVMInitializeCBackendTargetInfo();
@@ -128,16 +109,8 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
     else {
       OutputFilename = GetFileNameRoot(InputFilename);
 
-#if LLVM_VERSION_MAJOR > 10
       switch (codegen::getFileType()) {
-#else
-      switch (FileType) {
-#endif
-#if LLVM_VERSION_MAJOR >= 10
       case CodeGenFileType::CGFT_AssemblyFile:
-#else
-      case TargetMachine::CGFT_AssemblyFile:
-#endif
         if (TargetName[0] == 'c') {
           if (TargetName[1] == 0)
             OutputFilename += ".cbe.c";
@@ -149,21 +122,13 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
           OutputFilename += ".s";
         break;
 
-#if LLVM_VERSION_MAJOR >= 10
       case CodeGenFileType::CGFT_ObjectFile:
-#else
-      case TargetMachine::CGFT_ObjectFile:
-#endif
         if (OS == Triple::Win32)
           OutputFilename += ".obj";
         else
           OutputFilename += ".o";
         break;
-#if LLVM_VERSION_MAJOR >= 10
       case CodeGenFileType::CGFT_Null:
-#else
-      case TargetMachine::CGFT_Null:
-#endif
         OutputFilename += ".null";
         break;
       }
@@ -172,41 +137,20 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
 
   // Decide if we need "binary" output.
   bool Binary = false;
-#if LLVM_VERSION_MAJOR > 10
   switch (codegen::getFileType()) {
-#else
-  switch (FileType) {
-#endif
-#if LLVM_VERSION_MAJOR >= 10
   case CodeGenFileType::CGFT_AssemblyFile:
-#else
-  case TargetMachine::CGFT_AssemblyFile:
-#endif
     break;
-#if LLVM_VERSION_MAJOR >= 10
   case CodeGenFileType::CGFT_ObjectFile:
   case CodeGenFileType::CGFT_Null:
-#else
-  case TargetMachine::CGFT_ObjectFile:
-  case TargetMachine::CGFT_Null:
-#endif
     Binary = true;
     break;
   }
 
   // Open the file.
   std::error_code error;
-#if LLVM_VERSION_MAJOR > 10
   sys::fs::OpenFlags OpenFlags = sys::fs::OF_None;
-#else
-  sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
-#endif
   if (Binary)
-#if LLVM_VERSION_MAJOR > 10
     OpenFlags |= sys::fs::OF_Text;
-#else
-    OpenFlags |= sys::fs::F_Text;
-#endif
   ToolOutputFile *FDOut =
       new ToolOutputFile(OutputFilename.c_str(), error, OpenFlags);
   if (error) {
@@ -272,14 +216,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
   Module *mod = 0;
   Triple TheTriple;
 
-#if LLVM_VERSION_MAJOR > 10
   auto MAttrs = codegen::getMAttrs();
   bool SkipModule = codegen::getMCPU() == "help" ||
                     (!MAttrs.empty() && MAttrs.front() == "help");
-#else
-  bool SkipModule =
-      MCPU == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
-#endif
 
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
@@ -345,7 +284,6 @@ static int compileModule(char **argv, LLVMContext &Context) {
   }
 
   TargetOptions Options;
-#if LLVM_VERSION_MAJOR > 10
   Options.AllowFPOpFusion = codegen::getFuseFPOps();
   Options.UnsafeFPMath = codegen::getEnableUnsafeFPMath();
   Options.NoInfsFPMath = codegen::getEnableNoInfsFPMath();
@@ -356,33 +294,12 @@ static int compileModule(char **argv, LLVMContext &Context) {
     Options.FloatABIType = codegen::getFloatABIForCalls();
   Options.NoZerosInBSS = codegen::getDontPlaceZerosInBSS();
   Options.GuaranteedTailCallOpt = codegen::getEnableGuaranteedTailCallOpt();
-#if LLVM_VERSION_MAJOR < 12
-  Options.StackAlignmentOverride = codegen::getOverrideStackAlignment();
-#endif
-#else
-  Options.AllowFPOpFusion = FuseFPOps;
-  Options.UnsafeFPMath = EnableUnsafeFPMath;
-  Options.NoInfsFPMath = EnableNoInfsFPMath;
-  Options.NoNaNsFPMath = EnableNoNaNsFPMath;
-  Options.HonorSignDependentRoundingFPMathOption =
-      EnableHonorSignDependentRoundingFPMath;
-  if (FloatABIForCalls != FloatABI::Default)
-    Options.FloatABIType = FloatABIForCalls;
-  Options.NoZerosInBSS = DontPlaceZerosInBSS;
-  Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
-  Options.StackAlignmentOverride = OverrideStackAlignment;
-#endif
 
   // Jackson Korba 9/30/14
   // OwningPtr<targetMachine>
   std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
-#if LLVM_VERSION_MAJOR > 10
       TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options,
       llvm::codegen::getRelocModel()));
-#else
-      TheTriple.getTriple(), MCPU, FeaturesStr, Options, getRelocModel(),
-      getCodeModel(), OLvl));
-#endif
   assert(target.get() && "Could not allocate target machine!");
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
@@ -413,31 +330,14 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Add intenal analysis passes from the target machine.
   PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
-#if LLVM_VERSION_MAJOR > 10
   if (mc::getExplicitRelaxAll()) {
     if (codegen::getFileType() != CodeGenFileType::CGFT_ObjectFile)
-#elif LLVM_VERSION_MAJOR == 10
-  if (RelaxAll) {
-    if (FileType != CodeGenFileType::CGFT_ObjectFile)
-#else
-  if (RelaxAll) {
-    if (FileType != TargetMachine::CGFT_ObjectFile)
-#endif
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj\n";
   }
 
   // Ask the target to add backend passes as necessary.
-  if (Target.addPassesToEmitFile(PM, Out->os(),
-#if LLVM_VERSION_MAJOR >= 7
-                                 nullptr,
-#endif
-#if LLVM_VERSION_MAJOR > 10
-                                 codegen::getFileType()
-#else
-                                 FileType
-#endif
-                                     ,
+  if (Target.addPassesToEmitFile(PM, Out->os(), nullptr, codegen::getFileType(),
                                  NoVerify)) {
     errs() << argv[0] << ": target does not support generation of this"
            << " file type!\n";

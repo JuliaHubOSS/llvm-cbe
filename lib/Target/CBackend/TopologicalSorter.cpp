@@ -26,19 +26,10 @@ TopologicalSorter::TopologicalSorter(int Size) {
   Result.reserve(Size);
 }
 
-#if LLVM_VERSION_MAJOR >= 16
-std::optional<std::vector<int>>
-#else
-llvm::Optional<std::vector<int>>
-#endif
-TopologicalSorter::sort() {
+std::optional<std::vector<int>> TopologicalSorter::sort() {
   for (int I = 0; I < Size; ++I) {
     if (visit(I)) {
-#if LLVM_VERSION_MAJOR >= 16
       return std::nullopt;
-#else
-      return llvm::None;
-#endif
     }
   }
   return Result;
