@@ -796,7 +796,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out,
     }
     printTypeName(
         Out, RetTy,
-    /*isSigned=*/
+        /*isSigned=*/
         PAL.hasAttributeAtIndex(AttributeList::ReturnIndex, Attribute::SExt));
   }
 
