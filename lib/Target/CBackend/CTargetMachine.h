@@ -32,14 +32,15 @@ class CTargetSubtargetInfo : public TargetSubtargetInfo {
 public:
 #if LLVM_VERSION_MAJOR >= 12
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
-                       StringRef TuneCPU,StringRef FS)
+                       StringRef TuneCPU, StringRef FS)
 #else
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef FS)
 #endif
 #if LLVM_VERSION_MAJOR >= 9
 #if LLVM_VERSION_MAJOR >= 12
-      : TargetSubtargetInfo(TT, CPU,TuneCPU, FS, ArrayRef<SubtargetFeatureKV>(),
+      : TargetSubtargetInfo(TT, CPU, TuneCPU, FS,
+                            ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
 #else
@@ -67,11 +68,11 @@ public:
                  std::optional<Reloc::Model> RM,
                  std::optional<CodeModel::Model> CM,
 #else
-                 llvm:Optional<Reloc::Model> RM,
-                 llvm:Optional<CodeModel::Model> CM,
+                 llvm
+                 : Optional<Reloc::Model> RM, llvm
+                 : Optional<CodeModel::Model> CM,
 #endif
-                 CodeGenOpt::Level OL,
-                 bool /*JIT*/)
+                 CodeGenOpt::Level OL, bool /*JIT*/)
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
 #if LLVM_VERSION_MAJOR >= 16
                           RM.value_or(Reloc::Static),
@@ -82,9 +83,11 @@ public:
 #endif
                           OL),
 #if LLVM_VERSION_MAJOR >= 12
-        SubtargetInfo(*this, TT, CPU,"", FS) {}
+        SubtargetInfo(*this, TT, CPU, "", FS) {
+  }
 #else
-        SubtargetInfo(*this, TT, CPU, FS) {}
+        SubtargetInfo(*this, TT, CPU, FS) {
+  }
 #endif
 
   /// Add passes to the specified pass manager to get the specified file
