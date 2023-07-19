@@ -15,10 +15,8 @@ if (NOT DEFINED LLVM_VERSION_MAJOR)
   set (CMAKE_CXX_STANDARD 17)
 endif()
 
-if(LLVM_VERSION_MAJOR LESS 8)
-  message(FATAL_ERROR "This project isn't buldable with LLVM < 8.0.0.")
-elseif(LLVM_VERSION_MAJOR LESS 10)
-  message(WARNING "Building with LLVM < 10.0.0 is at your own risk.")
+if(NOT LLVM_VERSION_MAJOR EQUAL 16)
+  message(FATAL_ERROR "This project only supports LLVM 16. For older versions of LLVM please check https://github.com/JuliaHubOSS/llvm-cbe/tags")
 endif()
 
 add_subdirectory(lib)

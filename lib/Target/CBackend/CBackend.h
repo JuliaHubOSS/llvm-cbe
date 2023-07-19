@@ -6,13 +6,9 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/CodeGen/IntrinsicLowering.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/IR/AbstractCallSite.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CFG.h"
-#if LLVM_VERSION_MAJOR > 10
-#include "llvm/IR/AbstractCallSite.h"
-#else
-#include "llvm/IR/CallSite.h"
-#endif
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -334,12 +330,7 @@ private:
     errorWithMessage("unsupported LLVM instruction");
   }
 
-#if LLVM_VERSION_MAJOR >= 16
-  [[noreturn]]
-#else
-  LLVM_ATTRIBUTE_NORETURN
-#endif
-  void errorWithMessage(const char *message);
+  [[noreturn]] void errorWithMessage(const char *message);
 
   bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
   bool canDeclareLocalLate(Instruction &I);
