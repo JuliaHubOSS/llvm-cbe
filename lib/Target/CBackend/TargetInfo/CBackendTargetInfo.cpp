@@ -9,11 +9,8 @@
 
 #include "../CTargetMachine.h"
 #include "llvm/IR/Module.h"
-#if LLVM_VERSION_MAJOR >= 16
 #include "llvm/MC/TargetRegistry.h"
-#else
-#include "llvm/Support/TargetRegistry.h"
-#endif
+
 using namespace llvm;
 
 Target llvm::TheCBackendTarget;

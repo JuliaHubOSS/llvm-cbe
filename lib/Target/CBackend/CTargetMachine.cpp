@@ -14,31 +14,18 @@
 #include "CTargetMachine.h"
 #include "CBackend.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
-
-#if LLVM_VERSION_MAJOR >= 7
 #include "llvm/Transforms/Utils.h"
-#endif
 
 namespace llvm {
 
 bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                          raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR >= 7
                                          raw_pwrite_stream *DwoOut,
-#endif
                                          CodeGenFileType FileType,
                                          bool DisableVerify,
-#if LLVM_VERSION_MAJOR >= 10
                                          MachineModuleInfoWrapperPass *MMI) {
-#else
-                                         MachineModuleInfo *MMI) {
-#endif
 
-#if LLVM_VERSION_MAJOR >= 10
   if (FileType != CodeGenFileType::CGFT_AssemblyFile)
-#else
-  if (FileType != TargetMachine::CGFT_AssemblyFile)
-#endif
     return true;
 
   PM.add(new TargetPassConfig(*this, PM));
@@ -53,10 +40,8 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   // Lower atomic operations to libcalls
   PM.add(createAtomicExpandPass());
 
-#if LLVM_VERSION_MAJOR >= 16
   // Lower vector operations into shuffle sequences
   PM.add(createExpandReductionsPass());
-#endif
 
   PM.add(new llvm_cbe::CWriter(Out));
   return false;
