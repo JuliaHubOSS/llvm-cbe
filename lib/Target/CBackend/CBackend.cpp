@@ -267,8 +267,7 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
     return Out << getFunctionName(cast<FunctionType>(Ty));
 
   case Type::FixedVectorTyID:
-  case Type::ScalableVectorTyID:
-  {
+  case Type::ScalableVectorTyID: {
     TypedefDeclTypes.insert(Ty);
     FixedVectorType *VTy = cast<FixedVectorType>(Ty);
     cwriter_assert(VTy->getNumElements() != 0);
@@ -545,8 +544,7 @@ CWriter::printTypeName(raw_ostream &Out, Type *Ty, bool isSigned,
     return Out << getArrayName(cast<ArrayType>(Ty));
   }
   case Type::FixedVectorTyID:
-  case Type::ScalableVectorTyID:
-  {
+  case Type::ScalableVectorTyID: {
     TypedefDeclTypes.insert(Ty);
     return Out << getVectorName(cast<VectorType>(Ty));
   }
@@ -708,8 +706,11 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
       return false;
 
     if (CType.equals("char **") &&
-        (!T->isPointerTy() || !T->getNonOpaquePointerElementType()->isPointerTy() ||
-         !T->getNonOpaquePointerElementType()->getNonOpaquePointerElementType()->isIntegerTy(8)))
+        (!T->isPointerTy() ||
+         !T->getNonOpaquePointerElementType()->isPointerTy() ||
+         !T->getNonOpaquePointerElementType()
+              ->getNonOpaquePointerElementType()
+              ->isIntegerTy(8)))
       return false;
   }
 
@@ -725,7 +726,8 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
 
   AttributeList &PAL = Attrs.first;
 
-  if (PAL.hasAttributeAtIndex(AttributeList::FunctionIndex, Attribute::NoReturn)) {
+  if (PAL.hasAttributeAtIndex(AttributeList::FunctionIndex,
+                              Attribute::NoReturn)) {
     headerUseNoReturn();
     Out << "__noreturn ";
   }
@@ -743,7 +745,8 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
       RetTy = FTy->getReturnType();
     else {
       // If this is a struct-return function, print the struct-return type.
-      RetTy = cast<PointerType>(FTy->getParamType(0))->getNonOpaquePointerElementType();
+      RetTy = cast<PointerType>(FTy->getParamType(0))
+                  ->getNonOpaquePointerElementType();
     }
     printTypeName(
         Out, RetTy,
@@ -806,9 +809,8 @@ CWriter::printFunctionProto(raw_ostream &Out, FunctionType *FTy,
     if (shouldFixMain)
       Out << MainArgs.begin()[Idx].first;
     else
-      printTypeName(
-          Out, ArgTy,
-          /*isSigned=*/PAL.hasAttributeAtIndex(Idx, Attribute::SExt));
+      printTypeName(Out, ArgTy,
+                    /*isSigned=*/PAL.hasAttributeAtIndex(Idx, Attribute::SExt));
     PrintedArg = true;
     if (ArgList) {
       Out << ' ';
@@ -1440,8 +1442,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     break;
   }
   case Type::FixedVectorTyID:
-  case Type::ScalableVectorTyID:
-  {
+  case Type::ScalableVectorTyID: {
     FixedVectorType *VT = cast<FixedVectorType>(CPV->getType());
     cwriter_assert(VT->getNumElements() != 0 && !isEmptyType(VT));
     if (Context != ContextStatic) {
@@ -2285,7 +2286,8 @@ bool CWriter::doInitialization(Module &M) {
 
   TAsm = new CBEMCAsmInfo();
   MRI = new MCRegisterInfo();
-  TCtx = new MCContext(llvm::Triple(TheModule->getTargetTriple()),TAsm, MRI, nullptr);
+  TCtx = new MCContext(llvm::Triple(TheModule->getTargetTriple()), TAsm, MRI,
+                       nullptr);
   return false;
 }
 
@@ -2404,7 +2406,8 @@ void CWriter::generateHeader(Module &M) {
     // Ignore special globals, such as debug info.
     if (getGlobalVariableClass(&*I))
       continue;
-    printTypeName(NullOut, I->getType()->getNonOpaquePointerElementType(), false);
+    printTypeName(NullOut, I->getType()->getNonOpaquePointerElementType(),
+                  false);
   }
   printModuleTypes(Out);
 
@@ -2568,8 +2571,9 @@ void CWriter::generateHeader(Module &M) {
     Out << "\n/* External Alias Declarations */\n";
     for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end(); I != E;
          ++I) {
-      cwriter_assert(!I->isDeclaration() &&
-                     !isEmptyType(I->getType()->getNonOpaquePointerElementType()));
+      cwriter_assert(
+          !I->isDeclaration() &&
+          !isEmptyType(I->getType()->getNonOpaquePointerElementType()));
       if (I->hasLocalLinkage())
         continue; // Internal Global
 
@@ -2632,11 +2636,10 @@ void CWriter::generateHeader(Module &M) {
     printTypeString(Out, *it, false);
     Out << "(";
     if (isa<VectorType>(*it))
-      printTypeName(
-          Out,
-          VectorType::get(Type::getInt1Ty((*it)->getContext()),
-                          cast<VectorType>(*it)->getElementCount()),
-          false);
+      printTypeName(Out,
+                    VectorType::get(Type::getInt1Ty((*it)->getContext()),
+                                    cast<VectorType>(*it)->getElementCount()),
+                    false);
     else
       Out << "bool";
     Out << " condition, ";
@@ -2677,7 +2680,8 @@ void CWriter::generateHeader(Module &M) {
     // }
     unsigned n, l = NumberOfElements((*it).second);
     VectorType *RTy =
-        VectorType::get(Type::getInt1Ty((*it).second->getContext()), l,(*it).second->getElementCount().isScalar());
+        VectorType::get(Type::getInt1Ty((*it).second->getContext()), l,
+                        (*it).second->getElementCount().isScalar());
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
@@ -3314,7 +3318,8 @@ void CWriter::declareOneGlobalVariable(GlobalVariable *I) {
 
   Type *ElTy = I->getType()->getNonOpaquePointerElementType();
   unsigned Alignment = I->getAlignment();
-  bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
+  bool IsOveraligned =
+      Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
   if (IsOveraligned) {
     headerUseAligns();
     Out << "__PREFIXALIGN__(" << Alignment << ") ";
@@ -3555,8 +3560,8 @@ void CWriter::forwardDeclareStructs(raw_ostream &Out, Type *Ty,
 
   if (StructType *ST = dyn_cast<StructType>(Ty)) {
     Out << getStructName(ST) << ";\n";
-  // Since function declarations come before the definitions of array-wrapper
-  // structs, it is sometimes necessary to forward-declare those.
+    // Since function declarations come before the definitions of array-wrapper
+    // structs, it is sometimes necessary to forward-declare those.
   } else if (auto *AT = dyn_cast<ArrayType>(Ty)) {
     Out << getArrayName(AT) << ";\n";
   } else if (auto *FT = dyn_cast<FunctionType>(Ty)) {
@@ -3677,8 +3682,8 @@ void CWriter::printFunction(Function &F) {
 
   // If this is a struct return function, handle the result with magic.
   if (isStructReturn) {
-    Type *StructTy =
-        cast<PointerType>(F.arg_begin()->getType())->getNonOpaquePointerElementType();
+    Type *StructTy = cast<PointerType>(F.arg_begin()->getType())
+                         ->getNonOpaquePointerElementType();
     Out << "  ";
     printTypeName(Out, StructTy, false)
         << " StructReturn;  /* Struct return temporary */\n";
@@ -3694,8 +3699,9 @@ void CWriter::printFunction(Function &F) {
   for (inst_iterator I = inst_begin(&F), E = inst_end(&F); I != E; ++I) {
     if (AllocaInst *AI = isDirectAlloca(&*I)) {
       unsigned Alignment = AI->getAlign().value();
-      bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlign(
-                                                        AI->getAllocatedType()).value();
+      bool IsOveraligned =
+          Alignment &&
+          Alignment > TD->getABITypeAlign(AI->getAllocatedType()).value();
       Out << "  ";
       if (IsOveraligned) {
         headerUseAligns();
@@ -3792,17 +3798,19 @@ void CWriter::printBasicBlock(BasicBlock *BB) {
   // Output all of the instructions in the basic block...
   for (BasicBlock::iterator II = BB->begin(), E = --BB->end(); II != E; ++II) {
     DILocation *Loc = (*II).getDebugLoc();
-    if (Loc != nullptr && Loc->getLine() != 0 && LastAnnotatedSourceLine != Loc->getLine()) {
+    if (Loc != nullptr && Loc->getLine() != 0 &&
+        LastAnnotatedSourceLine != Loc->getLine()) {
       std::string Directory = Loc->getDirectory().str();
       std::replace(Directory.begin(), Directory.end(), '\\', '/');
       std::string Filename = Loc->getFilename().str();
       std::replace(Filename.begin(), Filename.end(), '\\', '/');
 
-      if (!Directory.empty() && Directory[Directory.size() - 1] != '/' && !Filename.empty() && Filename[0] != '/')
+      if (!Directory.empty() && Directory[Directory.size() - 1] != '/' &&
+          !Filename.empty() && Filename[0] != '/')
         Directory.push_back('/');
 
-      Out << "#line " << Loc->getLine() << " \"" << Directory
-          << Filename << "\""
+      Out << "#line " << Loc->getLine() << " \"" << Directory << Filename
+          << "\""
           << "\n";
       LastAnnotatedSourceLine = Loc->getLine();
     }
@@ -4588,13 +4596,13 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << ";\n";
       break;
 
-      case Intrinsic::umax:
-      case Intrinsic::maximum:
+    case Intrinsic::umax:
+    case Intrinsic::maximum:
       Out << "  r = a > b ? a : b;\n";
       break;
 
-      case Intrinsic::umin:
-      case Intrinsic::minimum:
+    case Intrinsic::umin:
+    case Intrinsic::minimum:
       Out << "  r = a < b ? a : b;\n";
       break;
     }
@@ -4823,8 +4831,9 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((";
-    printTypeName(Out, I.getCalledOperand()->getType()->getNonOpaquePointerElementType(),
-                  false, std::make_pair(PAL, I.getCallingConv()));
+    printTypeName(
+        Out, I.getCalledOperand()->getType()->getNonOpaquePointerElementType(),
+        false, std::make_pair(PAL, I.getCallingConv()));
     Out << "*)(void*)";
   }
   writeOperand(Callee, ContextCasted);
@@ -5327,8 +5336,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     Value *Opnd = I.getOperand();
 
     cwriter_assert(
-        Opnd
-            ->getType()
+        Opnd->getType()
             ->isIntegerTy()); // TODO: indexing a Vector with a Vector is valid,
                               // but we don't support it here
 

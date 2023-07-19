@@ -274,8 +274,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
 #if LLVM_VERSION_MAJOR > 10
   auto MAttrs = codegen::getMAttrs();
-  bool SkipModule =
-      codegen::getMCPU() == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
+  bool SkipModule = codegen::getMCPU() == "help" ||
+                    (!MAttrs.empty() && MAttrs.front() == "help");
 #else
   bool SkipModule =
       MCPU == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
@@ -304,7 +304,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Get the target specific parser.
   std::string Error;
   // Override MArch
-  //codegen::getMArch() = "c";
+  // codegen::getMArch() = "c";
   const std::string MArch = "c";
   const Target *TheTarget =
       TargetRegistry::lookupTarget(MArch, TheTriple, Error);
@@ -377,7 +377,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // OwningPtr<targetMachine>
   std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
 #if LLVM_VERSION_MAJOR > 10
-      TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options, llvm::codegen::getRelocModel()));
+      TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options,
+      llvm::codegen::getRelocModel()));
 #else
       TheTriple.getTriple(), MCPU, FeaturesStr, Options, getRelocModel(),
       getCodeModel(), OLvl));
@@ -436,7 +437,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
 #else
                                  FileType
 #endif
-                                 , NoVerify)) {
+                                     ,
+                                 NoVerify)) {
     errs() << argv[0] << ": target does not support generation of this"
            << " file type!\n";
     return 1;
