@@ -113,9 +113,6 @@ extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
 }
-#if LLVM_VERSION_MAJOR > 10
-bool IsPowerOfTwo(unsigned long x) { return (x & (x - 1)) == 0; }
-#endif
 
 unsigned int NumberOfElements(VectorType *TheType) {
   return TheType->getElementCount().getFixedValue();
@@ -776,12 +773,8 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out,
 
   AttributeList PAL = GetAttributes(FIV);
 
-#if LLVM_VERSION_MAJOR >= 16
   if (PAL.hasAttributeAtIndex(AttributeList::FunctionIndex,
                               Attribute::NoReturn)) {
-#else
-  if (PAL.hasAttribute(AttributeList::FunctionIndex, Attribute::NoReturn)) {
-#endif
     headerUseNoReturn();
     Out << "__noreturn ";
   }
@@ -804,7 +797,6 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out,
     printTypeName(
         Out, RetTy,
     /*isSigned=*/
-#if LLVM_VERSION_MAJOR >= 16
         PAL.hasAttributeAtIndex(AttributeList::ReturnIndex, Attribute::SExt));
   }
 
@@ -871,11 +863,7 @@ raw_ostream &CWriter::printFunctionProto(raw_ostream &Out,
       Out << MainArgs.begin()[Idx].first;
     else
       printTypeName(Out, ArgTy,
-#if LLVM_VERSION_MAJOR >= 16
                     /*isSigned=*/PAL.hasAttributeAtIndex(Idx, Attribute::SExt));
-#else
-                     /*isSigned=*/PAL.hasAttribute(Idx, Attribute::SExt));
-#endif
     PrintedArg = true;
     if (ArgName) {
       Out << ' ';
@@ -2350,12 +2338,8 @@ bool CWriter::doInitialization(Module &M) {
 
   TAsm = new CBEMCAsmInfo();
   MRI = new MCRegisterInfo();
-#if LLVM_VERSION_MAJOR > 12
   TCtx = new MCContext(llvm::Triple(TheModule->getTargetTriple()), TAsm, MRI,
                        nullptr);
-#else
-  TCtx = new MCContext(TAsm, MRI, nullptr);
-#endif
   return false;
 }
 
@@ -2701,17 +2685,10 @@ void CWriter::generateHeader(Module &M) {
     printTypeString(Out, *it, false);
     Out << "(";
     if (isa<VectorType>(*it))
-#if LLVM_VERSION_MAJOR >= 12
       printTypeName(Out,
                     VectorType::get(Type::getInt1Ty((*it)->getContext()),
                                     cast<VectorType>(*it)->getElementCount()),
                     false);
-#else
-      printTypeName(Out,
-                    VectorType::get(Type::getInt1Ty((*it)->getContext()),
-                                    cast<VectorType>(*it)->getNumElements()),
-                    false);
-#endif
     else
       Out << "bool";
     Out << " condition, ";
@@ -2752,12 +2729,8 @@ void CWriter::generateHeader(Module &M) {
     // }
     unsigned n, l = NumberOfElements((*it).second);
     VectorType *RTy =
-#if LLVM_VERSION_MAJOR >= 12
         VectorType::get(Type::getInt1Ty((*it).second->getContext()), l,
                         (*it).second->getElementCount().isScalar());
-#else
-        VectorType::get(Type::getInt1Ty((*it).second->getContext()), l);
-#endif
     bool isSigned = CmpInst::isSigned((*it).first);
     Out << "static __forceinline ";
     printTypeName(Out, RTy, isSigned);
@@ -3713,12 +3686,7 @@ void CWriter::printFunction(Function &F) {
 
   // If this is a struct return function, handle the result with magic.
   if (isStructReturn) {
-#if LLVM_VERSION_MAJOR >= 16
     Type *StructTy = F.getParamStructRetType(0);
-#else
-    Type *StructTy =
-        cast<PointerType>(F.arg_begin()->getType())->getElementType();
-#endif
     Out << "  ";
     printTypeName(Out, StructTy, false)
         << " StructReturn;  /* Struct return temporary */\n";
@@ -3737,11 +3705,6 @@ void CWriter::printFunction(Function &F) {
       bool IsOveraligned =
           Alignment &&
           Alignment > TD->getABITypeAlign(AI->getAllocatedType()).value();
-#else
-      unsigned Alignment = AI->getAlignment();
-      bool IsOveraligned = Alignment && Alignment > TD->getABITypeAlignment(
-                                                        AI->getAllocatedType());
-#endif
       Out << "  ";
       if (IsOveraligned) {
         headerUseAligns();
@@ -4636,7 +4599,6 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << ";\n";
       break;
 
-#if LLVM_VERSION_MAJOR >= 16
     case Intrinsic::umax:
     case Intrinsic::maximum:
       Out << "  r = a > b ? a : b;\n";

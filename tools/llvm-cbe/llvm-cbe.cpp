@@ -219,10 +219,6 @@ static int compileModule(char **argv, LLVMContext &Context) {
   auto MAttrs = codegen::getMAttrs();
   bool SkipModule = codegen::getMCPU() == "help" ||
                     (!MAttrs.empty() && MAttrs.front() == "help");
-#else
-  bool SkipModule =
-      MCPU == "help" || (!MAttrs.empty() && MAttrs.front() == "help");
-#endif
 
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
@@ -302,13 +298,8 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Jackson Korba 9/30/14
   // OwningPtr<targetMachine>
   std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
-#if LLVM_VERSION_MAJOR > 10
       TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options,
       llvm::codegen::getRelocModel()));
-#else
-      TheTriple.getTriple(), MCPU, FeaturesStr, Options, getRelocModel(),
-      getCodeModel(), OLvl));
-#endif
   assert(target.get() && "Could not allocate target machine!");
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
@@ -346,16 +337,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   }
 
   // Ask the target to add backend passes as necessary.
-  if (Target.addPassesToEmitFile(PM, Out->os(),
-#if LLVM_VERSION_MAJOR >= 7
-                                 nullptr,
-#endif
-#if LLVM_VERSION_MAJOR > 10
-                                 codegen::getFileType()
-#else
-                                 FileType
-#endif
-                                     ,
+  if (Target.addPassesToEmitFile(PM, Out->os(), nullptr, codegen::getFileType(),
                                  NoVerify)) {
     errs() << argv[0] << ": target does not support generation of this"
            << " file type!\n";

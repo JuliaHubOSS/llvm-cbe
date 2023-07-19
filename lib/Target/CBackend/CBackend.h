@@ -320,13 +320,7 @@ private:
     errorWithMessage("unsupported LLVM instruction");
   }
 
-#if LLVM_VERSION_MAJOR >= 16
-  [[noreturn]]
-#else
-  LLVM_ATTRIBUTE_NORETURN
-#endif
-  void
-  errorWithMessage(const char *message);
+  [[noreturn]] void errorWithMessage(const char *message);
 
   bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
   bool canDeclareLocalLate(Instruction &I);
