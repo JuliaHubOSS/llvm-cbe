@@ -30,7 +30,6 @@ public:
 
 class CTargetSubtargetInfo : public TargetSubtargetInfo {
 public:
-#if LLVM_VERSION_MAJOR >= 12
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef TuneCPU, StringRef FS)
 #else
@@ -43,18 +42,7 @@ public:
                             ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
-#else
-      : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
-                            ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
-                            nullptr, nullptr, nullptr, nullptr),
-#endif
-#else
-      : TargetSubtargetInfo(TT, CPU, FS, ArrayRef<SubtargetFeatureKV>(),
-                            ArrayRef<SubtargetFeatureKV>(), nullptr, nullptr,
-                            nullptr, nullptr, nullptr, nullptr, nullptr),
-#endif
-        Lowering(TM) {
-  }
+        Lowering(TM) {}
   bool enableAtomicExpand() const override;
   const TargetLowering *getTargetLowering() const override;
   const CTargetLowering Lowering;
@@ -74,7 +62,6 @@ public:
 #endif
                  CodeGenOpt::Level OL, bool /*JIT*/)
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
-#if LLVM_VERSION_MAJOR >= 16
                           RM.value_or(Reloc::Static),
                           CM.value_or(CodeModel::Small),
 #else
@@ -92,17 +79,11 @@ public:
 
   /// Add passes to the specified pass manager to get the specified file
   /// emitted.  Typically this will involve several steps of code generation.
-  bool addPassesToEmitFile(PassManagerBase &PM, raw_pwrite_stream &Out,
-#if LLVM_VERSION_MAJOR >= 7
-                           raw_pwrite_stream *DwoOut,
-#endif
-                           CodeGenFileType FileType, bool DisableVerify = true,
-#if LLVM_VERSION_MAJOR >= 10
-                           MachineModuleInfoWrapperPass *MMI = nullptr
-#else
-                           MachineModuleInfo *MMI = nullptr
-#endif
-                           ) override;
+  bool
+  addPassesToEmitFile(PassManagerBase &PM, raw_pwrite_stream &Out,
+                      raw_pwrite_stream *DwoOut, CodeGenFileType FileType,
+                      bool DisableVerify = true,
+                      MachineModuleInfoWrapperPass *MMI = nullptr) override;
 
   // TargetMachine interface
   const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override;
