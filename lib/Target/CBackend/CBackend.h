@@ -32,7 +32,9 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Transforms/Scalar.h"
 
+#include <optional>
 #include <set>
+#include <variant>
 
 #include "IDMap.h"
 
@@ -44,6 +46,8 @@ class CBEMCAsmInfo : public MCAsmInfo {
 public:
   CBEMCAsmInfo() { PrivateGlobalPrefix = ""; }
 };
+
+using FunctionInfoVariant = std::variant<const Function *, const CallInst *>;
 
 /// CWriter - This class is the main chunk of code that converts an LLVM
 /// module to a C translation unit.
@@ -79,8 +83,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   std::set<std::pair<unsigned, Type *>> InlineOpDeclTypes;
   std::set<Type *> CtorDeclTypes;
 
-  IDMap<std::pair<FunctionType *, std::pair<AttributeList, CallingConv::ID>>>
-      UnnamedFunctionIDs;
+  IDMap<FunctionInfoVariant> UnnamedFunctionIDs;
 
   // This is used to keep track of intrinsics that get generated to a lowered
   // function. We must generate the prototypes before the function body which
@@ -186,22 +189,12 @@ private:
   raw_ostream &printFunctionAttributes(raw_ostream &Out, AttributeList Attrs);
 
   bool isStandardMain(const FunctionType *FTy);
-  raw_ostream &
-  printFunctionProto(raw_ostream &Out, FunctionType *Ty,
-                     std::pair<AttributeList, CallingConv::ID> Attrs,
-                     const std::string &Name,
-                     iterator_range<Function::arg_iterator> *ArgList);
-  raw_ostream &printFunctionProto(raw_ostream &Out, Function *F) {
-    return printFunctionProto(
-        Out, F->getFunctionType(),
-        std::make_pair(F->getAttributes(), F->getCallingConv()),
-        GetValueName(F), nullptr);
-  }
+  raw_ostream &printFunctionProto(raw_ostream &Out, FunctionInfoVariant FIV,
+                                  const std::string_view Name);
 
-  raw_ostream &
-  printFunctionDeclaration(raw_ostream &Out, FunctionType *Ty,
-                           std::pair<AttributeList, CallingConv::ID> PAL =
-                               std::make_pair(AttributeList(), CallingConv::C));
+  raw_ostream &printFunctionDeclaration(raw_ostream &Out,
+                                        FunctionInfoVariant FIV,
+                                        const std::string_view Name);
   raw_ostream &printStructDeclaration(raw_ostream &Out, StructType *Ty);
   raw_ostream &printArrayDeclaration(raw_ostream &Out, ArrayType *Ty);
   raw_ostream &printVectorDeclaration(raw_ostream &Out, VectorType *Ty);
@@ -216,10 +209,7 @@ private:
   raw_ostream &printTypeString(raw_ostream &Out, Type *Ty, bool isSigned);
 
   std::string getStructName(StructType *ST);
-  std::string getFunctionName(FunctionType *FT,
-                              std::pair<AttributeList, CallingConv::ID> PAL =
-                                  std::make_pair(AttributeList(),
-                                                 CallingConv::C));
+  std::string getFunctionName(FunctionInfoVariant FIV);
   std::string getArrayName(ArrayType *AT);
   std::string getVectorName(VectorType *VT);
 
@@ -279,7 +269,7 @@ private:
 
   bool isEmptyType(Type *Ty) const;
   Type *skipEmptyArrayTypes(Type *Ty) const;
-  bool isAddressExposed(Value *V) const;
+  std::optional<Type *> tryGetTypeOfAddressExposedValue(Value *V) const;
   bool isInlinableInst(Instruction &I) const;
   AllocaInst *isDirectAlloca(Value *V) const;
   bool isInlineAsm(Instruction &I) const;
@@ -340,7 +330,7 @@ private:
                           unsigned Indent);
   void printGEPExpression(Value *Ptr, gep_type_iterator I, gep_type_iterator E);
 
-  std::string GetValueName(Value *Operand);
+  std::string GetValueName(const Value *Operand);
 
   friend class CWriterTestHelper;
 };

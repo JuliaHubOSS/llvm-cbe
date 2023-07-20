@@ -22,8 +22,7 @@ LLI_PATH = 'lli'
 
 CBE_FLAGS = [
     # Harder to get right than early declarations, so more value to test it.
-    '-cbe-declare-locals-late',
-    '-opaque-pointers=0'
+    '-cbe-declare-locals-late'
 ]
 
 COMMON_CFLAGS = [
@@ -53,8 +52,6 @@ CLANGFLAGS = COMMON_CFLAGS + [
     '-Wno-unused-variable',
     '-Wno-pointer-to-int-cast',
     '-Wno-unused-but-set-variable',
-    '-Xclang',
-    '-no-opaque-pointers',
 ]
 
 MSVC = 'cl'

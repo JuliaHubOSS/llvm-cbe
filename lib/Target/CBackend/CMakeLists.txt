@@ -5,7 +5,6 @@ add_subdirectory(TargetInfo)
 add_llvm_target(CBackendCodeGen
   CBackend.cpp
   CTargetMachine.cpp
-  TopologicalSorter.cpp
 
   LINK_COMPONENTS
   Analysis
