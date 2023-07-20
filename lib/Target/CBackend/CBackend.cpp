@@ -5318,7 +5318,7 @@ void CWriter::printGEPExpression(Value *Ptr, unsigned NumOperands,
       Out << ')';
     } else if (I != E && I.isStruct()) {
       // If the second index is a struct index, print P->f instead of P[0].f
-      Out << "(&((";
+      Out << "(((";
       printTypeName(Out, I.getStructType());
       Out << "*)";
       writeOperand(Ptr);
@@ -5485,7 +5485,7 @@ void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
          Index < NumberOfElements(cast<VectorType>(I.getType())); ++Index) {
       if (Index > 0)
         Out << ", ";
-      Out << "(&((";
+      Out << "&(((";
       printTypeName(Out, FirstOp.getIndexedType());
       Out << "*)";
       writeOperand(I.getPointerOperand());
