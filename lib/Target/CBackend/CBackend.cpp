@@ -4515,8 +4515,6 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::uadd_with_overflow:
-      //   r.field0 = a + b;
-      //   r.field1 = (r.field0 < a);
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a + b;\n";
       Out << "  r.field1 = (r.field0 < a);\n";
@@ -5025,8 +5023,6 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::rint:
   case Intrinsic::sqrt:
   case Intrinsic::trunc:
-  case Intrinsic::maxnum:
-  case Intrinsic::minnum:
     headerUseMath();
     return false;
   case Intrinsic::uadd_with_overflow:
