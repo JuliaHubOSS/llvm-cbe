@@ -2546,8 +2546,6 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::trunc:
       case Intrinsic::umax:
       case Intrinsic::umin:
-      case Intrinsic::maximum:
-      case Intrinsic::minimum:
         intrinsicsToDefine.push_back(&*I);
         continue;
       }
@@ -4431,6 +4429,10 @@ static bool isSupportedIntegerSize(IntegerType &T) {
 
 void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
                                        std::string OpName, raw_ostream &Out) {
+  // NOTE: If any intrinsic definition uses a header file, then we need to mark
+  // that header file as being used in visitBuiltinCall as it's too late now to
+  // include them.
+
   Type *retT = funT->getReturnType();
   Type *elemT = funT->getParamType(0);
   IntegerType *elemIntT = dyn_cast<IntegerType>(elemT);
@@ -4517,11 +4519,10 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       //   r.field1 = (r.field0 < a);
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a + b;\n";
-      Out << "  r.field1 = (a >= -b);\n";
+      Out << "  r.field1 = (r.field0 < a);\n";
       break;
 
     case Intrinsic::sadd_with_overflow:
-      headerUseLimits(); // _MAX and _MIN definitions
       //   r.field0 = a + b;
       //   r.field1 = (b > 0 && a > XX_MAX - b) ||
       //              (b < 0 && a < XX_MIN - b);
@@ -4541,7 +4542,6 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::ssub_with_overflow:
-      headerUseLimits(); // _MAX and _MIN definitions
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a - b;\n";
       Out << "  r.field1 = (b <= 0 ? a > ";
@@ -4600,12 +4600,10 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::umax:
-    case Intrinsic::maximum:
       Out << "  r = a > b ? a : b;\n";
       break;
 
     case Intrinsic::umin:
-    case Intrinsic::minimum:
       Out << "  r = a < b ? a : b;\n";
       break;
     }
@@ -4633,22 +4631,18 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       errorWithMessage("unsupported instrinsic");
 
     case Intrinsic::ceil:
-      headerUseMath();
       Out << "  r = ceil" << suffix << "(a);\n";
       break;
 
     case Intrinsic::fabs:
-      headerUseMath();
       Out << "  r = fabs" << suffix << "(a);\n";
       break;
 
     case Intrinsic::floor:
-      headerUseMath();
       Out << "  r = floor" << suffix << "(a);\n";
       break;
 
     case Intrinsic::fma:
-      headerUseMath();
       Out << "  r = fma" << suffix << "(a, b, c);\n";
       break;
 
@@ -4658,22 +4652,18 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
     case Intrinsic::pow:
     case Intrinsic::powi:
-      headerUseMath();
       Out << "  r = pow" << suffix << "(a, b);\n";
       break;
 
     case Intrinsic::rint:
-      headerUseMath();
       Out << "  r = rint" << suffix << "(a);\n";
       break;
 
     case Intrinsic::sqrt:
-      headerUseMath();
       Out << "  r = sqrt" << suffix << "(a);\n";
       break;
 
     case Intrinsic::trunc:
-      headerUseMath();
       Out << "  r = trunc" << suffix << "(a);\n";
       break;
     }
@@ -4737,8 +4727,6 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::dbg_declare:
           case Intrinsic::umax:
           case Intrinsic::umin:
-          case Intrinsic::maximum:
-          case Intrinsic::minimum:
             // We directly implement these intrinsics
             break;
 
@@ -5022,31 +5010,37 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << " = ";
     writeOperand(I.getArgOperand(0), ContextCasted);
     return true;
-  case Intrinsic::uadd_with_overflow:
+
+  // these use the normal function call emission
   case Intrinsic::sadd_with_overflow:
-  case Intrinsic::usub_with_overflow:
   case Intrinsic::ssub_with_overflow:
-  case Intrinsic::umul_with_overflow:
-  case Intrinsic::smul_with_overflow:
-  case Intrinsic::bswap:
+    headerUseLimits();
+    return false;
   case Intrinsic::ceil:
-  case Intrinsic::ctlz:
-  case Intrinsic::ctpop:
-  case Intrinsic::cttz:
   case Intrinsic::fabs:
   case Intrinsic::floor:
   case Intrinsic::fma:
-  case Intrinsic::fmuladd:
   case Intrinsic::pow:
   case Intrinsic::powi:
   case Intrinsic::rint:
   case Intrinsic::sqrt:
-  case Intrinsic::trap:
   case Intrinsic::trunc:
+  case Intrinsic::maxnum:
+  case Intrinsic::minnum:
+    headerUseMath();
+    return false;
+  case Intrinsic::uadd_with_overflow:
+  case Intrinsic::usub_with_overflow:
+  case Intrinsic::umul_with_overflow:
+  case Intrinsic::smul_with_overflow:
+  case Intrinsic::bswap:
+  case Intrinsic::ctlz:
+  case Intrinsic::ctpop:
+  case Intrinsic::cttz:
+  case Intrinsic::fmuladd:
+  case Intrinsic::trap:
   case Intrinsic::umax:
   case Intrinsic::umin:
-  case Intrinsic::maximum:
-  case Intrinsic::minimum:
     return false; // these use the normal function call emission
   }
 }
