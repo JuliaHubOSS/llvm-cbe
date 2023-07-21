@@ -18,7 +18,12 @@ basic_8_overflow_check:
 overflowing_8:
   %overflowing_8_res = call { i8, i1 } @llvm.sadd.with.overflow.i8(i8 u0x7C, i8 u0x7C)
   %overflowing_8_overflowed = extractvalue { i8, i1 } %overflowing_8_res, 1
-  br i1 %overflowing_8_overflowed, label %basic_16, label %error
+  br i1 %overflowing_8_overflowed, label %underflowing_8, label %error
+
+underflowing_8:
+  %underflowing_8_res = call { i8, i1 } @llvm.sadd.with.overflow.i8(i8 u0x8C, i8 u0x8C)
+  %underflowing_8_overflowed = extractvalue { i8, i1 } %underflowing_8_res, 1
+  br i1 %underflowing_8_overflowed, label %basic_16, label %error
 
 basic_16:
   %basic_16_res = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 52, i16 -10)
@@ -33,7 +38,12 @@ basic_16_overflow_check:
 overflowing_16:
   %overflowing_16_res = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 u0x7CCC, i16 u0x7CCC)
   %overflowing_16_overflowed = extractvalue { i16, i1 } %overflowing_16_res, 1
-  br i1 %overflowing_16_overflowed, label %basic_32, label %error
+  br i1 %overflowing_16_overflowed, label %underflowing_16, label %error
+
+underflowing_16:
+  %underflowing_16_res = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 u0x8CCC, i16 u0x8CCC)
+  %underflowing_16_overflowed = extractvalue { i16, i1 } %underflowing_16_res, 1
+  br i1 %underflowing_16_overflowed, label %basic_32, label %error
 
 basic_32:
   %basic_32_res = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 52, i32 -10)
@@ -48,7 +58,12 @@ basic_32_overflow_check:
 overflowing_32:
   %overflowing_32_res = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 u0x7CCCCCCC, i32 u0x7CCCCCCC)
   %overflowing_32_overflowed = extractvalue { i32, i1 } %overflowing_32_res, 1
-  br i1 %overflowing_32_overflowed, label %basic_64, label %error
+  br i1 %overflowing_32_overflowed, label %underflowing_32, label %error
+
+underflowing_32:
+  %underflowing_32_res = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 u0x8CCCCCCC, i32 u0x8CCCCCCC)
+  %underflowing_32_overflowed = extractvalue { i32, i1 } %underflowing_32_res, 1
+  br i1 %underflowing_32_overflowed, label %basic_64, label %error
 
 basic_64:
   %basic_64_res = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 52, i64 -10)
@@ -63,7 +78,12 @@ basic_64_overflow_check:
 overflowing_64:
   %overflowing_64_res = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 u0x7CCCCCCCCCCCCCCC, i64 u0x7CCCCCCCCCCCCCCC)
   %overflowing_64_overflowed = extractvalue { i64, i1 } %overflowing_64_res, 1
-  br i1 %overflowing_64_overflowed, label %ok, label %error
+  br i1 %overflowing_64_overflowed, label %underflowing_64, label %error
+
+underflowing_64:
+  %underflowing_64_res = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 u0x8CCCCCCCCCCCCCCC, i64 u0x8CCCCCCCCCCCCCCC)
+  %underflowing_64_overflowed = extractvalue { i64, i1 } %underflowing_64_res, 1
+  br i1 %underflowing_64_overflowed, label %ok, label %error
 
 ok:
   ret i32 6
@@ -73,14 +93,18 @@ error:
     [ 81, %basic_8 ],
     [ 82, %basic_8_overflow_check ],
     [ 83, %overflowing_8 ],
+    [ 84, %underflowing_8 ],
     [ 161, %basic_16 ],
     [ 162, %basic_16_overflow_check ],
     [ 163, %overflowing_16 ],
+    [ 164, %underflowing_16 ],
     [ 321, %basic_32 ],
     [ 322, %basic_32_overflow_check ],
     [ 323, %overflowing_32 ],
+    [ 324, %underflowing_32 ],
     [ 641, %basic_64 ],
     [ 642, %basic_64_overflow_check ],
-    [ 643, %overflowing_64 ]
+    [ 643, %overflowing_64 ],
+    [ 644, %underflowing_64 ]
   ret i32 %retVal
 }
