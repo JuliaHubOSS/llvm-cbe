@@ -1176,8 +1176,8 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 
     case Instruction::GetElementPtr:
       Out << "(";
-      printGEPExpression(CE->getOperand(0), gep_type_begin(CPV),
-                         gep_type_end(CPV));
+      printGEPExpression(CE->getOperand(0), CPV->getNumOperands(),
+                         gep_type_begin(CPV), gep_type_end(CPV));
       Out << ")";
       return;
     case Instruction::Select:
@@ -1865,20 +1865,39 @@ void CWriter::writeOperandWithCast(Value *Operand, unsigned Opcode) {
   // Write out the casted operand if we should, otherwise just write the
   // operand.
 
-  // Extract the operand's type, we'll need it.
   bool shouldCast;
   bool castIsSigned;
   opcodeNeedsCast(Opcode, shouldCast, castIsSigned);
-
-  Type *OpTy = Operand->getType();
   if (shouldCast) {
     Out << "((";
-    printSimpleType(Out, OpTy, castIsSigned);
+    printSimpleType(Out, Operand->getType(), castIsSigned);
     Out << ")";
     writeOperand(Operand, ContextCasted);
     Out << ")";
   } else
     writeOperand(Operand, ContextCasted);
+}
+
+void CWriter::writeVectorOperandWithCast(Value *Operand, unsigned Index,
+                                         unsigned Opcode) {
+  // Write out the casted operand if we should, otherwise just write the
+  // operand.
+
+  bool shouldCast;
+  bool castIsSigned;
+  opcodeNeedsCast(Opcode, shouldCast, castIsSigned);
+  if (shouldCast) {
+    Out << "((";
+    printSimpleType(Out, cast<VectorType>(Operand->getType())->getElementType(),
+                    castIsSigned);
+    Out << ")";
+    writeOperand(Operand, ContextCasted);
+    Out << ".vector[" << Index << "])";
+  } else {
+    Out << "(";
+    writeOperand(Operand, ContextCasted);
+    Out << ".vector[" << Index << "])";
+  }
 }
 
 // Write the operand with a cast to another type based on the icmp predicate
@@ -5269,8 +5288,8 @@ void CWriter::visitAllocaInst(AllocaInst &I) {
   Out << "))";
 }
 
-void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
-                                 gep_type_iterator E) {
+void CWriter::printGEPExpression(Value *Ptr, unsigned NumOperands,
+                                 gep_type_iterator I, gep_type_iterator E) {
 
   // If there are no indices, just print out the pointer.
   if (I == E) {
@@ -5278,38 +5297,48 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
     return;
   }
 
-  Out << "(&";
+  Out << '(';
+  // Start with operand #2: First operand is the Ptr, and first indexing operand
+  // is special (thus it will print its own `&` if it needs it).
+  for (unsigned OperandIndex = 2; OperandIndex < NumOperands; ++OperandIndex) {
+    Out << "(&";
+  }
 
   // The first index of a GEP is special. It does pointer arithmetic without
   // indexing into the element type.
   Value *FirstOp = I.getOperand();
+  cwriter_assert(!FirstOp->getType()->isVectorTy());
   Type *IntoT = I.getIndexedType();
   ++I;
   if (!isConstantNull(FirstOp)) {
-    Out << "((";
+    Out << "(&((";
     printTypeName(Out, IntoT);
     Out << "*)";
     writeOperand(Ptr);
     Out << ")[";
     writeOperandWithCast(FirstOp, Instruction::GetElementPtr);
-    Out << ']';
+    Out << "])";
   } else {
     // When the first index is 0 (very common) we can simplify it.
     if (tryGetTypeOfAddressExposedValue(Ptr)) {
       // Print P rather than (&P)[0]
+      Out << "(&";
       writeOperandInternal(Ptr);
+      Out << ')';
     } else if (I != E && I.isStruct()) {
       // If the second index is a struct index, print P->f instead of P[0].f
-      Out << "((";
+      Out << "(((";
       printTypeName(Out, I.getStructType());
       Out << "*)";
       writeOperand(Ptr);
-      Out << ")->field" << cast<ConstantInt>(I.getOperand())->getZExtValue();
+      Out << ")->field" << cast<ConstantInt>(I.getOperand())->getZExtValue()
+          << ')';
       // Eat the struct index
       ++I;
+      Out << ')';
     } else {
       // Print (*P)[1] instead of P[0][1] (more idiomatic)
-      Out << "(*((";
+      Out << "((";
       if (isEmptyType(IntoT)) {
         if (VectorType *VT = dyn_cast<VectorType>(IntoT)) {
           printTypeName(Out, VT->getElementType());
@@ -5323,7 +5352,7 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
       }
       Out << "*)";
       writeOperand(Ptr);
-      Out << "))";
+      Out << ")";
     }
   }
 
@@ -5336,43 +5365,21 @@ void CWriter::printGEPExpression(Value *Ptr, gep_type_iterator I,
                               // but we don't support it here
 
     if (I.isStruct()) {
-      Out << ".field" << cast<ConstantInt>(Opnd)->getZExtValue();
-    } else if (IntoT->isArrayTy()) {
-      // Zero-element array types are either skipped or, for pointers, peeled
-      // off by skipEmptyArrayTypes. In this latter case, we can translate
-      // zero-element array indexing as pointer arithmetic.
-      if (IntoT->getArrayNumElements() == 0) {
-        if (!isConstantNull(Opnd)) {
-          // TODO: The operator precedence here is only correct if there are no
-          //       subsequent indexable types other than zero-element arrays.
-          cwriter_assert(skipEmptyArrayTypes(IntoT)->isSingleValueType());
-          Out << " + (";
-          writeOperandWithCast(Opnd, Instruction::GetElementPtr);
-          Out << ')';
-        }
-      } else {
-        Out << ".array[";
-        writeOperandWithCast(Opnd, Instruction::GetElementPtr);
-        Out << ']';
-      }
-    } else if (!IntoT->isVectorTy()) {
-      Out << '[';
+      Out << "->field" << cast<ConstantInt>(Opnd)->getZExtValue();
+    } else if (IntoT->isArrayTy() && IntoT->getArrayNumElements() > 0) {
+      Out << "->array[";
       writeOperandWithCast(Opnd, Instruction::GetElementPtr);
       Out << ']';
     } else {
-      // If the last index is into a vector, then print it out as "+j)".
-      if (!isConstantNull(Opnd)) {
-        Out << "))"; // avoid "+0".
-      } else {
-        Out << ")+(";
-        writeOperandWithCast(I.getOperand(), Instruction::GetElementPtr);
-        Out << "))";
-      }
+      Out << '[';
+      writeOperandWithCast(Opnd, Instruction::GetElementPtr);
+      Out << ']';
     }
 
     IntoT = I.getIndexedType();
+    Out << ')';
   }
-  Out << ")";
+  Out << ')';
 }
 
 void CWriter::writeMemoryAccess(Value *Operand, Type *OperandType,
@@ -5474,7 +5481,36 @@ void CWriter::visitFenceInst(FenceInst &I) {
 void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
   CurInstr = &I;
 
-  printGEPExpression(I.getPointerOperand(), gep_type_begin(I), gep_type_end(I));
+  // GetElementPtrInst has a special form that takes a vector as the only index
+  // operand and then returns a vector of pointers into the pointer operand.
+  auto FirstOp = gep_type_begin(I);
+  if ((FirstOp != gep_type_end(I)) &&
+      isa<VectorType>(FirstOp.getOperand()->getType())) {
+    CtorDeclTypes.insert(I.getType());
+    Out << "llvm_ctor_";
+    printTypeString(Out, I.getType(), false);
+    Out << "(";
+    for (unsigned Index = 0;
+         Index < NumberOfElements(cast<VectorType>(I.getType())); ++Index) {
+      if (Index > 0)
+        Out << ", ";
+      Out << "&(((";
+      printTypeName(Out, FirstOp.getIndexedType());
+      Out << "*)";
+      writeOperand(I.getPointerOperand());
+      Out << ")[";
+      writeVectorOperandWithCast(FirstOp.getOperand(), Index,
+                                 Instruction::GetElementPtr);
+      Out << "])";
+    }
+    Out << ")";
+
+    // If using a vector, then only one op is allowed.
+    cwriter_assert(++FirstOp == gep_type_end(I));
+  } else {
+    printGEPExpression(I.getPointerOperand(), I.getNumOperands(),
+                       gep_type_begin(I), gep_type_end(I));
+  }
 }
 
 void CWriter::visitVAArgInst(VAArgInst &I) {

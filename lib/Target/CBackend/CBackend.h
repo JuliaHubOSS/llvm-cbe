@@ -231,6 +231,8 @@ private:
   void writeOperandInternal(Value *Operand,
                             enum OperandContext Context = ContextNormal);
   void writeOperandWithCast(Value *Operand, unsigned Opcode);
+  void writeVectorOperandWithCast(Value *Operand, unsigned Index,
+                                  unsigned Opcode);
   void opcodeNeedsCast(unsigned Opcode, bool &shouldCast, bool &castIsSigned);
 
   void writeOperandWithCast(Value *Operand, ICmpInst &I);
@@ -328,7 +330,8 @@ private:
                                   unsigned Indent);
   void printBranchToBlock(BasicBlock *CurBlock, BasicBlock *SuccBlock,
                           unsigned Indent);
-  void printGEPExpression(Value *Ptr, gep_type_iterator I, gep_type_iterator E);
+  void printGEPExpression(Value *Ptr, unsigned NumOperands, gep_type_iterator I,
+                          gep_type_iterator E);
 
   std::string GetValueName(const Value *Operand);
 
