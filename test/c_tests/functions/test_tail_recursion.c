@@ -12,6 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+// When a phi gets set to `poison` we don't initialize the PHI_TEMPORARY variable
+// so suppress "uninitialized local variable '...' used".
+// msvc_extra_args: /wd4700
+
 int tail(int n) {
   if (n == 6)
     return n;

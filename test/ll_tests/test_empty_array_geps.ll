@@ -8,6 +8,9 @@
 ;
 ; but with some simplifications.
 
+; Suppress "array is too small to include a terminating null character"
+; msvc_extra_args: /wd4295
+
 @correctStringConstant = constant [3 x i8] c"\01\02\03"
 @wrongStringConstant = constant [5 x i8] c"test\00"
 
