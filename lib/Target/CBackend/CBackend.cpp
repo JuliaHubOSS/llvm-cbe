@@ -1763,7 +1763,7 @@ void CWriter::writeOperand(Value *Operand, enum OperandContext Context) {
     // We can't directly declare a zero-sized variable in C, so
     // printTypeNameForAddressableValue uses a single-byte type instead.
     // We fix up the pointer type here.
-    if (!isEmptyType(*InnerType))
+    if (!isEmptyType(InnerType.value()) && !InnerType.value()->isFunctionTy())
       Out << "(&";
     else
       Out << "((void*)&";
@@ -1851,6 +1851,7 @@ void CWriter::opcodeNeedsCast(
     shouldCast = true;
     castIsSigned = false;
     break;
+  case UnaryOps::BinaryNeg:
   case Instruction::GetElementPtr:
   case Instruction::AShr:
   case Instruction::SDiv:
@@ -2227,7 +2228,7 @@ static void defineInt128(raw_ostream &Out) {
 
 static void defineThreadFence(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n"
-      << "#define __atomic_thread_fence(x) __faststorefence\n"
+      << "#define __atomic_thread_fence(x) __faststorefence()\n"
       << "#endif\n\n";
 }
 
@@ -4852,10 +4853,12 @@ void CWriter::visitCallInst(CallInst &I) {
   if (NeedsCast) {
     // Ok, just cast the pointer type.
     Out << "((" << getFunctionName(&I) << "*)(void*)";
-  }
-  writeOperand(Callee, ContextCasted);
-  if (NeedsCast)
+    writeOperand(Callee, ContextCasted);
     Out << ')';
+  } else {
+    cwriter_assert(isa<Function>(Callee));
+    Out << GetValueName(Callee);
+  }
 
   Out << '(';
 

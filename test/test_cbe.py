@@ -59,8 +59,14 @@ MSVCFLAGS = [
     '/std:c17',     # Use C17 standard.
     '/experimental:c11atomics', # Enable C11 atomics support.
     '/W4',          # "Informational" warning level.
+    '/WX',          # Warnings as errors.
+    '/wd4090',      # different 'const' qualifiers.
+    '/wd4100',      # unreferenced formal parameter
+    '/wd4101',      # unreferenced local variable
     '/wd4115',      # Type declared in paren: In C this places it in the global namespace, which is what we want.
+    '/wd4132',      # const object should be initialized
     '/wd4189',      # Variable is initialized but never refernced.
+    '/wd4223',      # non-lvalue array converted to pointer.
     '/wd4245',      # Signed/unsigned mismatch.
     '/nologo',
 ]
@@ -143,9 +149,21 @@ def get_test_name_from_filename(test_path):
 
 def check_xfail(test_path):
     code = open(test_path).read()
-    m = re.search(r'(?m)^// xfail: (.+)', code)
+    m = re.search(r'(?m)^(//|;) xfail: (.+)', code)
     if m:
-        pytest.xfail(m.group(1))
+        pytest.xfail(m.group(2))
+
+
+def get_extra_args(test_path):
+    code = open(test_path).read()
+    if USE_MSVC:
+        m = re.search(r'(?m)^(//|;) msvc_extra_args: (.+)', code)
+    else:
+        m = re.search(r'(?m)^(//|;) gcc_extra_args: (.+)', code)
+    if m:
+        return m.group(2).split(' ')
+    else:
+        return []
 
 
 @pytest.mark.parametrize(
@@ -175,7 +193,6 @@ def test_consistent_return_value_c(test_filename, tmpdir, cflags):
     # executables
     ir = compile_to_ir(
         test_filename, tmpdir / 'ir.ll', flags=cflags, cplusplus=cplusplus)
-    cbe_c = run_llvm_cbe(ir, tmpdir / 'cbe.c')
 
     regular_exe = compile_clang(
         test_filename,
@@ -186,12 +203,8 @@ def test_consistent_return_value_c(test_filename, tmpdir, cflags):
     print('regular executable returned', regular_retval)
     assert regular_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
-    # suppress "array subscript -1 is outside array bounds" in test expected
-    # to trigger it
-    if not USE_MSVC and "test_char_sized_ptr_math_decr" in test_filename:
-        # not += to avoid affecting subsequent calls
-        cflags = cflags + ["-Wno-array-bounds"]
-
+    cbe_c = run_llvm_cbe(ir, tmpdir / 'cbe.c')
+    cflags = cflags + get_extra_args(test_filename)
     if USE_MSVC:
         map_flags = {'-O3': '-O2', '-O0': '-Od'}
         cbe_exe = compile_msvc(cbe_c, tmpdir / 'cbe.exe', flags=[f if f not in map_flags else map_flags[f] for f in cflags])
@@ -223,10 +236,11 @@ def test_consistent_return_value_ll(test_filename, tmpdir):
     assert lli_retval in [TEST_SUCCESS_EXIT_CODE, TEST_XFAIL_EXIT_CODE]
 
     cbe_c = run_llvm_cbe(test_filename, tmpdir / 'cbe.c')
+    cflags = get_extra_args(test_filename)
     if USE_MSVC:
-        cbe_exe = compile_msvc(cbe_c, tmpdir / 'cbe.exe')
+        cbe_exe = compile_msvc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     else:
-        cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe')
+        cbe_exe = compile_gcc(cbe_c, tmpdir / 'cbe.exe', flags=cflags)
     cbe_retval = call([cbe_exe])
     print('cbe output returned', cbe_retval)
     assert cbe_retval == lli_retval

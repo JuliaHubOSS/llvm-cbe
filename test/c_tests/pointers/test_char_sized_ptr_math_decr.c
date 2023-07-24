@@ -13,6 +13,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+// Suppress "array subscript -1 is outside array bounds"
+// gcc_extra_args: -Wno-array-bounds
+
 int main() {
   unsigned char inc0 = 0, inc1 = 0;
   int diff = 0, a = 100;
