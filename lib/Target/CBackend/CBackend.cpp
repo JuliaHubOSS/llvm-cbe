@@ -2608,6 +2608,13 @@ void CWriter::generateHeader(Module &M) {
       headerUseAttributeWeak();
       Out << "__MSVC_INLINE__ ";
     }
+
+    unsigned Alignment = I->getAlignment();
+    if (Alignment != 0) {
+      headerUseAligns();
+      Out << "__PREFIXALIGN__(" << Alignment << ") ";
+    }
+
     printFunctionProto(Out, &*I, GetValueName(&*I));
     printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
@@ -2625,6 +2632,10 @@ void CWriter::generateHeader(Module &M) {
     if (I->hasHiddenVisibility()) {
       headerUseHidden();
       Out << " __HIDDEN__";
+    }
+
+    if (Alignment != 0) {
+      Out << " __POSTFIXALIGN__(" << Alignment << ")";
     }
 
     if (I->hasName() && I->getName()[0] == 1)
