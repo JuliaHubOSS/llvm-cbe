@@ -2439,8 +2439,8 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
   if (headerIncMath())
     OutHeaders << "#include <math.h>\n";
-  // Provide a definition for `bool', 'true', and 'false' if not compiling with a C++ compiler.
-  OutHeaders << "#ifndef __cplusplus\n#include <stdbool.h>\n#endif\n";
+  // Provide a definition for `bool' if not compiling with a C++ compiler.
+  OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
   OutHeaders << "\n";
 
   Out << "\n\n/* Global Declarations */\n";
@@ -4645,7 +4645,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << "  r = a < b ? a : b;\n";
       break;
     case Intrinsic::is_constant:
-      Out << " r = false;\n";
+      Out << " r = 0 /* llvm.is.constant */;\n";
       break;
     }
 
