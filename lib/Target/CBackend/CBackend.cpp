@@ -2439,8 +2439,8 @@ void CWriter::generateHeader(Module &M) {
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
   if (headerIncMath())
     OutHeaders << "#include <math.h>\n";
-  // Provide a definition for `bool' if not compiling with a C++ compiler.
-  OutHeaders << "#ifndef __cplusplus\ntypedef unsigned char bool;\n#endif\n";
+  // Provide a definition for `bool', 'true', and 'false' if not compiling with a C++ compiler.
+  OutHeaders << "#ifndef __cplusplus\n#include <stdbool.h>\n#endif\n";
   OutHeaders << "\n";
 
   Out << "\n\n/* Global Declarations */\n";
@@ -2573,6 +2573,7 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::trunc:
       case Intrinsic::umax:
       case Intrinsic::umin:
+      case Intrinsic::is_constant:
         intrinsicsToDefine.push_back(&*I);
         continue;
       }
@@ -4643,6 +4644,9 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     case Intrinsic::umin:
       Out << "  r = a < b ? a : b;\n";
       break;
+    case Intrinsic::is_constant:
+      Out << " r = false;\n";
+      break;
     }
 
   } else {
@@ -4764,6 +4768,7 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::dbg_declare:
           case Intrinsic::umax:
           case Intrinsic::umin:
+          case Intrinsic::is_constant:
             // We directly implement these intrinsics
             break;
 
@@ -5078,6 +5083,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::trap:
   case Intrinsic::umax:
   case Intrinsic::umin:
+  case Intrinsic::is_constant:
     return false; // these use the normal function call emission
   }
 }
