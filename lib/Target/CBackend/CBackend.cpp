@@ -4645,7 +4645,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << "  r = a < b ? a : b;\n";
       break;
     case Intrinsic::is_constant:
-      Out << " r = 0 /* llvm.is.constant */;\n";
+      Out << "  r = 0 /* llvm.is.constant */;\n";
       break;
     }
 
