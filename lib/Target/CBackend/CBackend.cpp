@@ -2437,6 +2437,7 @@ void CWriter::generateHeader(Module &M) {
   // Support for integers with explicit sizes. This one isn't conditional
   // because virtually all CBE output will use it.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
+  OutHeaders << "#include <stdlib.h>\n"; // for abort()
   if (headerIncMath())
     OutHeaders << "#include <math.h>\n";
   // Provide a definition for `bool' if not compiling with a C++ compiler.
@@ -5076,6 +5077,9 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << " = ";
     writeOperand(I.getArgOperand(0), ContextCasted);
     return true;
+  case Intrinsic::trap:
+    Out << "abort()";
+    return true;
 
   // these use the normal function call emission
   case Intrinsic::sadd_with_overflow:
@@ -5102,7 +5106,6 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::ctpop:
   case Intrinsic::cttz:
   case Intrinsic::fmuladd:
-  case Intrinsic::trap:
   case Intrinsic::umax:
   case Intrinsic::umin:
   case Intrinsic::smax:
