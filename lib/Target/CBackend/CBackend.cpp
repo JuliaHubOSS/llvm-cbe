@@ -2573,6 +2573,8 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::trunc:
       case Intrinsic::umax:
       case Intrinsic::umin:
+      case Intrinsic::smin:
+      case Intrinsic::smax:
       case Intrinsic::is_constant:
         intrinsicsToDefine.push_back(&*I);
         continue;
@@ -4485,6 +4487,8 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
   case Intrinsic::sadd_with_overflow:
   case Intrinsic::ssub_with_overflow:
   case Intrinsic::smul_with_overflow:
+  case Intrinsic::smin:
+  case Intrinsic::smax:
     isSigned = true;
     break;
   }
@@ -4638,10 +4642,12 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::umax:
+    case Intrinsic::smax:
       Out << "  r = a > b ? a : b;\n";
       break;
 
     case Intrinsic::umin:
+    case Intrinsic::smin:
       Out << "  r = a < b ? a : b;\n";
       break;
     case Intrinsic::is_constant:
@@ -4768,6 +4774,8 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::dbg_declare:
           case Intrinsic::umax:
           case Intrinsic::umin:
+          case Intrinsic::smin:
+          case Intrinsic::smax:
           case Intrinsic::is_constant:
             // We directly implement these intrinsics
             break;
@@ -5083,6 +5091,8 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::trap:
   case Intrinsic::umax:
   case Intrinsic::umin:
+  case Intrinsic::smax:
+  case Intrinsic::smin:
   case Intrinsic::is_constant:
     return false; // these use the normal function call emission
   }
