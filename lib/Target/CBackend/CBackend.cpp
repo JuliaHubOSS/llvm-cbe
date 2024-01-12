@@ -4616,35 +4616,43 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
     case Intrinsic::ctpop:
       cwriter_assert(retT == elemT);
-      Out << "  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountPopulation(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth; i++)\n";
+      Out << "    if ( (a >> i ) & 1 )\n";
+      Out << "      r++;\n";
+
       break;
 
     case Intrinsic::ctlz:
       cwriter_assert(retT == elemT);
-      Out << "  (void)b;\n  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountLeadingZeros(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = bitwidth - 1; i >= 0; i--)\n";
+      Out << "    if ( ((a >> i ) & 1) == 0 )\n";
+      Out << "      r++;\n";
+      Out << "    else\n";
+      Out << "      break;\n";
       break;
 
     case Intrinsic::cttz:
       cwriter_assert(retT == elemT);
-      Out << "  (void)b;\n  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountTrailingZeros(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth; i++)\n";
+      Out << "    if ( ((a >> i) & 1) == 0 )\n";
+      Out << "      r++;\n";
+      Out << "    else\n";
+      Out << "      break;\n";
       break;
 
     case Intrinsic::umax:
