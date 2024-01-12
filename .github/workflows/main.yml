@@ -65,7 +65,7 @@ jobs:
       - name: Build
         run: |
           mkdir build
-          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On
+          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On -DLLVM_DIR=/usr/lib/llvm-16/cmake
           cmake --build build
 
       - name: Test
