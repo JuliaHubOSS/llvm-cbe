@@ -4605,7 +4605,13 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
     case Intrinsic::bswap:
       cwriter_assert(retT == elemT);
-      Out << "  LLVMFlipAllBits(8 * sizeof(a), &a, &r);\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth/8; i++)\n";
+      Out << "    r |= ((a >> (i*8)) & 0xff) << (bitwidth - (i+1)*8);\n";
       break;
 
     case Intrinsic::ctpop:
