@@ -21,10 +21,9 @@ int main() {
 
 #else
 
-/* MSVC doesn't support adding alignment to functions, treat it as an expected failure */
+/* MSVC doesn't support adding alignment to functions, treat it as an expected
+ * failure */
 
-int main() {
-  return 25;
-}
+int main() { return 25; }
 
 #endif

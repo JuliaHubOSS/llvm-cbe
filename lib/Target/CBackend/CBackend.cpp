@@ -2053,7 +2053,8 @@ static void defineAligns(raw_ostream &Out) {
 
 static void defineFunctionAlign(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
-  Out << "#define __FUNCTIONALIGN__(X) /* WARNING: THIS FEATURE IS NOT SUPPORTED BY MSVC! */ \n";
+  Out << "#define __FUNCTIONALIGN__(X) /* WARNING: THIS FEATURE IS NOT "
+         "SUPPORTED BY MSVC! */ \n";
   Out << "#else\n";
   Out << "#define __FUNCTIONALIGN__(X) __attribute__((aligned(X)))\n";
   Out << "#endif\n\n";
