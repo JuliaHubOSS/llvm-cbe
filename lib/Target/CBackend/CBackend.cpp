@@ -2232,6 +2232,15 @@ static void defineThreadFence(raw_ostream &Out) {
       << "#endif\n\n";
 }
 
+static void defineTrap(raw_ostream &Out) {
+  Out << "extern void abort(void);\n"
+      << "#if defined(__GNUC__)\n"
+      << "extern void __builtin_trap(void);\n"
+      << "#else\n"
+      << "#define __builtin_trap() abort()\n"
+      << "#endif\n\n";
+}
+
 /// FindStaticTors - Given a static ctor/dtor list, unpack its contents into
 /// the StaticTors set.
 static void FindStaticTors(GlobalVariable *GV,
@@ -2348,6 +2357,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineThreadFence(Out);
   if (headerIncStackSaveRestore())
     defineStackSaveRestore(Out);
+  if (headerIncTrap())
+    defineTrap(Out);
 }
 
 bool CWriter::doInitialization(Module &M) {
@@ -2573,6 +2584,8 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::trunc:
       case Intrinsic::umax:
       case Intrinsic::umin:
+      case Intrinsic::smin:
+      case Intrinsic::smax:
       case Intrinsic::is_constant:
         intrinsicsToDefine.push_back(&*I);
         continue;
@@ -4485,6 +4498,8 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
   case Intrinsic::sadd_with_overflow:
   case Intrinsic::ssub_with_overflow:
   case Intrinsic::smul_with_overflow:
+  case Intrinsic::smin:
+  case Intrinsic::smax:
     isSigned = true;
     break;
   }
@@ -4601,47 +4616,63 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 
     case Intrinsic::bswap:
       cwriter_assert(retT == elemT);
-      Out << "  LLVMFlipAllBits(8 * sizeof(a), &a, &r);\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth/8; i++)\n";
+      Out << "    r |= ((a >> (i*8)) & 0xff) << (bitwidth - (i+1)*8);\n";
       break;
 
     case Intrinsic::ctpop:
       cwriter_assert(retT == elemT);
-      Out << "  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountPopulation(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth; i++)\n";
+      Out << "    if ( (a >> i ) & 1 )\n";
+      Out << "      r++;\n";
+
       break;
 
     case Intrinsic::ctlz:
       cwriter_assert(retT == elemT);
-      Out << "  (void)b;\n  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountLeadingZeros(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = bitwidth - 1; i >= 0; i--)\n";
+      Out << "    if ( ((a >> i ) & 1) == 0 )\n";
+      Out << "      r++;\n";
+      Out << "    else\n";
+      Out << "      break;\n";
       break;
 
     case Intrinsic::cttz:
       cwriter_assert(retT == elemT);
-      Out << "  (void)b;\n  r = ";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << "llvm_ctor_u128(0, ";
-      Out << "LLVMCountTrailingZeros(8 * sizeof(a), &a)";
-      if (retT->getPrimitiveSizeInBits() > 64)
-        Out << ")";
-      Out << ";\n";
+      cwriter_assert(!isa<VectorType>(retT));
+      cwriter_assert(elemT->getIntegerBitWidth() <= 64);
+      Out << "  int i;\n";
+      Out << "  r = 0;\n";
+      Out << "  int bitwidth = " << elemT->getIntegerBitWidth() << ";\n";
+      Out << "  for (i = 0; i < bitwidth; i++)\n";
+      Out << "    if ( ((a >> i) & 1) == 0 )\n";
+      Out << "      r++;\n";
+      Out << "    else\n";
+      Out << "      break;\n";
       break;
 
     case Intrinsic::umax:
+    case Intrinsic::smax:
       Out << "  r = a > b ? a : b;\n";
       break;
 
     case Intrinsic::umin:
+    case Intrinsic::smin:
       Out << "  r = a < b ? a : b;\n";
       break;
     case Intrinsic::is_constant:
@@ -4768,6 +4799,8 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::dbg_declare:
           case Intrinsic::umax:
           case Intrinsic::umin:
+          case Intrinsic::smin:
+          case Intrinsic::smax:
           case Intrinsic::is_constant:
             // We directly implement these intrinsics
             break;
@@ -5054,6 +5087,10 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     Out << " = ";
     writeOperand(I.getArgOperand(0), ContextCasted);
     return true;
+  case Intrinsic::trap:
+    headerUseTrap();
+    Out << "__builtin_trap()";
+    return true;
 
   // these use the normal function call emission
   case Intrinsic::sadd_with_overflow:
@@ -5080,9 +5117,10 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   case Intrinsic::ctpop:
   case Intrinsic::cttz:
   case Intrinsic::fmuladd:
-  case Intrinsic::trap:
   case Intrinsic::umax:
   case Intrinsic::umin:
+  case Intrinsic::smax:
+  case Intrinsic::smin:
   case Intrinsic::is_constant:
     return false; // these use the normal function call emission
   }
