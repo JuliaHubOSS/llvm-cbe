@@ -2232,6 +2232,15 @@ static void defineThreadFence(raw_ostream &Out) {
       << "#endif\n\n";
 }
 
+static void defineTrap(raw_ostream &Out) {
+  Out << "extern void abort(void);\n"
+      << "#if defined(__GNUC__)\n"
+      << "extern void __builtin_trap(void);\n"
+      << "#else\n"
+      << "#define __builtin_trap() abort()\n"
+      << "#endif\n\n";
+}
+
 /// FindStaticTors - Given a static ctor/dtor list, unpack its contents into
 /// the StaticTors set.
 static void FindStaticTors(GlobalVariable *GV,
@@ -2348,6 +2357,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineThreadFence(Out);
   if (headerIncStackSaveRestore())
     defineStackSaveRestore(Out);
+  if (headerIncTrap())
+    defineTrap(Out);
 }
 
 bool CWriter::doInitialization(Module &M) {
@@ -2437,7 +2448,6 @@ void CWriter::generateHeader(Module &M) {
   // Support for integers with explicit sizes. This one isn't conditional
   // because virtually all CBE output will use it.
   OutHeaders << "#include <stdint.h>\n"; // Sized integer support
-  OutHeaders << "#include <stdlib.h>\n"; // for abort()
   if (headerIncMath())
     OutHeaders << "#include <math.h>\n";
   // Provide a definition for `bool' if not compiling with a C++ compiler.
@@ -5078,7 +5088,8 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
     writeOperand(I.getArgOperand(0), ContextCasted);
     return true;
   case Intrinsic::trap:
-    Out << "abort()";
+    headerUseTrap();
+    Out << "__builtin_trap()";
     return true;
 
   // these use the normal function call emission
