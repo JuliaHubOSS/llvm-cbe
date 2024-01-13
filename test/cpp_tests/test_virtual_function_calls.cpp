@@ -1,3 +1,4 @@
+#ifndef _MSC_VER
 struct A {
   int a;
   int b;
@@ -17,3 +18,13 @@ int main() {
     return 0;
   return 6;
 }
+
+#else
+
+/* MSVC doesn't support adding alignment to functions, treat it as an expected failure */
+
+int main() {
+  return 25;
+}
+
+#endif

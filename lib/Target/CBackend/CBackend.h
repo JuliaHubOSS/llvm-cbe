@@ -112,6 +112,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool AttributeList : 1;
     bool UnalignedLoad : 1;
     bool Aligns : 1;
+    bool FunctionAlign : 1;
     bool NanInf : 1;
     bool Int128 : 1;
     bool ThreadFence : 1;
@@ -121,6 +122,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool ConstantFP80Ty : 1;
     bool ConstantFP128Ty : 1;
     bool ForceInline : 1;
+    bool Trap : 1;
   } UsedHeaders;
 
 #define USED_HEADERS_FLAG(Name)                                                \
@@ -146,6 +148,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(AttributeList)
   USED_HEADERS_FLAG(UnalignedLoad)
   USED_HEADERS_FLAG(Aligns)
+  USED_HEADERS_FLAG(FunctionAlign)
   USED_HEADERS_FLAG(NanInf)
   USED_HEADERS_FLAG(Int128)
   USED_HEADERS_FLAG(ThreadFence)
@@ -155,6 +158,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(ConstantFP80Ty)
   USED_HEADERS_FLAG(ConstantFP128Ty)
   USED_HEADERS_FLAG(ForceInline)
+  USED_HEADERS_FLAG(Trap)
 
   llvm::SmallSet<CmpInst::Predicate, 26> FCmpOps;
   void headerUseFCmpOp(CmpInst::Predicate P);
