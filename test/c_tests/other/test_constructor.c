@@ -1,4 +1,4 @@
-#ifdef _MSC_VER
+#ifndef _MSC_VER
 int global_var = 0;
 
 __attribute__((constructor)) static void update_global_var_in_constructor() {
