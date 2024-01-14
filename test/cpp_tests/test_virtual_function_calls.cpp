@@ -1,4 +1,6 @@
 #ifndef _MSC_VER
+// Suppress "dereferencing type-punned pointer will break strict-aliasing rules"
+// gcc_extra_args: -Wno-error=strict-aliasing
 struct A {
   int a;
   int b;
