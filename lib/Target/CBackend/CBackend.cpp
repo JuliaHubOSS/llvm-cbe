@@ -2112,8 +2112,6 @@ static void defineNanInf(raw_ostream &Out) {
       << "#define LLVM_INFF          __builtin_inff()        /* Float */\n"
       << "#define LLVM_PREFETCH(addr,rw,locality) "
          "__builtin_prefetch(addr,rw,locality)\n"
-      << "#define __ATTRIBUTE_CTOR__ __attribute__((constructor))\n"
-      << "#define __ATTRIBUTE_DTOR__ __attribute__((destructor))\n"
       << "#else\n"
       << "#define LLVM_NAN(NanStr)   ((double)NAN)           /* Double */\n"
       << "#define LLVM_NANF(NanStr)  ((float)NAN))           /* Float */\n"
@@ -2122,10 +2120,6 @@ static void defineNanInf(raw_ostream &Out) {
       << "#define LLVM_INF           ((double)INFINITY)      /* Double */\n"
       << "#define LLVM_INFF          ((float)INFINITY)       /* Float */\n"
       << "#define LLVM_PREFETCH(addr,rw,locality)            /* PREFETCH */\n"
-      << "#define __ATTRIBUTE_CTOR__ \"__attribute__((constructor)) not "
-         "supported on this compiler\"\n"
-      << "#define __ATTRIBUTE_DTOR__ \"__attribute__((destructor)) not "
-         "supported on this compiler\"\n"
       << "#endif\n\n";
 }
 
@@ -2241,6 +2235,18 @@ static void defineTrap(raw_ostream &Out) {
       << "#endif\n\n";
 }
 
+static void defineConstructorsDestructors(raw_ostream &Out) {
+  Out << "#ifdef __GNUC__\n"
+      << "#define __ATTRIBUTE_CTOR__ __attribute__((constructor))\n"
+      << "#define __ATTRIBUTE_DTOR__ __attribute__((destructor))\n"
+      << "#else\n"
+      << "#define __ATTRIBUTE_CTOR__ \"__attribute__((constructor)) not "
+         "supported on this compiler\"\n"
+      << "#define __ATTRIBUTE_DTOR__ \"__attribute__((destructor)) not "
+         "supported on this compiler\"\n"
+      << "#endif\n\n";
+}
+
 /// FindStaticTors - Given a static ctor/dtor list, unpack its contents into
 /// the StaticTors set.
 static void FindStaticTors(GlobalVariable *GV,
@@ -2252,8 +2258,8 @@ static void FindStaticTors(GlobalVariable *GV,
   for (unsigned i = 0, e = InitList->getNumOperands(); i != e; ++i)
     if (ConstantStruct *CS =
             dyn_cast<ConstantStruct>(InitList->getOperand(i))) {
-      if (CS->getNumOperands() != 2)
-        return; // Not array of 2-element structs.
+      if (CS->getNumOperands() != 3)
+        return; // Not array of 3-element structs.
 
       if (CS->getOperand(1)->isNullValue())
         return; // Found a null terminator, exit printing.
@@ -2359,6 +2365,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineStackSaveRestore(Out);
   if (headerIncTrap())
     defineTrap(Out);
+  if (headerIncConstructorsDestructors())
+    defineConstructorsDestructors(Out);
 }
 
 bool CWriter::doInitialization(Module &M) {
@@ -2632,10 +2640,14 @@ void CWriter::generateHeader(Module &M) {
       headerUseExternalWeak();
       Out << " __EXTERNAL_WEAK__";
     }
-    if (StaticCtors.count(&*I))
+    if (StaticCtors.count(&*I)) {
+      headerUseConstructorsDestructors();
       Out << " __ATTRIBUTE_CTOR__";
-    if (StaticDtors.count(&*I))
+    }
+    if (StaticDtors.count(&*I)) {
+      headerUseConstructorsDestructors();
       Out << " __ATTRIBUTE_DTOR__";
+    }
     if (I->hasHiddenVisibility()) {
       headerUseHidden();
       Out << " __HIDDEN__";

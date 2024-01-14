@@ -122,6 +122,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
     bool ConstantFP128Ty : 1;
     bool ForceInline : 1;
     bool Trap : 1;
+    bool ConstructorsDestructors : 1;
   } UsedHeaders;
 
 #define USED_HEADERS_FLAG(Name)                                                \
@@ -157,6 +158,7 @@ class CWriter : public FunctionPass, public InstVisitor<CWriter> {
   USED_HEADERS_FLAG(ConstantFP128Ty)
   USED_HEADERS_FLAG(ForceInline)
   USED_HEADERS_FLAG(Trap)
+  USED_HEADERS_FLAG(ConstructorsDestructors)
 
   llvm::SmallSet<CmpInst::Predicate, 26> FCmpOps;
   void headerUseFCmpOp(CmpInst::Predicate P);
