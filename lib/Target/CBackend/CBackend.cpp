@@ -2510,10 +2510,12 @@ void CWriter::generateHeader(Module &M) {
 
   // Global variable declarations...
   if (!M.global_empty()) {
-    Out << "\n/* External Global Variable Declarations */\n";
+    Out << "\n/* Global Variable Declarations */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (!I->isDeclaration())
+      // Ignore special globals, such as debug info, and the
+      // constructors/destructors are handled in a different way
+      if (getGlobalVariableClass(&*I))
         continue;
 
       if (I->isConstant())
@@ -2527,8 +2529,8 @@ void CWriter::generateHeader(Module &M) {
       if (I->hasExternalLinkage() || I->hasExternalWeakLinkage() ||
           I->hasCommonLinkage())
         Out << "extern ";
-      else
-        continue; // Internal Global
+      else if (I->hasLocalLinkage())
+        Out << "static ";
 
       // Thread Local Storage
       if (I->isThreadLocal())
