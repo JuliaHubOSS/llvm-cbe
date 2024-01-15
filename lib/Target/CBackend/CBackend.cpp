@@ -4802,6 +4802,7 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::stackprotector:
           case Intrinsic::dbg_value:
           case Intrinsic::dbg_declare:
+          case Intrinsic::dbg_assign:
           case Intrinsic::umax:
           case Intrinsic::umin:
           case Intrinsic::smin:
@@ -4967,6 +4968,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   }
   case Intrinsic::dbg_value:
   case Intrinsic::dbg_declare:
+  case Intrinsic::dbg_assign:
     return true; // ignore these intrinsics
   case Intrinsic::vastart:
     headerUseStdarg();
