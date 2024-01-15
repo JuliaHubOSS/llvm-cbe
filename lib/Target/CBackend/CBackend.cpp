@@ -2051,6 +2051,15 @@ static void defineAligns(raw_ostream &Out) {
   Out << "#endif\n\n";
 }
 
+static void defineFunctionAlign(raw_ostream &Out) {
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __FUNCTIONALIGN__(X) /* WARNING: THIS FEATURE IS NOT "
+         "SUPPORTED BY MSVC! */ \n";
+  Out << "#else\n";
+  Out << "#define __FUNCTIONALIGN__(X) __attribute__((aligned(X)))\n";
+  Out << "#endif\n\n";
+}
+
 static void defineUnreachable(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __builtin_unreachable() __assume(0)\n";
@@ -2355,6 +2364,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineUnalignedLoad(Out);
   if (headerIncAligns())
     defineAligns(Out);
+  if (headerIncFunctionAlign())
+    defineFunctionAlign(Out);
   if (headerIncNanInf())
     defineNanInf(Out);
   if (headerIncInt128())
@@ -2632,6 +2643,7 @@ void CWriter::generateHeader(Module &M) {
       headerUseAttributeWeak();
       Out << "__MSVC_INLINE__ ";
     }
+
     printFunctionProto(Out, &*I, GetValueName(&*I));
     printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
@@ -2653,6 +2665,12 @@ void CWriter::generateHeader(Module &M) {
     if (I->hasHiddenVisibility()) {
       headerUseHidden();
       Out << " __HIDDEN__";
+    }
+
+    unsigned Alignment = I->getAlignment();
+    if (Alignment != 0) {
+      headerUseFunctionAlign();
+      Out << " __FUNCTIONALIGN__(" << Alignment << ") ";
     }
 
     if (I->hasName() && I->getName()[0] == 1)
