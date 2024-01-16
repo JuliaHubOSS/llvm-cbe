@@ -4215,10 +4215,6 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
     Out << "-(";
     writeOperand(X);
     Out << ")";
-  } else if (match(&I, m_Not(m_Value(X)))) {
-    Out << "~(";
-    writeOperand(X);
-    Out << ")";
   } else if (I.getOpcode() == Instruction::FRem) {
     // Output a call to fmod/fmodf instead of emitting a%b
     if (I.getType() == Type::getFloatTy(I.getContext()))
