@@ -27,7 +27,6 @@ CBE_FLAGS = [
 
 COMMON_CFLAGS = [
     '-Iinclude/',
-    '-g',
     '-Wall',
     '-Wno-unused-function',
     '-Wno-unused-variable',
