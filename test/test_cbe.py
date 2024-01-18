@@ -27,7 +27,6 @@ CBE_FLAGS = [
 
 COMMON_CFLAGS = [
     '-Iinclude/',
-    '-g',
     '-Wall',
     '-Wno-unused-function',
     '-Wno-unused-variable',
@@ -107,7 +106,16 @@ def check_no_output(args, cwd):
 
 def compile_gcc(c_filename, output_filename, flags=None):
     flags = flags or []
-    check_no_output([GCC, c_filename, '-o', output_filename] + GCCFLAGS + flags, os.path.dirname(output_filename))
+    try:
+        check_no_output([GCC, c_filename, '-o', output_filename] + GCCFLAGS + flags, os.path.dirname(output_filename))
+    except Exception as e:
+        msg_stream = io.StringIO()
+        with open(c_filename, 'r') as f:
+            print(f"source code:", file=msg_stream)
+            print(f.read(), file=msg_stream)
+            print(file=msg_stream)
+        raise Exception(msg_stream.getvalue()) from e
+        
     return output_filename
 
 

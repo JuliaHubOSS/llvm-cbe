@@ -6,7 +6,7 @@ This LLVM C backend has been resurrected by Julia Computing with various improve
 Installation instructions
 =========================
 
-This version of the LLVM C backend works with LLVM 16, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
+This version of the LLVM C backend works with LLVM 17, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
 
 Step 1: Installing LLVM
 =======================

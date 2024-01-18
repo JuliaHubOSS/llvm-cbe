@@ -32,19 +32,19 @@ jobs:
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
-          sudo ./llvm.sh 16 all
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 160
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 160
-          sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-16 160
-          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 160
+          sudo ./llvm.sh 17 all
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-17 160
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-17 160
+          sudo update-alternatives --install /usr/bin/lli lli /usr/bin/lli-17 160
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-17 160
 
       - name: Setup LLVM and GCC (MacOS)
         if: ${{ runner.os == 'macOS' }}
         run: |
-          brew install llvm@16
-          echo "$(brew --prefix llvm@16)/bin" >> $GITHUB_PATH
-          echo "CC=$(brew --prefix llvm@16)/bin/clang" >> $GITHUB_ENV
-          echo "CXX=$(brew --prefix llvm@16)/bin/clang++" >> $GITHUB_ENV
+          brew install llvm@17
+          echo "$(brew --prefix llvm@17)/bin" >> $GITHUB_PATH
+          echo "CC=$(brew --prefix llvm@17)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@17)/bin/clang++" >> $GITHUB_ENV
           cd /usr/local/bin
           ln -s gcc-11 gcc
 
@@ -65,7 +65,7 @@ jobs:
       - name: Build
         run: |
           mkdir build
-          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On -DLLVM_DIR=/usr/lib/llvm-16/cmake
+          cmake -S . -B build -DLLVM_INCLUDE_TESTS=On -DLLVM_DIR=/usr/lib/llvm-17/cmake
           cmake --build build
 
       - name: Test
@@ -84,7 +84,7 @@ jobs:
         uses: actions/checkout@master
         with:
           repository: llvm/llvm-project
-          ref: llvmorg-16.0.6
+          ref: llvmorg-17.0.6
 
       - name: Checkout
         uses: actions/checkout@v3

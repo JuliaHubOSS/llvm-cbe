@@ -23,8 +23,8 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/TargetParser/Host.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1045,7 +1045,7 @@ static bool isFPCSafeToPrint(const ConstantFP *CFP) {
     APF.convert(APFloat::IEEEdouble(), APFloat::rmNearestTiesToEven, &ignored);
 #if HAVE_PRINTF_A && ENABLE_CBE_PRINTF_A
   char Buffer[100];
-  sprintf(Buffer, "%a", APF.convertToDouble());
+  snprintf(Buffer, sizeof(Buffer), "%a", APF.convertToDouble());
   if (!strncmp(Buffer, "0x", 2) || !strncmp(Buffer, "-0x", 3) ||
       !strncmp(Buffer, "+0x", 3))
     return APF.bitwiseIsEqual(APFloat(atof(Buffer)));
@@ -1333,7 +1333,6 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         printConstant(Zero, ContextCasted);
       }
       Out << ")";
-
     } else {
       Constant *Zero = Constant::getNullValue(CPV->getType());
       Out << "/*UNDEF*/";
@@ -1424,7 +1423,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         char Buffer[100];
 
         uint64_t ll = llvm::bit_cast<uint64_t>(V);
-        sprintf(Buffer, "0x%llx", static_cast<long long>(ll));
+        snprintf(Buffer, sizeof(Buffer), "0x%llx", static_cast<long long>(ll));
 
         std::string Num(&Buffer[0], &Buffer[6]);
         unsigned long Val = strtoul(Num.c_str(), 0, 16);
@@ -1450,7 +1449,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 #if HAVE_PRINTF_A && ENABLE_CBE_PRINTF_A
         // Print out the constant as a floating point number.
         char Buffer[100];
-        sprintf(Buffer, "%a", V);
+        snprintf(Buffer, sizeof(Buffer), "%a", V);
         Num = Buffer;
 #else
         Num = ftostr(FPC->getValueAPF());
@@ -1702,7 +1701,7 @@ std::string CWriter::GetValueName(const Value *Operand) {
     if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
           (ch >= '0' && ch <= '9') || ch == '_')) {
       char buffer[5];
-      sprintf(buffer, "_%x_", ch);
+      snprintf(buffer, sizeof(buffer), "_%x_", ch);
       VarName += buffer;
     } else
       VarName += ch;
@@ -3125,7 +3124,6 @@ void CWriter::generateHeader(Module &M) {
           Out << ") & " << mask;
         Out << ";\n";
       }
-
     } else if (OpTy->getPrimitiveSizeInBits() > 64) {
       Out << " r;\n";
       Out << "#ifndef __emulate_i128\n";
@@ -3267,7 +3265,6 @@ void CWriter::generateHeader(Module &M) {
         Out << "(16, &a, &b, &r);\n";
       }
       Out << "#endif\n";
-
     } else {
       Out << " r = ";
       if (mask)
@@ -3569,7 +3566,6 @@ void CWriter::printFloatingPointConstants(const Constant *C) {
     Out << "static const ConstantFP128Ty FPConstant" << Counter << " = { 0x"
         << utohexstr(p[0]) << ", 0x" << utohexstr(p[1])
         << "}; /* Long double constant */\n";
-
   } else {
     errorWithMessage("Unknown float type!");
   }
@@ -3956,7 +3952,6 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
     printPHICopiesForSuccessor(SI.getParent(), SI.getDefaultDest(), 2);
     printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
     Out << "\n";
-
   } else if (NumBits <= 64) { // model as a switch statement
     Out << "  switch (";
     writeOperand(Cond);
@@ -3979,7 +3974,6 @@ void CWriter::visitSwitchInst(SwitchInst &SI) {
         Out << "    break;\n";
     }
     Out << "  }\n";
-
   } else { // model as a series of if statements
     Out << "  ";
     for (SwitchInst::CaseIt i = SI.case_begin(), e = SI.case_end(); i != e;
@@ -4707,7 +4701,6 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << "  r = 0 /* llvm.is.constant */;\n";
       break;
     }
-
   } else {
     // handle FP ops
     const char *suffix;
@@ -4825,6 +4818,7 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::stackprotector:
           case Intrinsic::dbg_value:
           case Intrinsic::dbg_declare:
+          case Intrinsic::dbg_assign:
           case Intrinsic::umax:
           case Intrinsic::umin:
           case Intrinsic::smin:
@@ -4990,6 +4984,7 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   }
   case Intrinsic::dbg_value:
   case Intrinsic::dbg_declare:
+  case Intrinsic::dbg_assign:
     return true; // ignore these intrinsics
   case Intrinsic::vastart:
     headerUseStdarg();
