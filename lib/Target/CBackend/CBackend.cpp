@@ -2050,6 +2050,15 @@ static void defineAligns(raw_ostream &Out) {
   Out << "#endif\n\n";
 }
 
+static void defineFunctionAlign(raw_ostream &Out) {
+  Out << "#ifdef _MSC_VER\n";
+  Out << "#define __FUNCTIONALIGN__(X) /* WARNING: THIS FEATURE IS NOT "
+         "SUPPORTED BY MSVC! */ \n";
+  Out << "#else\n";
+  Out << "#define __FUNCTIONALIGN__(X) __attribute__((aligned(X)))\n";
+  Out << "#endif\n\n";
+}
+
 static void defineUnreachable(raw_ostream &Out) {
   Out << "#ifdef _MSC_VER\n";
   Out << "#define __builtin_unreachable() __assume(0)\n";
@@ -2354,6 +2363,8 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
     defineUnalignedLoad(Out);
   if (headerIncAligns())
     defineAligns(Out);
+  if (headerIncFunctionAlign())
+    defineFunctionAlign(Out);
   if (headerIncNanInf())
     defineNanInf(Out);
   if (headerIncInt128())
@@ -2509,10 +2520,12 @@ void CWriter::generateHeader(Module &M) {
 
   // Global variable declarations...
   if (!M.global_empty()) {
-    Out << "\n/* External Global Variable Declarations */\n";
+    Out << "\n/* Global Variable Declarations */\n";
     for (Module::global_iterator I = M.global_begin(), E = M.global_end();
          I != E; ++I) {
-      if (!I->isDeclaration())
+      // Ignore special globals, such as debug info, and the
+      // constructors/destructors are handled in a different way
+      if (getGlobalVariableClass(&*I))
         continue;
 
       if (I->isConstant())
@@ -2526,8 +2539,8 @@ void CWriter::generateHeader(Module &M) {
       if (I->hasExternalLinkage() || I->hasExternalWeakLinkage() ||
           I->hasCommonLinkage())
         Out << "extern ";
-      else
-        continue; // Internal Global
+      else if (I->hasLocalLinkage())
+        Out << "static ";
 
       // Thread Local Storage
       if (I->isThreadLocal())
@@ -2629,6 +2642,7 @@ void CWriter::generateHeader(Module &M) {
       headerUseAttributeWeak();
       Out << "__MSVC_INLINE__ ";
     }
+
     printFunctionProto(Out, &*I, GetValueName(&*I));
     printFunctionAttributes(Out, I->getAttributes());
     if (I->hasWeakLinkage() || I->hasLinkOnceLinkage()) {
@@ -2650,6 +2664,12 @@ void CWriter::generateHeader(Module &M) {
     if (I->hasHiddenVisibility()) {
       headerUseHidden();
       Out << " __HIDDEN__";
+    }
+
+    unsigned Alignment = I->getAlignment();
+    if (Alignment != 0) {
+      headerUseFunctionAlign();
+      Out << " __FUNCTIONALIGN__(" << Alignment << ") ";
     }
 
     if (I->hasName() && I->getName()[0] == 1)
@@ -4187,10 +4207,6 @@ void CWriter::visitBinaryOperator(BinaryOperator &I) {
     Out << ")";
   } else if (match(&I, m_FNeg(m_Value(X)))) {
     Out << "-(";
-    writeOperand(X);
-    Out << ")";
-  } else if (match(&I, m_Not(m_Value(X)))) {
-    Out << "~(";
     writeOperand(X);
     Out << ")";
   } else if (I.getOpcode() == Instruction::FRem) {
