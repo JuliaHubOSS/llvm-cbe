@@ -29,6 +29,8 @@ On Debian and derivatives, install the llvm-dev package via:
     ~# apt install llvm-dev clang
 ```
 
+Note: this project uses LLVM 17, so make sure that the package manager is installing it and not some other version. At the time of writing, Ubuntu installs version 14.
+
 Or compile LLVM yourself:
 -----------------------------
 Note: to convert C to LLVM IR to run the tests, you will also need a C compiler using the LLVM infrastructure, such as clang.
@@ -56,14 +58,14 @@ Now you can download and compile llvm-cbe.
 If you built LLVM yourself, put it in the same folder you built LLVM in:
 ```sh
     ~$ cd llvm-project/llvm/projects
-    projects$ git clone https://github.com/JuliaComputing/llvm-cbe
+    projects$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     projects$ cd ../build
     build$ cmake -S ..
     build$ make llvm-cbe
 ```
 If you used your distribution's package, put it wherever you feel like:
 ```sh
-    ~$ git clone https://github.com/JuliaComputing/llvm-cbe
+    ~$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     ~$ cd llvm-cbe && mkdir build && cd build
     build$ cmake -S ..
     build$ make llvm-cbe
@@ -76,7 +78,7 @@ If llvm-cbe compiles, you should be able to run it with the following commands.
     llvm-cbe$ cd test/selectionsort
     selectionsort$ ls
     main.c
-    selectionsort$ clang -S -emit-llvm -g main.c
+    selectionsort$ clang-17 -S -emit-llvm -g main.c
     selectionsort$ ls
     main.c main.ll
     selectionsort$ ../../build/tools/llvm-cbe/llvm-cbe main.ll
