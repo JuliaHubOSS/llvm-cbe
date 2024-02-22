@@ -16,17 +16,17 @@ Either install the LLVM packages on your system:
 
 On macOS, use [pkgsrc](http://pkgsrc.joyent.com/install-on-osx/) and run the following commands:
 ```sh
-    ~$ pkgin in llvm clang
+    ~$ pkgin in llvm clang ninja-build
 ```
 
 On CentOS, install the llvm-devel package:
 ```sh
-    ~# dnf install llvm-devel clang
+    ~# dnf install llvm-devel clang ninja-build
 ```
 
 On Debian and derivatives, install the llvm-dev package via:
 ```sh
-    ~# apt install llvm-dev clang
+    ~# apt install llvm-dev clang ninja-build
 ```
 
 Note: this project uses LLVM 17, so make sure that the package manager is installing it and not some other version. At the time of writing, Ubuntu installs version 14.
@@ -41,11 +41,11 @@ The first step is to compile LLVM on your machine
 ```sh
      ~$ git clone https://github.com/llvm/llvm-project.git
      ~$ cd llvm-project
-     llvm-project$ git checkout release/8.x
+     llvm-project$ git checkout release/17.x
      llvm-project$ mkdir llvm/build
      llvm-project$ cd llvm/build
-     build$ cmake ..
-     build$ make
+     build$ cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DLLVM_PARALLEL_LINK_JOBS=1
+     build$ ninja
 ```
 To run tests, you need to build `lli`.
 
@@ -60,15 +60,15 @@ If you built LLVM yourself, put it in the same folder you built LLVM in:
     ~$ cd llvm-project/llvm/projects
     projects$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     projects$ cd ../build
-    build$ cmake -S ..
-    build$ make llvm-cbe
+    build$ cmake -S .. -G "Ninja"
+    build$ ninja bin/llvm-cbe
 ```
 If you used your distribution's package, put it wherever you feel like:
 ```sh
     ~$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     ~$ cd llvm-cbe && mkdir build && cd build
-    build$ cmake -S ..
-    build$ make llvm-cbe
+    build$ cmake -S .. -G "Ninja"
+    build$ ninja bin/llvm-cbe
 ```
 Step 3: Usage Examples
 ======================
