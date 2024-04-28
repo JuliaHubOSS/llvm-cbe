@@ -4570,8 +4570,8 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
   printTypeName(Out, retT);
   Out << " r;\n";
 
-  if (isa<VectorType>(retT)) {
-    char vectorSize = dyn_cast<VectorType>(retT)->getNumElements();
+  if (auto vRetT = dyn_cast<VectorType>(retT)) {
+    char vectorSize = vRetT->getElementCount().getKnownMinValue();
     for (i = 0; i < vectorSize; i++) {
       Out << "  r.vector[" << (int)i << "] = " << OpName << "_devec(";
       for (char j = 0; j < numParams; j++) {
