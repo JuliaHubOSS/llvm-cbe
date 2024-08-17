@@ -61,14 +61,14 @@ If you built LLVM yourself, put it in the same folder you built LLVM in:
     projects$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     projects$ cd ../build
     build$ cmake -S .. -G "Ninja"
-    build$ ninja bin/llvm-cbe
+    build$ ninja llvm-cbe
 ```
 If you used your distribution's package, put it wherever you feel like:
 ```sh
     ~$ git clone https://github.com/JuliaHubOSS/llvm-cbe
     ~$ cd llvm-cbe && mkdir build && cd build
     build$ cmake -S .. -G "Ninja"
-    build$ ninja bin/llvm-cbe
+    build$ ninja llvm-cbe
 ```
 Step 3: Usage Examples
 ======================
