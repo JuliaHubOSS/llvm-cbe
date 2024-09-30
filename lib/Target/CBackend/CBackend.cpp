@@ -5366,7 +5366,8 @@ void CWriter::visitAllocaInst(AllocaInst &I) {
 }
 
 void CWriter::printGEPExpression(Value *Ptr, unsigned NumOperands,
-                                 gep_type_iterator I, gep_type_iterator E) {
+                                 gep_type_iterator I, gep_type_iterator E,
+                                 std::optional<Type *> SourceType) {
 
   // If there are no indices, just print out the pointer.
   if (I == E) {
@@ -5397,9 +5398,16 @@ void CWriter::printGEPExpression(Value *Ptr, unsigned NumOperands,
     Out << "])";
   } else {
     // When the first index is 0 (very common) we can simplify it.
-    if (tryGetTypeOfAddressExposedValue(Ptr)) {
+    std::optional<Type *> ExposedType = tryGetTypeOfAddressExposedValue(Ptr);
+    if (ExposedType) {
       // Print P rather than (&P)[0]
-      Out << "(&";
+      Out << '(';
+      if (SourceType && SourceType.value() != ExposedType.value()) {
+        Out << "(";
+        printTypeName(Out, SourceType.value());
+        Out << "*)";
+      }
+      Out << '&';
       writeOperandInternal(Ptr);
       Out << ')';
     } else if (I != E && I.isStruct()) {
@@ -5586,7 +5594,8 @@ void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
     cwriter_assert(++FirstOp == gep_type_end(I));
   } else {
     printGEPExpression(I.getPointerOperand(), I.getNumOperands(),
-                       gep_type_begin(I), gep_type_end(I));
+                       gep_type_begin(I), gep_type_end(I),
+                       std::optional(I.getSourceElementType()));
   }
 }
 
