@@ -98,7 +98,7 @@ Compile Generated C Code and Run
 ```
 
 Running tests
-==================
+=============
 
 Unit tests:
 
@@ -122,3 +122,12 @@ First, compile llvm-cbe, and install pytest (e.g. `pip install pytest`). Then:
 You might have to adjust the llvm-cbe and lli paths in that configuration.
 
 If you want the tests to run faster, installing `pytest-xdist` will allow you to run the test suite in parallel, e.g. `pytest -n 4` if you want to use 4 cores.
+
+FAQ: Version Update Policy
+==========================
+
+The policy of this project is to only support latest released version of LLVM on the head of repo here.
+The rationale is that supporting multiple versions is additional work for a project which has no sponsors.
+Additionally, since there are very few changes, other than version compatibility maintenance,
+anyone using an older version of LLVM can just checkout the last commit to work on that branch.
+For discussion, see https://github.com/JuliaHubOSS/llvm-cbe/issues/60.
