@@ -4650,17 +4650,19 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
     
 	case Intrinsic::uadd_sat:
-      //   r = (a + b < a) ? XX_MAX : a + b
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
-      Out << "  r = (a + b < a) ? ";
+      //   r = (a > XX_MAX - b) ? XX_MAX : a + b
+      cwriter_assert(retT == elemT);
+      Out << "  r = (a > ";
       printLimitValue(*elemIntT, false, true, Out);
-      Out << " a + b;\n";
+	  Out << " -b ) ? ";
+      printLimitValue(*elemIntT, false, true, Out);
+      Out << " : a + b;\n";
       break;
 	
     case Intrinsic::sadd_sat:
       //   r = (b > 0 && a > XX_MAX - b) ? XX_MAX : a + b;
       //   r = (b < 0 && a < XX_MIN - b) ? XX_MIN : r;
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = (b > 0 && a > ";
       printLimitValue(*elemIntT, true, true, Out);
       Out << " - b) ? ";
@@ -4675,7 +4677,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
 	
 	case Intrinsic::usub_sat:
       //   r = (a < b) ? XX_MIN : a - b;
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = (a < b) ? ";
       printLimitValue(*elemIntT, false, false, Out);
       Out << " : a - b;\n";
@@ -4684,23 +4686,23 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     case Intrinsic::ssub_sat:
       //   r = (b > 0 && a < XX_MIN + b) ? XX_MIN : a - b;
       //   r = (b < 0 && a > XX_MAX + b) ? XX_MAX : r;
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = (b > 0 && a < ";
       printLimitValue(*elemIntT, true, false, Out);
       Out << " + b) ? ";
       printLimitValue(*elemIntT, true, false, Out);
-      Out << " : a - b\n";
+      Out << " : a - b;\n";
       Out << "  r = (b < 0 && a > ";
       printLimitValue(*elemIntT, true, true, Out);
       Out << " + b) ? ";
       printLimitValue(*elemIntT, true, true, Out);
-      Out << " : r\n";
+      Out << " : r;\n";
       break;
 
     case Intrinsic::ushl_sat:
       // There's no poison value handler in llvm-cbe yet, so this code don't consider that.
       //    r = (a > (XX_MAX >> b)) ? XX_MAX : a << b;
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = (a > (";
       printLimitValue(*elemIntT, false, true, Out);
       Out << " >> b)) ? ";
@@ -4713,7 +4715,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       // maximum/minimum value that can be shifted without overflow.
       //    r = (a >= 0 && a > (XX_MAX >> b)) ? XX_MAX : a << b;
       //    r = (a < 0 && a < ((XX_MAX >> b) | XX_MIN)) ? XX_MIN : r;
-      cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
+      cwriter_assert(retT == elemT);
       Out << "  r = (a >= 0 && a > (";
       printLimitValue(*elemIntT, true, true, Out);
       Out << " >> b)) ? ";
