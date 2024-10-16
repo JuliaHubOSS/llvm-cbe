@@ -4649,12 +4649,12 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
       break;
     
-	case Intrinsic::uadd_sat:
+    case Intrinsic::uadd_sat:
       //   r = (a > XX_MAX - b) ? XX_MAX : a + b
       cwriter_assert(retT == elemT);
       Out << "  r = (a > ";
       printLimitValue(*elemIntT, false, true, Out);
-	  Out << " -b ) ? ";
+      Out << " -b ) ? ";
       printLimitValue(*elemIntT, false, true, Out);
       Out << " : a + b;\n";
       break;
@@ -4675,7 +4675,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       Out << " : r;\n";
       break;
 	
-	case Intrinsic::usub_sat:
+    case Intrinsic::usub_sat:
       //   r = (a < b) ? XX_MIN : a - b;
       cwriter_assert(retT == elemT);
       Out << "  r = (a < b) ? ";
@@ -4714,7 +4714,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       // (XX_MAX) = 0111... Therfore, shifting this value by b to the right yields the
       // maximum/minimum value that can be shifted without overflow.
       //    r = (a >= 0 && a > (XX_MAX >> b)) ? XX_MAX : a << b;
-      //    r = (a < 0 && a < ((XX_MAX >> b) | XX_MIN)) ? XX_MIN : r;
+      //    r = (a < 0 && a < ((XX_MAX >> b) | XX_MIN))) ? XX_MIN : r;
       cwriter_assert(retT == elemT);
       Out << "  r = (a >= 0 && a > (";
       printLimitValue(*elemIntT, true, true, Out);
@@ -4725,7 +4725,7 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       printLimitValue(*elemIntT, true, true, Out);
       Out << " >> b | ";
       printLimitValue(*elemIntT, true, false, Out);
-      Out << ")) ? ";
+      Out << "))) ? ";
       printLimitValue(*elemIntT, true, false, Out);
       Out << " : r;\n";
       break;
