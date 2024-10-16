@@ -2588,6 +2588,12 @@ void CWriter::generateHeader(Module &M) {
       case Intrinsic::ssub_with_overflow:
       case Intrinsic::umul_with_overflow:
       case Intrinsic::smul_with_overflow:
+      case Intrinsic::uadd_sat:
+      case Intrinsic::sadd_sat:
+      case Intrinsic::usub_sat:
+      case Intrinsic::ssub_sat:
+      case Intrinsic::sshl_sat:
+      case Intrinsic::ushl_sat:
       case Intrinsic::bswap:
       case Intrinsic::ceil:
       case Intrinsic::ctlz:
@@ -4521,6 +4527,9 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
   case Intrinsic::sadd_with_overflow:
   case Intrinsic::ssub_with_overflow:
   case Intrinsic::smul_with_overflow:
+  case Intrinsic::sadd_sat:
+  case Intrinsic::ssub_sat:
+  case Intrinsic::sshl_sat:
   case Intrinsic::smin:
   case Intrinsic::smax:
     isSigned = true;
@@ -4619,6 +4628,8 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
       break;
 
     case Intrinsic::ssub_with_overflow:
+      //   r.field0 = a - b;
+      //   r.field1 = (b <= 0 ? a > XX_MAX + b : a < XX_MIN + b);
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field0 = a - b;\n";
       Out << "  r.field1 = (b <= 0 ? a > ";
@@ -4636,6 +4647,87 @@ void CWriter::printIntrinsicDefinition(FunctionType *funT, unsigned Opcode,
     case Intrinsic::smul_with_overflow:
       cwriter_assert(cast<StructType>(retT)->getElementType(0) == elemT);
       Out << "  r.field1 = LLVMMul_sov(8 * sizeof(a), &a, &b, &r.field0);\n";
+      break;
+    
+    case Intrinsic::uadd_sat:
+      //   r = (a > XX_MAX - b) ? XX_MAX : a + b
+      cwriter_assert(retT == elemT);
+      Out << "  r = (a > ";
+      printLimitValue(*elemIntT, false, true, Out);
+      Out << " -b ) ? ";
+      printLimitValue(*elemIntT, false, true, Out);
+      Out << " : a + b;\n";
+      break;
+	
+    case Intrinsic::sadd_sat:
+      //   r = (b > 0 && a > XX_MAX - b) ? XX_MAX : a + b;
+      //   r = (b < 0 && a < XX_MIN - b) ? XX_MIN : r;
+      cwriter_assert(retT == elemT);
+      Out << "  r = (b > 0 && a > ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " - b) ? ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " : a + b;\n";
+      Out << "  r = (b < 0 && a < ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " - b) ? ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " : r;\n";
+      break;
+	
+    case Intrinsic::usub_sat:
+      //   r = (a < b) ? XX_MIN : a - b;
+      cwriter_assert(retT == elemT);
+      Out << "  r = (a < b) ? ";
+      printLimitValue(*elemIntT, false, false, Out);
+      Out << " : a - b;\n";
+      break;
+    
+    case Intrinsic::ssub_sat:
+      //   r = (b > 0 && a < XX_MIN + b) ? XX_MIN : a - b;
+      //   r = (b < 0 && a > XX_MAX + b) ? XX_MAX : r;
+      cwriter_assert(retT == elemT);
+      Out << "  r = (b > 0 && a < ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " + b) ? ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " : a - b;\n";
+      Out << "  r = (b < 0 && a > ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " + b) ? ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " : r;\n";
+      break;
+
+    case Intrinsic::ushl_sat:
+      // There's no poison value handler in llvm-cbe yet, so this code don't consider that.
+      //    r = (a > (XX_MAX >> b)) ? XX_MAX : a << b;
+      cwriter_assert(retT == elemT);
+      Out << "  r = (a > (";
+      printLimitValue(*elemIntT, false, true, Out);
+      Out << " >> b)) ? ";
+      printLimitValue(*elemIntT, false, true, Out);
+      Out << " : a << b;\n";
+      break;
+
+    case Intrinsic::sshl_sat:
+      // (XX_MAX) = 0111... Therfore, shifting this value by b to the right yields the
+      // maximum/minimum value that can be shifted without overflow.
+      //    r = (a >= 0 && a > (XX_MAX >> b)) ? XX_MAX : a << b;
+      //    r = (a < 0 && a < ((XX_MAX >> b) | XX_MIN))) ? XX_MIN : r;
+      cwriter_assert(retT == elemT);
+      Out << "  r = (a >= 0 && a > (";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " >> b)) ? ";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " : a << b;\n";
+      Out << "  r = (a < 0 && a < ((";
+      printLimitValue(*elemIntT, true, true, Out);
+      Out << " >> b | ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << "))) ? ";
+      printLimitValue(*elemIntT, true, false, Out);
+      Out << " : r;\n";
       break;
 
     case Intrinsic::bswap:
@@ -4805,6 +4897,12 @@ bool CWriter::lowerIntrinsics(Function &F) {
           case Intrinsic::ssub_with_overflow:
           case Intrinsic::umul_with_overflow:
           case Intrinsic::smul_with_overflow:
+          case Intrinsic::uadd_sat:
+          case Intrinsic::sadd_sat:
+          case Intrinsic::usub_sat:
+          case Intrinsic::ssub_sat:
+          case Intrinsic::ushl_sat:
+          case Intrinsic::sshl_sat:
           case Intrinsic::bswap:
           case Intrinsic::ceil:
           case Intrinsic::ctlz:
@@ -5124,6 +5222,12 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID) {
   // these use the normal function call emission
   case Intrinsic::sadd_with_overflow:
   case Intrinsic::ssub_with_overflow:
+  case Intrinsic::uadd_sat:
+  case Intrinsic::sadd_sat:
+  case Intrinsic::usub_sat:
+  case Intrinsic::ssub_sat:
+  case Intrinsic::ushl_sat:
+  case Intrinsic::sshl_sat:
     headerUseLimits();
     return false;
   case Intrinsic::ceil:
