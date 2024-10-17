@@ -109,7 +109,7 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
       OutputFilename = GetFileNameRoot(InputFilename);
 
       switch (codegen::getFileType()) {
-      case CodeGenFileType::CGFT_AssemblyFile:
+      case CodeGenFileType::AssemblyFile:
         if (TargetName[0] == 'c') {
           if (TargetName[1] == 0)
             OutputFilename += ".cbe.c";
@@ -121,13 +121,13 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
           OutputFilename += ".s";
         break;
 
-      case CodeGenFileType::CGFT_ObjectFile:
+      case CodeGenFileType::ObjectFile:
         if (OS == Triple::Win32)
           OutputFilename += ".obj";
         else
           OutputFilename += ".o";
         break;
-      case CodeGenFileType::CGFT_Null:
+      case CodeGenFileType::Null:
         OutputFilename += ".null";
         break;
       }
@@ -137,10 +137,10 @@ static ToolOutputFile *GetOutputStream(const char *TargetName,
   // Decide if we need "binary" output.
   bool Binary = false;
   switch (codegen::getFileType()) {
-  case CodeGenFileType::CGFT_AssemblyFile:
+  case CodeGenFileType::AssemblyFile:
     break;
-  case CodeGenFileType::CGFT_ObjectFile:
-  case CodeGenFileType::CGFT_Null:
+  case CodeGenFileType::ObjectFile:
+  case CodeGenFileType::Null:
     Binary = true;
     break;
   }
@@ -260,7 +260,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
     FeaturesStr = Features.getString();
   }
 
-  CodeGenOpt::Level OLvl = CodeGenOpt::Default;
+  CodeGenOptLevel OLvl = CodeGenOptLevel::Default;
 
   switch (OptLevel) {
   default:
@@ -269,16 +269,16 @@ static int compileModule(char **argv, LLVMContext &Context) {
   case ' ':
     break;
   case '0':
-    OLvl = CodeGenOpt::None;
+    OLvl = CodeGenOptLevel::None;
     break;
   case '1':
-    OLvl = CodeGenOpt::Less;
+    OLvl = CodeGenOptLevel::Less;
     break;
   case '2':
-    OLvl = CodeGenOpt::Default;
+    OLvl = CodeGenOptLevel::Default;
     break;
   case '3':
-    OLvl = CodeGenOpt::Aggressive;
+    OLvl = CodeGenOptLevel::Aggressive;
     break;
   }
 
@@ -330,7 +330,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   PM.add(createTargetTransformInfoWrapperPass(Target.getTargetIRAnalysis()));
 
   if (mc::getExplicitRelaxAll()) {
-    if (codegen::getFileType() != CodeGenFileType::CGFT_ObjectFile)
+    if (codegen::getFileType() != CodeGenFileType::ObjectFile)
       errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj\n";
   }

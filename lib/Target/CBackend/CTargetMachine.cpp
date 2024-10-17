@@ -25,7 +25,7 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                          bool DisableVerify,
                                          MachineModuleInfoWrapperPass *MMI) {
 
-  if (FileType != CodeGenFileType::CGFT_AssemblyFile)
+  if (FileType != CodeGenFileType::AssemblyFile)
     return true;
 
   PM.add(new TargetPassConfig(*this, PM));
@@ -38,7 +38,7 @@ bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   PM.add(createUnreachableBlockEliminationPass());
 
   // Lower atomic operations to libcalls
-  PM.add(createAtomicExpandPass());
+  PM.add(createAtomicExpandLegacyPass());
 
   // Lower vector operations into shuffle sequences
   PM.add(createExpandReductionsPass());

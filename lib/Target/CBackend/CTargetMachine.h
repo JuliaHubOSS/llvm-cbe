@@ -46,7 +46,7 @@ class CTargetMachine : public LLVMTargetMachine {
 public:
   CTargetMachine(const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
                  const TargetOptions &Options, std::optional<Reloc::Model> RM,
-                 std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
+                 std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
                  bool /*JIT*/)
       : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
                           RM.value_or(Reloc::Static),
