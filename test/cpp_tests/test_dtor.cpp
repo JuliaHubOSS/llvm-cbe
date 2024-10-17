@@ -7,6 +7,8 @@ public:
 
 int main() {
   int y = 0;
-  { Foo f(&y); }
+  {
+    Foo f(&y);
+  }
   return y;
 }
