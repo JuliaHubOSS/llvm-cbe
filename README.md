@@ -29,7 +29,7 @@ On Debian and derivatives, install the llvm-dev package via:
     ~# apt install llvm-dev clang ninja-build
 ```
 
-Note: this project uses LLVM 17, so make sure that the package manager is installing it and not some other version. At the time of writing, Ubuntu installs version 14.
+Note: this project uses LLVM 19, so make sure that the package manager is installing it and not some other version. At the time of writing, Ubuntu installs version 14.
 
 Or compile LLVM yourself:
 -----------------------------
@@ -41,7 +41,7 @@ The first step is to compile LLVM on your machine
 ```sh
      ~$ git clone https://github.com/llvm/llvm-project.git
      ~$ cd llvm-project
-     llvm-project$ git checkout release/17.x
+     llvm-project$ git checkout tags/19.1.1
      llvm-project$ mkdir llvm/build
      llvm-project$ cd llvm/build
      build$ cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DLLVM_PARALLEL_LINK_JOBS=1

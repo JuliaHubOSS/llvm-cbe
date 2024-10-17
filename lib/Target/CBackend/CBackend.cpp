@@ -755,10 +755,10 @@ bool CWriter::isStandardMain(const FunctionType *FTy) {
     const Type *T = FTy->getContainedType(i);
     const StringRef CType = MainArgs.begin()[i].first;
 
-    if (CType.equals("int") && !T->isIntegerTy())
+    if (CType == "int" && !T->isIntegerTy())
       return false;
 
-    if (CType.equals("char **") && !T->isPointerTy())
+    if (CType == "char **" && !T->isPointerTy())
       return false;
   }
 
@@ -1251,26 +1251,22 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
         Out << " >> ";
         break;
       case Instruction::ICmp:
-        switch (CE->getPredicate()) {
+        switch ((dyn_cast<ICmpInst>(CE->getAsInstruction()))->getUnsignedPredicate()) {
         case ICmpInst::ICMP_EQ:
           Out << " == ";
           break;
         case ICmpInst::ICMP_NE:
           Out << " != ";
           break;
-        case ICmpInst::ICMP_SLT:
         case ICmpInst::ICMP_ULT:
           Out << " < ";
           break;
-        case ICmpInst::ICMP_SLE:
         case ICmpInst::ICMP_ULE:
           Out << " <= ";
           break;
-        case ICmpInst::ICMP_SGT:
         case ICmpInst::ICMP_UGT:
           Out << " > ";
           break;
-        case ICmpInst::ICMP_SGE:
         case ICmpInst::ICMP_UGE:
           Out << " >= ";
           break;
@@ -1290,12 +1286,13 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
     case Instruction::FCmp: {
       Out << '(';
       bool NeedsClosingParens = printConstExprCast(CE);
-      if (CE->getPredicate() == FCmpInst::FCMP_FALSE)
+	  FCmpInst *CmpInst = dyn_cast<FCmpInst>(CE->getAsInstruction());
+	  const auto Pred = CmpInst -> getPredicate();
+      if (Pred == FCmpInst::FCMP_FALSE)
         Out << "0";
-      else if (CE->getPredicate() == FCmpInst::FCMP_TRUE)
+      else if (Pred == FCmpInst::FCMP_TRUE)
         Out << "1";
       else {
-        const auto Pred = (CmpInst::Predicate)CE->getPredicate();
         headerUseFCmpOp(Pred);
         Out << "llvm_fcmp_" << getCmpPredicateName(Pred) << "(";
         printConstant(CE->getOperand(0), ContextCasted);
