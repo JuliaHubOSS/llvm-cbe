@@ -6,7 +6,7 @@ This LLVM C backend has been resurrected by Julia Computing with various improve
 Installation instructions
 =========================
 
-This version of the LLVM C backend works with LLVM 17, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
+This version of the LLVM C backend works with LLVM 19, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
 
 Step 1: Installing LLVM
 =======================
@@ -78,7 +78,7 @@ If llvm-cbe compiles, you should be able to run it with the following commands.
     llvm-cbe$ cd test/selectionsort
     selectionsort$ ls
     main.c
-    selectionsort$ clang-17 -S -emit-llvm -g main.c
+    selectionsort$ clang-19 -S -emit-llvm -g main.c
     selectionsort$ ls
     main.c main.ll
     selectionsort$ ../../build/tools/llvm-cbe/llvm-cbe main.ll
