@@ -540,10 +540,6 @@ raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
   case Type::FP128TyID:
     return Out << "long double";
 
-  //case Type::X86_MMXTyID:
-  //  return Out << (isSigned ? "int32_t" : "uint32_t")
-  //             << " __attribute__((vector_size(8)))";
-
   default:
     DBG_ERRS("Unknown primitive type: " << *Ty);
     errorWithMessage("unknown primitive type");
