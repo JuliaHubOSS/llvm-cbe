@@ -316,9 +316,6 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   case Type::FP128TyID:
     return Out << "f128";
 
-  //case Type::X86_MMXTyID:
-  //  return Out << (isSigned ? "i32y2" : "u32y2");
-
   case Type::FunctionTyID:
     llvm_unreachable(
         "printTypeString should never be called with a function type");
