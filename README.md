@@ -39,9 +39,8 @@ The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
 
 ```sh
-     ~$ git clone https://github.com/llvm/llvm-project.git
+     ~$ git clone --single-branch --branch llvmorg-19.1.1 --depth 1 https://github.com/llvm/llvm-project.git
      ~$ cd llvm-project
-     llvm-project$ git checkout tags/19.1.1
      llvm-project$ mkdir llvm/build
      llvm-project$ cd llvm/build
      build$ cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DLLVM_PARALLEL_LINK_JOBS=1
