@@ -21,12 +21,12 @@ On macOS, use [pkgsrc](http://pkgsrc.joyent.com/install-on-osx/) and run the fol
 
 On CentOS, install the llvm-devel package:
 ```sh
-    ~# dnf install llvm-devel clang ninja-build
+    ~$ dnf install llvm-devel clang ninja-build
 ```
 
 On Debian and derivatives, install the llvm-dev package via:
 ```sh
-    ~# apt install llvm-dev clang ninja-build
+    ~$ apt install llvm-19-dev clang-19 ninja-build
 ```
 
 Note: this project uses LLVM 19, so make sure that the package manager is installing it and not some other version. At the time of writing, [`Ubuntu 24.04 LTS` installs version 18](https://launchpad.net/ubuntu/noble/+package/llvm-dev).
