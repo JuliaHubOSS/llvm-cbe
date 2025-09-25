@@ -316,9 +316,6 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   case Type::FP128TyID:
     return Out << "f128";
 
-  case Type::X86_MMXTyID:
-    return Out << (isSigned ? "i32y2" : "u32y2");
-
   case Type::FunctionTyID:
     llvm_unreachable(
         "printTypeString should never be called with a function type");
@@ -542,10 +539,6 @@ raw_ostream &CWriter::printSimpleType(raw_ostream &Out, Type *Ty,
   case Type::PPC_FP128TyID:
   case Type::FP128TyID:
     return Out << "long double";
-
-  case Type::X86_MMXTyID:
-    return Out << (isSigned ? "int32_t" : "uint32_t")
-               << " __attribute__((vector_size(8)))";
 
   default:
     DBG_ERRS("Unknown primitive type: " << *Ty);
@@ -2380,7 +2373,7 @@ void CWriter::generateCompilerSpecificCode(raw_ostream &Out,
 bool CWriter::doInitialization(Module &M) {
   TheModule = &M;
 
-  TD = new DataLayout(&M);
+  TD = new DataLayout(M.getDataLayout());
   IL = new IntrinsicLowering(*TD);
 
   TAsm = new CBEMCAsmInfo();
