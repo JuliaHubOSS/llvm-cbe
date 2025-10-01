@@ -49,7 +49,7 @@ jobs:
           ln -s `which gcc-14` gcc
 
       - name: Update Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
@@ -92,7 +92,7 @@ jobs:
           path: ${{ github.workspace }}/llvm/projects/llvm-cbe
 
       - name: Update Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
