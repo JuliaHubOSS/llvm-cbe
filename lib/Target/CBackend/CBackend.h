@@ -1,3 +1,18 @@
+//===-- CBackend.h - Library for converting LLVM code to C ----------------===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the Apache License v2.0 with LLVM Exceptions.
+// See LICENSE.TXT for details.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This library converts LLVM code to C code, compilable by GCC and other C
+// compilers.
+//
+//===----------------------------------------------------------------------===//
+
 #include "CTargetMachine.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfoVariant.h"
