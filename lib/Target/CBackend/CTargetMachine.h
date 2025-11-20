@@ -33,6 +33,7 @@ public:
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef TuneCPU, StringRef FS)
       : TargetSubtargetInfo(TT, CPU, TuneCPU, FS,
+                            ArrayRef<StringRef>(),
                             ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
@@ -42,16 +43,19 @@ public:
   const CTargetLowering Lowering;
 };
 
-class CTargetMachine : public LLVMTargetMachine {
+class CTargetMachine : public TargetMachine {
 public:
   CTargetMachine(const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
                  const TargetOptions &Options, std::optional<Reloc::Model> RM,
                  std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
                  bool /*JIT*/)
-      : LLVMTargetMachine(T, "", TT, CPU, FS, Options,
-                          RM.value_or(Reloc::Static),
-                          CM.value_or(CodeModel::Small), OL),
-        SubtargetInfo(*this, TT, CPU, "", FS) {}
+      : TargetMachine(T, "", TT, CPU, FS, Options),
+        SubtargetInfo(*this, TT, CPU, "", FS)
+  {
+      this->RM = RM.value_or(Reloc::Static);
+      this->CMModel = CM.value_or(CodeModel::Small);
+      this->OptLevel = OL;
+  }
 
   /// Add passes to the specified pass manager to get the specified file
   /// emitted.  Typically this will involve several steps of code generation.
