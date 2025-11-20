@@ -32,8 +32,7 @@ class CTargetSubtargetInfo : public TargetSubtargetInfo {
 public:
   CTargetSubtargetInfo(const TargetMachine &TM, const Triple &TT, StringRef CPU,
                        StringRef TuneCPU, StringRef FS)
-      : TargetSubtargetInfo(TT, CPU, TuneCPU, FS,
-                            ArrayRef<StringRef>(),
+      : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef<StringRef>(),
                             ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
@@ -50,11 +49,10 @@ public:
                  std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
                  bool /*JIT*/)
       : TargetMachine(T, "", TT, CPU, FS, Options),
-        SubtargetInfo(*this, TT, CPU, "", FS)
-  {
-      this->RM = RM.value_or(Reloc::Static);
-      this->CMModel = CM.value_or(CodeModel::Small);
-      this->OptLevel = OL;
+        SubtargetInfo(*this, TT, CPU, "", FS) {
+    this->RM = RM.value_or(Reloc::Static);
+    this->CMModel = CM.value_or(CodeModel::Small);
+    this->OptLevel = OL;
   }
 
   /// Add passes to the specified pass manager to get the specified file
