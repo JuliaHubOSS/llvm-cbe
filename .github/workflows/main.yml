@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup LLVM (Linux)
         if: ${{ runner.os == 'Linux' }}
@@ -87,7 +87,7 @@ jobs:
           ref: llvmorg-20.1.8
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           path: ${{ github.workspace }}/llvm/projects/llvm-cbe
 
