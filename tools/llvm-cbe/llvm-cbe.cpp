@@ -230,7 +230,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
     // If we are supposed to override the target triple, do so now.
     if (!TargetTriple.empty())
-      mod->setTargetTriple(Triple::normalize(TargetTriple));
+      mod->setTargetTriple(Triple(Triple::normalize(TargetTriple)));
     TheTriple = Triple(mod->getTargetTriple());
   } else {
     TheTriple = Triple(Triple::normalize(TargetTriple));
@@ -284,9 +284,10 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   TargetOptions Options;
   Options.AllowFPOpFusion = codegen::getFuseFPOps();
-  Options.UnsafeFPMath = codegen::getEnableUnsafeFPMath();
   Options.NoInfsFPMath = codegen::getEnableNoInfsFPMath();
   Options.NoNaNsFPMath = codegen::getEnableNoNaNsFPMath();
+  Options.NoSignedZerosFPMath = codegen::getEnableNoSignedZerosFPMath();
+  Options.NoTrappingFPMath = codegen::getEnableNoTrappingFPMath();
   Options.HonorSignDependentRoundingFPMathOption =
       codegen::getEnableHonorSignDependentRoundingFPMath();
   if (codegen::getFloatABIForCalls() != FloatABI::Default)
@@ -296,9 +297,9 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   // Jackson Korba 9/30/14
   // OwningPtr<targetMachine>
-  std::unique_ptr<TargetMachine> target(TheTarget->createTargetMachine(
-      TheTriple.getTriple(), codegen::getMCPU(), FeaturesStr, Options,
-      llvm::codegen::getRelocModel()));
+  std::unique_ptr<TargetMachine> target(
+      TheTarget->createTargetMachine(TheTriple, codegen::getMCPU(), FeaturesStr,
+                                     Options, llvm::codegen::getRelocModel()));
   assert(target.get() && "Could not allocate target machine!");
   assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();

@@ -23,7 +23,8 @@ namespace llvm {
 
 class CTargetLowering : public TargetLowering {
 public:
-  explicit CTargetLowering(const TargetMachine &TM) : TargetLowering(TM) {
+  CTargetLowering(const TargetMachine &TM, const TargetSubtargetInfo &STI)
+      : TargetLowering(TM, STI) {
     setMaxAtomicSizeInBitsSupported(0);
   }
 };
@@ -36,8 +37,9 @@ public:
                             ArrayRef<SubtargetFeatureKV>(),
                             ArrayRef<SubtargetSubTypeKV>(), nullptr, nullptr,
                             nullptr, nullptr, nullptr, nullptr),
-        Lowering(TM) {}
+        Lowering(TM, *this) {}
   bool enableAtomicExpand() const override;
+  const TargetRegisterInfo *getRegisterInfo() const override { return nullptr; }
   const TargetLowering *getTargetLowering() const override;
   const CTargetLowering Lowering;
 };

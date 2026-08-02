@@ -2664,10 +2664,10 @@ void CWriter::generateHeader(Module &M) {
       Out << " __HIDDEN__";
     }
 
-    unsigned Alignment = I->getAlignment();
-    if (Alignment != 0) {
+    MaybeAlign Alignment = I->getAlign();
+    if (Alignment) {
       headerUseFunctionAlign();
-      Out << " __FUNCTIONALIGN__(" << Alignment << ") ";
+      Out << " __FUNCTIONALIGN__(" << Alignment->value() << ") ";
     }
 
     if (I->hasName() && I->getName()[0] == 1)
@@ -2704,9 +2704,13 @@ void CWriter::generateHeader(Module &M) {
         Out << "__thread ";
 
       Type *ElTy = I->getValueType();
-      unsigned Alignment = I->getAliaseeObject()->getAlignment();
-      bool IsOveraligned =
-          Alignment && Alignment > TD->getABITypeAlign(ElTy).value();
+      GlobalObject *Aliasee = I->getAliaseeObject();
+      MaybeAlign AliaseeAlign = isa<Function>(Aliasee)
+                                    ? cast<Function>(Aliasee)->getAlign()
+                                    : cast<GlobalVariable>(Aliasee)->getAlign();
+      unsigned Alignment = AliaseeAlign.valueOrOne().value();
+      bool IsOveraligned = !ElTy->isFunctionTy() && Alignment &&
+                           Alignment > TD->getABITypeAlign(ElTy).value();
       if (IsOveraligned) {
         headerUseAligns();
         Out << "__PREFIXALIGN__(" << Alignment << ") ";
@@ -5338,7 +5342,8 @@ void CWriter::visitInlineAsm(CallInst &CI) {
   }
 
   // Fix up the asm string for gcc and emit it.
-  Out << "__asm__ volatile (\"" << gccifyAsm(as->getAsmString()) << "\"\n";
+  Out << "__asm__ volatile (\"" << gccifyAsm(as->getAsmString().str())
+      << "\"\n";
   Out << "        :";
 
   unsigned ValueCount = 0;
