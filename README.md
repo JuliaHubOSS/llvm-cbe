@@ -6,7 +6,7 @@ This LLVM C backend has been resurrected by Julia Computing with various improve
 Installation instructions
 =========================
 
-This version of the LLVM C backend works with LLVM 20, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
+This version of the LLVM C backend works with LLVM 22, for older versions please check the [tags](https://github.com/JuliaHubOSS/llvm-cbe/tags).
 
 Step 1: Installing LLVM
 =======================
@@ -26,10 +26,10 @@ On CentOS, install the llvm-devel package:
 
 On Debian and derivatives, install the llvm-dev package via:
 ```sh
-    ~$ apt install llvm-20-dev clang-20 ninja-build
+    ~$ apt install llvm-22-dev clang-22 ninja-build
 ```
 
-Note: this project uses LLVM 20, so make sure that the package manager is installing it and not some other version. At the time of writing, [`Ubuntu 24.04 LTS` installs version 18](https://launchpad.net/ubuntu/noble/+package/llvm-dev).
+Note: this project uses LLVM 22, so make sure that the package manager is installing it and not some other version. At the time of writing, [`Ubuntu 24.04 LTS` installs version 18](https://launchpad.net/ubuntu/noble/+package/llvm-dev).
 
 Or compile LLVM yourself:
 -----------------------------
@@ -39,7 +39,7 @@ The first step is to compile LLVM on your machine
 (this assumes an in-tree build, but out-of-tree will also work):
 
 ```sh
-     ~$ git clone --single-branch --branch llvmorg-20.1.8 --depth 1 https://github.com/llvm/llvm-project.git
+     ~$ git clone --single-branch --branch llvmorg-22.1.8 --depth 1 https://github.com/llvm/llvm-project.git
      ~$ cd llvm-project
      llvm-project$ mkdir llvm/build
      llvm-project$ cd llvm/build
@@ -77,7 +77,7 @@ If llvm-cbe compiles, you should be able to run it with the following commands.
     llvm-cbe$ cd test/selectionsort
     selectionsort$ ls
     main.c
-    selectionsort$ clang-20 -S -emit-llvm -g main.c
+    selectionsort$ clang-22 -S -emit-llvm -g main.c
     selectionsort$ ls
     main.c main.ll
     selectionsort$ ../../build/tools/llvm-cbe/llvm-cbe main.ll
