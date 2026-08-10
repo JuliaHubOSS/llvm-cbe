@@ -2708,7 +2708,7 @@ void CWriter::generateHeader(Module &M) {
       MaybeAlign AliaseeAlign = isa<Function>(Aliasee)
                                     ? cast<Function>(Aliasee)->getAlign()
                                     : cast<GlobalVariable>(Aliasee)->getAlign();
-      unsigned Alignment = AliaseeAlign.valueOrOne().value();
+      unsigned Alignment = AliaseeAlign ? AliaseeAlign->value() : 0;
       bool IsOveraligned = !ElTy->isFunctionTy() && Alignment &&
                            Alignment > TD->getABITypeAlign(ElTy).value();
       if (IsOveraligned) {
