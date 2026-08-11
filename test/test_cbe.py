@@ -76,15 +76,32 @@ TEST_SUCCESS_EXIT_CODE = 6
 # exit code used by tests to indicate xfail
 TEST_XFAIL_EXIT_CODE = 25
 
+# Diagnostics that describe the toolchain rather than the code under test.
+# These are emitted by the driver on every single compile, so leaving them in
+# fails the whole suite for reasons that have nothing to do with the C backend.
+# The macOS runners hit this whenever the SDK and the Homebrew bottles were
+# built for different OS versions.
+IGNORED_STDERR_PATTERNS = [
+    re.compile(r'warning: overriding deployment version'),
+    re.compile(r'ld: warning: building for macOS-\S+ but linking with dylib'),
+]
+
+
+def strip_ignored_stderr(err):
+    return '\n'.join(
+        line for line in err.splitlines()
+        if line.strip() and
+        not any(p.search(line) for p in IGNORED_STDERR_PATTERNS))
+
 
 def check_no_output(args, cwd):
     proc = Popen(args, cwd=cwd, stdout=PIPE, stderr=PIPE)
     out, err = proc.communicate()
 
-    if (out and not USE_MSVC) or err or proc.returncode:
-        out = out.decode("utf-8")
-        err = err.decode("utf-8")
+    out = out.decode("utf-8")
+    err = err.decode("utf-8")
 
+    if (out and not USE_MSVC) or strip_ignored_stderr(err) or proc.returncode:
         msg_stream = io.StringIO()
         print(f"Got unexpected output or exit code from process", file=msg_stream)
 

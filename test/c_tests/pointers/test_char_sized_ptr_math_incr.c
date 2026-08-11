@@ -20,7 +20,11 @@ int main() {
   inc0 = (long)p;
   ++(*p++); //++(*p++);
   inc1 = (long)p;
-  diff = inc1 - inc0;
+  // Truncate back to a char before widening: inc0 and inc1 only hold the low
+  // byte of each address, so their difference borrows whenever the low byte of
+  // &a is near the top of the range. Without this cast the test depends on the
+  // stack address.
+  diff = (unsigned char)(inc1 - inc0);
   diff += 2;
   return diff;
 }
