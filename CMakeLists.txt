@@ -13,10 +13,13 @@ if (NOT DEFINED LLVM_VERSION_MAJOR)
   include(AddLLVM)
 
   set (CMAKE_CXX_STANDARD 17)
+else()
+  set (USE_SYSTEM_LLVM 0)
 endif()
 
 add_subdirectory(lib)
 add_subdirectory(tools)
+add_subdirectory(clang-plugin)
 
 if( LLVM_INCLUDE_TESTS )
   add_subdirectory(unittests)

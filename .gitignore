@@ -26,3 +26,4 @@ __pycache__
 
 # Build folder
 build/
+llvm-project/

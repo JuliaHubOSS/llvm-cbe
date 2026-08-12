@@ -3,6 +3,10 @@ llvm-cbe
 
 This LLVM C backend has been resurrected by Julia Computing with various improvements.
 
+See clang-plugin/README for an enhanced version which provides much more reliable support for linking the output against existing C libraries.
+Linking against C++ libraries (or other non-C front-ends ABIs) is not likely to be reliable,
+unless it has been defined in terms of a C ABI (such as GCC's Itanium ABI that it uses for most C++ code).
+
 Installation instructions
 =========================
 

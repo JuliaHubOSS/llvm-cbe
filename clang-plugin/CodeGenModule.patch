@@ -1,0 +1,225 @@
+diff --git a/clang/lib/Basic/Targets.cpp b/clang/lib/Basic/Targets.cpp
+index 281aebdb1..fc9274302 100644
+--- a/clang/lib/Basic/Targets.cpp
++++ b/clang/lib/Basic/Targets.cpp
+@@ -109,6 +109,42 @@ void addCygMingDefines(const LangOptions &Opts, MacroBuilder &Builder) {
+ // Driver code
+ //===----------------------------------------------------------------------===//
+ 
++namespace {
++class CBackendTargetInfo : public TargetInfo {
++public:
++  CBackendTargetInfo(const llvm::Triple &Triple, const TargetOptions &)
++      : TargetInfo(Triple) {
++    bool Is64 = Triple.isArch64Bit();
++    bool IsWindows = Triple.isOSWindows();
++    IntWidth = IntAlign = 32;
++    PointerWidth = PointerAlign = Is64 ? 64 : 32;
++    LongWidth = LongAlign = IsWindows ? 32 : PointerWidth;
++    LongLongWidth = LongLongAlign = 64;
++    SizeType = Is64 && IsWindows ? UnsignedLongLong : UnsignedLong;
++    PtrDiffType = Is64 && IsWindows ? SignedLongLong : SignedLong;
++    IntPtrType = Is64 && IsWindows ? SignedLongLong : SignedLong;
++    if (Is64)
++      resetDataLayout("e-m:e-p:64:64-i64:64-i128:128-n32:64-S128");
++    else
++      resetDataLayout("e-m:e-p:32:32-i64:64-i128:128-n32:64-S128");
++  }
++  void getTargetDefines(const LangOptions &, MacroBuilder &) const override {}
++  ArrayRef<Builtin::Info> getTargetBuiltins() const override { return {}; }
++  BuiltinVaListKind getBuiltinVaListKind() const override {
++    return TargetInfo::VoidPtrBuiltinVaList;
++  }
++  ArrayRef<const char *> getGCCRegNames() const override { return {}; }
++  ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
++    return {};
++  }
++  bool validateAsmConstraint(const char *&,
++                             TargetInfo::ConstraintInfo &) const override {
++    return false;
++  }
++  std::string_view getClobbers() const override { return ""; }
++};
++} // namespace
++
+ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
+                                            const TargetOptions &Opts) {
+   llvm::Triple::OSType os = Triple.getOS();
+@@ -117,6 +153,10 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
+   default:
+     return nullptr;
+ 
++  case llvm::Triple::llvm32:
++  case llvm::Triple::llvm64:
++    return std::make_unique<CBackendTargetInfo>(Triple, Opts);
++
+   case llvm::Triple::arc:
+     return std::make_unique<ARCTargetInfo>(Triple, Opts);
+ 
+diff --git a/clang/lib/CodeGen/CodeGenModule.cpp b/clang/lib/CodeGen/CodeGenModule.cpp
+index eb8d3ceee..3b65b055c 100644
+--- a/clang/lib/CodeGen/CodeGenModule.cpp
++++ b/clang/lib/CodeGen/CodeGenModule.cpp
+@@ -68,6 +68,7 @@
+ #include "llvm/Support/ErrorHandling.h"
+ #include "llvm/Support/TimeProfiler.h"
+ #include "llvm/Support/xxhash.h"
++#include "llvm/Support/DynamicLibrary.h"
+ #include "llvm/TargetParser/RISCVISAInfo.h"
+ #include "llvm/TargetParser/Triple.h"
+ #include "llvm/TargetParser/X86TargetParser.h"
+@@ -110,6 +111,13 @@ createTargetCodeGenInfo(CodeGenModule &CGM) {
+   const llvm::Triple &Triple = Target.getTriple();
+   const CodeGenOptions &CodeGenOpts = CGM.getCodeGenOpts();
+ 
++  using GetABIFn =
++      TargetCodeGenInfo *(*)(const llvm::Triple *, CodeGenModule *);
++  if (auto Fn = (GetABIFn)llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(
++          "getCBackendABIForTarget"))
++    if (auto ABI = Fn(&Triple, &CGM))
++      return std::unique_ptr<TargetCodeGenInfo>(ABI);
++
+   switch (Triple.getArch()) {
+   default:
+     return createDefaultTargetCodeGenInfo(CGM);
+@@ -326,8 +334,9 @@ createTargetCodeGenInfo(CodeGenModule &CGM) {
+ }
+ 
+ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
+-  if (!TheTargetCodeGenInfo)
++  if (!TheTargetCodeGenInfo) {
+     TheTargetCodeGenInfo = createTargetCodeGenInfo(*this);
++  }
+   return *TheTargetCodeGenInfo;
+ }
+ 
+diff --git a/llvm/include/llvm/TargetParser/Triple.h b/llvm/include/llvm/TargetParser/Triple.h
+index 7d67966d1..7a05ab959 100644
+--- a/llvm/include/llvm/TargetParser/Triple.h
++++ b/llvm/include/llvm/TargetParser/Triple.h
+@@ -105,7 +105,9 @@ public:
+     renderscript32, // 32-bit RenderScript
+     renderscript64, // 64-bit RenderScript
+     ve,             // NEC SX-Aurora Vector Engine
+-    LastArchType = ve
++    llvm32,         // LLVM C backend 32-bit
++    llvm64,         // LLVM C backend 64-bit
++    LastArchType = llvm64
+   };
+   enum SubArchType {
+     NoSubArch,
+diff --git a/llvm/lib/TargetParser/Triple.cpp b/llvm/lib/TargetParser/Triple.cpp
+index e9e6f130f..e7ffb189f 100644
+--- a/llvm/lib/TargetParser/Triple.cpp
++++ b/llvm/lib/TargetParser/Triple.cpp
+@@ -84,6 +84,8 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
+   case x86_64:         return "x86_64";
+   case xcore:          return "xcore";
+   case xtensa:         return "xtensa";
++  case llvm32:         return "llvm32";
++  case llvm64:         return "llvm64";
+   }
+ 
+   llvm_unreachable("Invalid ArchType!");
+@@ -240,6 +242,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
+   case riscv64:     return "riscv";
+ 
+   case ve:          return "ve";
++  case llvm32:      return "llvm";
++  case llvm64:      return "llvm";
+   case csky:        return "csky";
+ 
+   case loongarch32:
+@@ -486,6 +490,8 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
+     .Case("loongarch64", loongarch64)
+     .Case("dxil", dxil)
+     .Case("xtensa", xtensa)
++    .Case("llvm32", llvm32)
++    .Case("llvm64", llvm64)
+     .Default(UnknownArch);
+ }
+ 
+@@ -632,6 +638,8 @@ static Triple::ArchType parseArch(StringRef ArchName) {
+                  "dxilv1.4", "dxilv1.5", "dxilv1.6", "dxilv1.7", "dxilv1.8",
+                  Triple::dxil)
+           .Case("xtensa", Triple::xtensa)
++          .Case("llvm32", Triple::llvm32)
++          .Case("llvm64", Triple::llvm64)
+           .Default(Triple::UnknownArch);
+ 
+   // Some architectures require special parsing logic just to compute the
+@@ -971,6 +979,8 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
+   case Triple::tcele:
+   case Triple::thumbeb:
+   case Triple::ve:
++  case Triple::llvm32:
++  case Triple::llvm64:
+   case Triple::xcore:
+   case Triple::xtensa:
+     return Triple::ELF;
+@@ -1679,6 +1689,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
+   case llvm::Triple::thumbeb:
+   case llvm::Triple::wasm32:
+   case llvm::Triple::x86:
++  case llvm::Triple::llvm32:
+   case llvm::Triple::xcore:
+   case llvm::Triple::xtensa:
+     return 32;
+@@ -1704,6 +1715,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
+   case llvm::Triple::spirv64:
+   case llvm::Triple::systemz:
+   case llvm::Triple::ve:
++  case llvm::Triple::llvm64:
+   case llvm::Triple::wasm64:
+   case llvm::Triple::x86_64:
+     return 64;
+@@ -1789,6 +1801,7 @@ Triple Triple::get32BitArchVariant() const {
+   case Triple::thumbeb:
+   case Triple::wasm32:
+   case Triple::x86:
++  case Triple::llvm32:
+   case Triple::xcore:
+   case Triple::xtensa:
+     // Already 32-bit.
+@@ -1818,6 +1831,7 @@ Triple Triple::get32BitArchVariant() const {
+     break;
+   case Triple::wasm64:         T.setArch(Triple::wasm32);  break;
+   case Triple::x86_64:         T.setArch(Triple::x86);     break;
++  case Triple::llvm64:         T.setArch(Triple::llvm32);  break;
+   }
+   return T;
+ }
+@@ -1865,6 +1879,7 @@ Triple Triple::get64BitArchVariant() const {
+   case Triple::spirv64:
+   case Triple::systemz:
+   case Triple::ve:
++  case Triple::llvm64:
+   case Triple::wasm64:
+   case Triple::x86_64:
+     // Already 64-bit.
+@@ -1897,6 +1912,7 @@ Triple Triple::get64BitArchVariant() const {
+   case Triple::thumbeb:         T.setArch(Triple::aarch64_be); break;
+   case Triple::wasm32:          T.setArch(Triple::wasm64);     break;
+   case Triple::x86:             T.setArch(Triple::x86_64);     break;
++  case Triple::llvm32:          T.setArch(Triple::llvm64);     break;
+   }
+   return T;
+ }
+@@ -1939,6 +1955,8 @@ Triple Triple::getBigEndianArchVariant() const {
+   case Triple::x86_64:
+   case Triple::xcore:
+   case Triple::ve:
++  case Triple::llvm32:
++  case Triple::llvm64:
+   case Triple::csky:
+   case Triple::xtensa:
+ 
+@@ -2044,6 +2062,8 @@ bool Triple::isLittleEndian() const {
+   case Triple::tcele:
+   case Triple::thumb:
+   case Triple::ve:
++  case Triple::llvm32:
++  case Triple::llvm64:
+   case Triple::wasm32:
+   case Triple::wasm64:
+   case Triple::x86:
